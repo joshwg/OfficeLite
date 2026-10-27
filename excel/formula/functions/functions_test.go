@@ -1,0 +1,77 @@
+package functions
+
+import (
+	"strings"
+	"testing"
+
+	f "officelite/excel/formula"
+)
+
+// The functions requested from Microsoft's "Excel functions by category"
+// list (featured, date & time, information, logical, math & trig, text)
+// plus COUNTA, TEXTAFTER, FV, NPV and PMT. LET and LAMBDA are evaluator
+// built-ins.
+const requested = `
+SUM IF SUMIFS XLOOKUP COUNTIFS COUNT FILTER UNIQUE TEXTBEFORE
+DATE DATEDIF DATEVALUE DAY DAYS DAYS360 EDATE EOMONTH HOUR ISOWEEKNUM MINUTE MONTH
+NETWORKDAYS NETWORKDAYS.INTL NOW SECOND TIME TIMEVALUE TODAY WEEKDAY WEEKNUM WORKDAY
+WORKDAY.INTL YEAR YEARFRAC
+CELL ERROR.TYPE INFO ISBLANK ISERR ISERROR ISEVEN ISFORMULA ISLOGICAL ISNA ISNONTEXT
+ISNUMBER ISODD ISOMITTED ISREF ISTEXT N NA SHEET SHEETS STOCKHISTORY TYPE
+AND BYCOL BYROW FALSE IFERROR IFNA IFS MAKEARRAY MAP NOT OR REDUCE SCAN SWITCH TRUE XOR
+ABS ACOS ACOSH ACOT ACOTH AGGREGATE ARABIC ASIN ASINH ATAN ATAN2 ATANH BASE CEILING
+CEILING.MATH CEILING.PRECISE COMBIN COMBINA COS COSH COT COTH CSC CSCH DECIMAL DEGREES
+EVEN EXP FACT FACTDOUBLE FLOOR FLOOR.MATH FLOOR.PRECISE GCD INT ISO.CEILING LCM LN LOG
+LOG10 MDETERM MINVERSE MMULT MOD MROUND MULTINOMIAL MUNIT ODD PERCENTOF PI POWER PRODUCT
+QUOTIENT RADIANS RAND RANDARRAY RANDBETWEEN ROMAN ROUND ROUNDDOWN ROUNDUP SEC SECH
+SERIESSUM SEQUENCE SIGN SIN SINH SQRT SQRTPI SUBTOTAL SUMIF SUMPRODUCT SUMSQ SUMX2MY2
+SUMX2PY2 SUMXMY2 TAN TANH TRUNC
+ASC ARRAYTOTEXT BAHTTEXT CHAR CLEAN CODE CONCAT CONCATENATE DBCS DETECTLANGUAGE DOLLAR
+EXACT FIND FINDB FIXED LEFT LEFTB LEN LENB LOWER MID MIDB NUMBERVALUE PHONETIC PROPER
+REGEXEXTRACT REGEXREPLACE REGEXTEST REPLACE REPLACEB REPT RIGHT RIGHTB SEARCH SEARCHB
+SUBSTITUTE T TEXT TEXTAFTER TEXTJOIN TEXTSPLIT TRANSLATE TRIM UNICHAR UNICODE UPPER
+VALUE VALUETOTEXT
+COUNTA FV NPV PMT`
+
+func TestRequestedFunctionsRegistered(t *testing.T) {
+	reg := Default()
+	for _, name := range strings.Fields(requested) {
+		if reg.Lookup(name) == nil {
+			t.Errorf("%s is not registered", name)
+		}
+	}
+	t.Logf("%d functions registered", len(reg.Names()))
+}
+
+// Cross-category formulas through the full registry.
+func TestCombined(t *testing.T) {
+	ctx := f.NewTestContext(Default())
+	ctx.SetRange("A1", [][]any{
+		{"Region", "Rep", "Sales", "Date"},
+		{"East", "Ann", 100, 46300},
+		{"West", "Bob", 250, 46310},
+		{"East", "Cid", 75, 46320},
+	})
+	for _, c := range []struct {
+		src  string
+		want string
+	}{
+		{`=SUMIFS(C2:C4,A2:A4,"East")`, "175"},
+		{`=COUNTIFS(A:A,"East",C:C,">80")`, "1"},
+		{`=XLOOKUP("Bob",B2:B4,C2:C4)`, "250"},
+		{`=TEXTJOIN(", ",TRUE,FILTER(B2:B4,C2:C4>90))`, "Ann, Bob"},
+		{`=TEXT(XLOOKUP(MAX(C2:C4),C2:C4,D2:D4),"mmm d, yyyy")`, "Oct 15, 2026"},
+		{`=LET(t,SUM(C2:C4),ROUND(C3/t*100,1)&"%")`, "58.8%"},
+		{`=ROWS(UNIQUE(A2:A4))`, "2"},
+		{`=TEXTBEFORE("Smith, John",",")&"|"&TEXTAFTER("Smith, John",", ")`, "Smith|John"},
+		{`=IFERROR(VLOOKUP("Zed",B2:C4,2,FALSE),"none")`, "none"},
+		{`=NETWORKDAYS(DATE(2026,10,1),EOMONTH(DATE(2026,10,1),0))`, "22"},
+		{`=ROUND(PMT(0.05/12,360,-200000),2)`, "1073.64"},
+		{`=SUM(MAP(SEQUENCE(4),LAMBDA(x,x^2)))`, "30"},
+	} {
+		got, err := f.Str(ctx.Eval(c.src))
+		if err != nil || got != c.want {
+			t.Errorf("%s = %q (%v), want %q", c.src, got, err, c.want)
+		}
+	}
+}

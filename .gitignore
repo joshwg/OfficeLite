@@ -1,0 +1,5 @@
+/bin/
+Fonts/*
+!Fonts/README.md
+~$*
+*:Zone.Identifier

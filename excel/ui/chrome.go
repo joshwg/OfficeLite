@@ -1,0 +1,565 @@
+package ui
+
+import (
+	"fmt"
+	"image"
+	"image/color"
+	"strconv"
+	"strings"
+
+	"gioui.org/font"
+	"gioui.org/io/key"
+	"gioui.org/io/system"
+	"gioui.org/layout"
+	"gioui.org/op"
+	"gioui.org/text"
+	"gioui.org/unit"
+	"gioui.org/widget"
+	"gioui.org/widget/material"
+
+	"officelite/common/colors"
+	"officelite/common/doctype"
+	"officelite/common/gui"
+	"officelite/excel/model"
+)
+
+var (
+	accent      = gui.ExcelAccent
+	accentDark  = colors.RGB(0x0B5A2F)
+	chromeBG    = gui.ChromeBG
+	chromeLine  = gui.ChromeLine
+	chromeText  = gui.ChromeText
+	mutedText   = gui.MutedText
+	errorText   = gui.ErrorText
+	tabActiveBG = colors.White
+)
+
+// Menu bar entries.
+const (
+	menuFile = iota
+	menuHome
+	menuFormulas
+	menuView
+)
+
+// Home menu items.
+const (
+	homeUndo = iota
+	homeRedo
+	_
+	homeCut
+	homeCopy
+	homePaste
+	homeDelete
+	homeSelectAll
+	_
+	homeInsertRows
+	homeInsertCols
+	homeDeleteRows
+	homeDeleteCols
+	_
+	homeInsertSheet
+	homeDeleteSheet
+	homeRenameSheet
+)
+
+func (a *App) menus() []gui.Menu {
+	sel := a.state().view.Sel.Range
+	editing := a.ed.active
+	visible := 0
+	for _, sh := range a.wb.Sheets {
+		if !sh.Hidden {
+			visible++
+		}
+	}
+	return []gui.Menu{
+		menuFile: {Label: "File", Primary: true},
+		menuHome: {Label: "Home", Items: []gui.MenuItem{
+			homeUndo:        {Label: "Undo", Shortcut: "Ctrl+Z", Disabled: !a.book.CanUndo() && !editing},
+			homeRedo:        {Label: "Redo", Shortcut: "Ctrl+Y", Disabled: !a.book.CanRedo() || editing},
+			2:               {Separator: true},
+			homeCut:         {Label: "Cut", Shortcut: "Ctrl+X", Disabled: editing},
+			homeCopy:        {Label: "Copy", Shortcut: "Ctrl+C", Disabled: editing},
+			homePaste:       {Label: "Paste", Shortcut: "Ctrl+V", Disabled: editing},
+			homeDelete:      {Label: "Clear Contents", Shortcut: "Delete", Disabled: editing},
+			homeSelectAll:   {Label: "Select All", Shortcut: "Ctrl+A", Disabled: editing},
+			8:               {Separator: true},
+			homeInsertRows:  {Label: "Insert Sheet Rows", Shortcut: "Ctrl+Shift+=", Disabled: wholeCols(sel)},
+			homeInsertCols:  {Label: "Insert Sheet Columns", Disabled: wholeRows(sel)},
+			homeDeleteRows:  {Label: "Delete Sheet Rows", Shortcut: "Ctrl+-", Disabled: wholeCols(sel)},
+			homeDeleteCols:  {Label: "Delete Sheet Columns", Disabled: wholeRows(sel)},
+			13:              {Separator: true},
+			homeInsertSheet: {Label: "Insert Sheet", Shortcut: "Shift+F11"},
+			homeDeleteSheet: {Label: "Delete Sheet", Disabled: visible < 2},
+			homeRenameSheet: {Label: "Rename Sheet"},
+		}},
+		menuFormulas: {Label: "Formulas", Items: []gui.MenuItem{
+			{Label: "Calculate Now", Shortcut: "F9"},
+		}},
+		menuView: {Label: "View", Items: []gui.MenuItem{
+			{Label: "Zoom In", Shortcut: "Ctrl+Alt+="},
+			{Label: "Zoom Out", Shortcut: "Ctrl+Alt+-"},
+			{Label: "100%", Shortcut: "Ctrl+0"},
+			{Separator: true},
+			{Label: "Gridlines", Checked: a.wb.Sheets[a.active].ShowGridLines},
+		}},
+	}
+}
+
+func (a *App) menuChosen(ev gui.MenuEvent) {
+	switch ev.Menu {
+	case menuFile:
+		a.back.Show(gui.PageHome)
+	case menuHome:
+		v := &a.state().view
+		switch ev.Item {
+		case homeUndo:
+			a.undo()
+		case homeRedo:
+			a.redo()
+		case homeCut, homeCopy:
+			a.copy(a.gtx, ev.Item == homeCut)
+		case homePaste:
+			a.requestPaste(a.gtx)
+		case homeDelete:
+			a.clearSelection()
+		case homeSelectAll:
+			selectAll(v)
+		case homeInsertRows, homeInsertCols, homeDeleteRows, homeDeleteCols:
+			a.structural(ev.Item == homeInsertRows || ev.Item == homeInsertCols, ev.Item == homeInsertCols || ev.Item == homeDeleteCols)
+		case homeInsertSheet:
+			a.insertSheet()
+		case homeDeleteSheet:
+			a.deleteSheet()
+		case homeRenameSheet:
+			a.startRename(a.active)
+		}
+	case menuFormulas:
+		a.recalculate()
+	case menuView:
+		switch ev.Item {
+		case 0:
+			a.setZoom(a.zoom + 0.1)
+		case 1:
+			a.setZoom(a.zoom - 0.1)
+		case 2:
+			a.setZoom(1)
+		case 4:
+			sh := a.wb.Sheets[a.active]
+			sh.ShowGridLines = !sh.ShowGridLines
+		}
+	}
+	if !a.back.Visible && !a.ed.active && !a.rename.active {
+		a.grid.focusPending = true
+	}
+}
+
+func (a *App) layout(gtx layout.Context) {
+	a.gtx = gtx
+	if a.dialog.Visible {
+		if i := a.dialog.Clicked(gtx); i >= 0 && a.answer != nil {
+			answer := a.answer
+			a.answer = nil
+			answer(i)
+		}
+	}
+	defer a.dialog.Layout(gtx, a.ui)
+	a.globalKeys(gtx)
+	a.editKeys(gtx)
+	gui.FillRect(gtx.Ops, image.Rectangle{Max: gtx.Constraints.Max}, chromeBG)
+	if a.back.Visible {
+		layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+			layout.Rigid(a.titleBar),
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				return a.back.Layout(gtx, a.ui, a.backstageConfig(), a.handleBackstage)
+			}),
+		)
+		return
+	}
+	layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(a.titleBar),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return a.menu.Layout(gtx, a.ui, a.menus(), a.menuChosen)
+		}),
+		layout.Rigid(a.formulaBar),
+		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{}.Layout(gtx,
+				layout.Flexed(1, a.layoutGrid),
+				layout.Rigid(a.vScrollbar),
+			)
+		}),
+		layout.Rigid(a.bottomBar),
+		layout.Rigid(a.statusBar),
+	)
+}
+
+// globalKeys handles shortcuts that work regardless of focus.
+func (a *App) globalKeys(gtx layout.Context) {
+	for {
+		ev, ok := gtx.Event(
+			key.Filter{Name: "N", Required: key.ModShortcut},
+			key.Filter{Name: "O", Required: key.ModShortcut},
+			key.Filter{Name: "S", Required: key.ModShortcut},
+			key.Filter{Name: "P", Required: key.ModShortcut},
+			key.Filter{Name: "W", Required: key.ModShortcut},
+			key.Filter{Name: key.NameF12, Optional: key.ModShortcut},
+			key.Filter{Name: key.NameEscape},
+			key.Filter{Name: "+", Required: key.ModShortcut | key.ModAlt, Optional: key.ModShift},
+			key.Filter{Name: "=", Required: key.ModShortcut | key.ModAlt, Optional: key.ModShift},
+			key.Filter{Name: "-", Required: key.ModShortcut | key.ModAlt},
+			key.Filter{Name: "0", Required: key.ModShortcut},
+			key.Filter{Name: key.NameF9},
+			key.Filter{Name: key.NameF11, Required: key.ModShift},
+		)
+		if !ok {
+			break
+		}
+		e, ok := ev.(key.Event)
+		if !ok || e.State != key.Press {
+			continue
+		}
+		switch e.Name {
+		case "N":
+			a.launch(doctype.Spreadsheet, "")
+		case "O":
+			a.menu.Close()
+			a.back.Show(gui.PageOpen)
+		case "S":
+			a.menu.Close()
+			a.save()
+		case "P":
+			a.menu.Close()
+			a.back.Show(gui.PagePrint)
+		case "W":
+			a.win.Perform(system.ActionClose)
+		case key.NameF12:
+			a.menu.Close()
+			if e.Modifiers.Contain(key.ModShortcut) {
+				a.openDialog() // Ctrl+F12, as in Excel
+			} else {
+				a.back.Show(gui.PageSaveAs)
+			}
+		case key.NameEscape:
+			switch {
+			case a.dialog.Visible:
+				a.dialog.Hide()
+				if answer := a.answer; answer != nil {
+					a.answer = nil
+					answer(len(a.dialog.Buttons) - 1) // Cancel
+				}
+				continue
+			case a.menu.IsOpen():
+				a.menu.Close()
+				continue
+			case a.back.Visible:
+				a.back.Hide()
+				a.closing = false
+			case a.rename.active:
+				a.finishRename(false)
+			case a.ed.active:
+				a.cancelEdit()
+			default:
+				a.clip = nil
+			}
+			a.grid.focusPending = true
+		case "+", "=":
+			a.setZoom(a.zoom + 0.1)
+		case "-":
+			a.setZoom(a.zoom - 0.1)
+		case "0":
+			a.setZoom(1)
+		case key.NameF9:
+			a.recalculate()
+		case key.NameF11:
+			a.insertSheet()
+		}
+	}
+}
+
+func (a *App) label(size float32, s string, c color.NRGBA, bold bool) material.LabelStyle {
+	l := material.Label(a.th, unit.Sp(size), s)
+	l.Color = c
+	l.Font = gui.UIFont
+	if bold {
+		l.Font.Weight = font.Bold
+	}
+	l.MaxLines = 1
+	return l
+}
+
+func (a *App) titleBar(gtx layout.Context) layout.Dimensions {
+	h := gtx.Dp(36)
+	gui.FillRect(gtx.Ops, image.Rect(0, 0, gtx.Constraints.Max.X, h), accent)
+	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = h, h
+	name := a.wb.Name
+	if a.modified {
+		name += " •"
+	}
+	return layout.Inset{Left: 12, Right: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return gui.Middle(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+				layout.Rigid(a.label(15, appName, colors.White, true).Layout),
+				layout.Rigid(layout.Spacer{Width: 16}.Layout),
+				layout.Flexed(1, a.label(13, name, colors.White, false).Layout),
+			)
+		})
+	})
+}
+
+// zoomControl is the status bar's "−  100%  +".
+func (a *App) zoomControl(gtx layout.Context) layout.Dimensions {
+	for a.zoomInBtn.Clicked(gtx) {
+		a.setZoom(a.zoom + 0.1)
+	}
+	for a.zoomOutBtn.Clicked(gtx) {
+		a.setZoom(a.zoom - 0.1)
+	}
+	for a.zoomBtn.Clicked(gtx) {
+		a.setZoom(1)
+	}
+	btn := func(c *widget.Clickable, s string, w int) layout.FlexChild {
+		return layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return gui.Hoverable(gtx, c, colors.Transparent, gui.HoverBG, func(gtx layout.Context) layout.Dimensions {
+				gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(unit.Dp(w)), gtx.Constraints.Max.Y))
+				return layout.Center.Layout(gtx, a.label(12, s, chromeText, false).Layout)
+			})
+		})
+	}
+	return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+		btn(&a.zoomOutBtn, "−", 22),
+		btn(&a.zoomBtn, fmt.Sprintf("%d%%", int(a.zoom*100+0.5)), 44),
+		btn(&a.zoomInBtn, "+", 22),
+	)
+}
+
+func (a *App) formulaBar(gtx layout.Context) layout.Dimensions {
+	st := a.state()
+	sel := st.view.Sel
+	name := model.CellName(sel.Active.Row, sel.Active.Col)
+	if r := sel.Range; a.grid.dragging && (r.R1 != r.R2 || r.C1 != r.C2) {
+		name = fmt.Sprintf("%dR x %dC", r.R2-r.R1+1, r.C2-r.C1+1)
+	}
+	content := editText(st.view.Sheet, sel.Active)
+
+	h := gtx.Dp(30)
+	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = h, h
+	w := gtx.Constraints.Max.X
+	gui.FillRect(gtx.Ops, image.Rect(0, 0, w, h), colors.White)
+	gui.HLine(gtx.Ops, 0, w, h-1, 1, chromeLine)
+
+	box := gtx.Dp(100)
+	gui.VLine(gtx.Ops, box, 0, h, 1, chromeLine)
+	gui.VLine(gtx.Ops, box+gtx.Dp(32), gtx.Dp(6), h-gtx.Dp(6), 1, chromeLine)
+	place := func(x int, l material.LabelStyle) {
+		g := gtx
+		g.Constraints = layout.Constraints{Max: image.Pt(max(w-x-gtx.Dp(8), 0), h)}
+		m := op.Record(gtx.Ops)
+		d := l.Layout(g)
+		call := m.Stop()
+		off := op.Offset(image.Pt(x, (h-d.Size.Y)/2)).Push(gtx.Ops)
+		call.Add(gtx.Ops)
+		off.Pop()
+	}
+	place(gtx.Dp(8), a.label(13, name, chromeText, false))
+	fx := a.label(13, "fx", mutedText, false)
+	fx.Font.Style = font.Italic
+	place(box+gtx.Dp(10), fx)
+	x := box + gtx.Dp(42)
+	off := op.Offset(image.Pt(x, 0)).Push(gtx.Ops)
+	a.layoutBarEditor(gtx, content, max(w-x-gtx.Dp(8), 1), h-1)
+	off.Pop()
+	return layout.Dimensions{Size: image.Pt(w, h)}
+}
+
+// looksNumeric reports whether formatted text is a plain number (as opposed
+// to a date or time), in which case the raw value is more useful.
+func looksNumeric(s string) bool {
+	s = strings.NewReplacer(",", "", "$", "", "%", "", "(", "", ")", "", " ", "").Replace(s)
+	_, err := strconv.ParseFloat(s, 64)
+	return err == nil
+}
+
+func (a *App) vScrollbar(gtx layout.Context) layout.Dimensions {
+	st := a.state()
+	v := &st.view
+	w := gtx.Dp(14)
+	gtx.Constraints.Min.X, gtx.Constraints.Max.X = w, w
+	gtx.Constraints.Min.Y = gtx.Constraints.Max.Y
+	fr := v.Sheet.FreezeRows
+	visible := float64(v.VisibleRows())
+	total := float64(max(v.Sheet.UsedRows(), v.TopRow+int(visible), st.selEnd.Row+1)-fr) + visible
+	pos := a.vbar.Layout(gtx, float64(v.TopRow-fr), visible, total)
+	if top := fr + int(pos+0.5); top != v.TopRow {
+		v.TopRow = min(top, model.MaxRows-1)
+	}
+	return layout.Dimensions{Size: gtx.Constraints.Max}
+}
+
+func (a *App) bottomBar(gtx layout.Context) layout.Dimensions {
+	h := gtx.Dp(30)
+	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = h, h
+	gui.HLine(gtx.Ops, 0, gtx.Constraints.Max.X, 0, 1, chromeLine)
+	barW := gtx.Constraints.Max.X * 2 / 5
+	return layout.Flex{}.Layout(gtx,
+		layout.Flexed(1, a.sheetTabs),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			gtx.Constraints = layout.Exact(image.Pt(barW, h))
+			st := a.state()
+			v := &st.view
+			fc := v.Sheet.FreezeCols
+			visible := float64(v.VisibleCols())
+			total := float64(max(v.Sheet.UsedCols(), v.LeftCol+int(visible), st.selEnd.Col+1)-fc) + visible
+			ins := layout.Inset{Top: 8, Bottom: 8, Right: 14}
+			return ins.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				pos := a.hbar.Layout(gtx, float64(v.LeftCol-fc), visible, total)
+				if left := fc + int(pos+0.5); left != v.LeftCol {
+					v.LeftCol = min(left, model.MaxCols-1)
+					gtx.Execute(op.InvalidateCmd{})
+				}
+				return layout.Dimensions{Size: gtx.Constraints.Max}
+			})
+		}),
+	)
+}
+
+func (a *App) sheetTabs(gtx layout.Context) layout.Dimensions {
+	for i := range a.tabBtns {
+		for {
+			click, ok := a.tabBtns[i].Update(gtx)
+			if !ok {
+				break
+			}
+			if a.ed.active && !a.commitEdit(0, 0) {
+				continue
+			}
+			if a.rename.active && a.rename.sheet != i {
+				a.finishRename(true)
+			}
+			a.active = i
+			a.grid.focusPending = true
+			if click.NumClicks >= 2 {
+				a.startRename(i) // double-click a tab to rename it
+			}
+		}
+	}
+	a.renameEvents(gtx)
+	a.tabList.Axis = layout.Horizontal
+	return layout.Inset{Left: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return a.tabList.Layout(gtx, len(a.wb.Sheets), func(gtx layout.Context, i int) layout.Dimensions {
+			sh := a.wb.Sheets[i]
+			if sh.Hidden {
+				return layout.Dimensions{}
+			}
+			activeTab := i == a.active
+			if a.rename.active && a.rename.sheet == i {
+				return a.renameBox(gtx)
+			}
+			return a.tabBtns[i].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				m := op.Record(gtx.Ops)
+				c := chromeText
+				if activeTab {
+					c = accent
+				}
+				l := a.label(13, sh.Name, c, activeTab)
+				d := layout.Inset{Top: 6, Bottom: 6, Left: 14, Right: 14}.Layout(gtx, l.Layout)
+				call := m.Stop()
+				if activeTab {
+					gui.FillRect(gtx.Ops, image.Rectangle{Max: d.Size}, tabActiveBG)
+					gui.HLine(gtx.Ops, gtx.Dp(8), d.Size.X-gtx.Dp(8), d.Size.Y-gtx.Dp(3), gtx.Dp(2), accent)
+				}
+				call.Add(gtx.Ops)
+				gui.VLine(gtx.Ops, d.Size.X-1, gtx.Dp(6), d.Size.Y-gtx.Dp(6), 1, chromeLine)
+				return d
+			})
+		})
+	})
+}
+
+func (a *App) statusBar(gtx layout.Context) layout.Dimensions {
+	h := gtx.Dp(24)
+	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = h, h
+	w := gtx.Constraints.Max.X
+	gui.FillRect(gtx.Ops, image.Rect(0, 0, w, h), chromeBG)
+	gui.HLine(gtx.Ops, 0, w, 0, 1, chromeLine)
+
+	left, leftColor := "Ready", mutedText
+	switch {
+	case a.loading.Load():
+		left = "Loading…"
+	case a.errMsg != "":
+		left, leftColor = a.errMsg, errorText
+	case a.notice != "":
+		left = a.notice
+	case a.clip != nil:
+		left = a.clipNotice()
+	case a.ed.active && a.ed.enter:
+		left = "Enter"
+	case a.ed.active:
+		left = "Edit"
+	case len(a.wb.Warnings) > 0:
+		left = a.wb.Warnings[0]
+		if n := len(a.wb.Warnings); n > 1 {
+			left += fmt.Sprintf(" (+%d more)", n-1)
+		}
+	}
+	st := a.state()
+	right := a.stats.text(st.view.Sheet, st.view.Sel.Range)
+	return layout.Inset{Left: 12, Right: 12}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return gui.Middle(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+				layout.Flexed(1, a.label(12, left, leftColor, false).Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					l := a.label(12, right, chromeText, false)
+					l.Alignment = text.End
+					return l.Layout(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Width: 16}.Layout),
+				layout.Rigid(a.zoomControl),
+			)
+		})
+	})
+}
+
+// renameEvents finishes a tab rename on Enter or when the editor loses
+// the focus.
+func (a *App) renameEvents(gtx layout.Context) {
+	rn := &a.rename
+	if !rn.active {
+		return
+	}
+	if rn.focus {
+		requestFocus(gtx, &rn.ed)
+		rn.focus = false
+		return
+	}
+	for {
+		ev, ok := rn.ed.Update(gtx)
+		if !ok {
+			break
+		}
+		if _, ok := ev.(widget.SubmitEvent); ok {
+			a.finishRename(true)
+			return
+		}
+	}
+	if !gtx.Focused(&rn.ed) {
+		a.finishRename(true)
+	}
+}
+
+// renameBox is the editor that replaces a tab being renamed.
+func (a *App) renameBox(gtx layout.Context) layout.Dimensions {
+	return layout.Inset{Top: 4, Bottom: 4, Left: 6, Right: 6}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		w := gtx.Dp(120)
+		gtx.Constraints.Min.X, gtx.Constraints.Max.X = w, w
+		m := op.Record(gtx.Ops)
+		d := layout.UniformInset(3).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return a.rename.ed.Layout(gtx, a.th.Shaper, gui.UIFont, unit.Sp(13), gui.Material(gtx.Ops, chromeText), gui.Material(gtx.Ops, editSelection))
+		})
+		call := m.Stop()
+		gui.FillRect(gtx.Ops, image.Rectangle{Max: d.Size}.Inset(-1), accent)
+		gui.FillRect(gtx.Ops, image.Rectangle{Max: d.Size}, tabActiveBG)
+		call.Add(gtx.Ops)
+		return d
+	})
+}

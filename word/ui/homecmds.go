@@ -4,7 +4,6 @@ import (
 	"gioui.org/font"
 	"gioui.org/io/clipboard"
 	"gioui.org/io/key"
-	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/widget"
 
@@ -43,24 +42,24 @@ func (d *window) homeExtraItems() []gui.MenuItem {
 	styleName := styleName(d.doc.Styles.Find(d.ed.ParaStyleID(d.ed.Sel.Caret.Para)))
 	return []gui.MenuItem{
 		{Separator: true},
-		{Label: "New Style…"},
-		{Label: "Update " + styleName + " to Match Selection"},
-		{Label: "Styles Pane", Shortcut: "Ctrl+Alt+Shift+S", Checked: d.pane.open},
+		{Label: "New Style…", Tip: "Create a style from the formatting of the selection."},
+		{Label: "Update " + styleName + " to Match Selection", Tip: "Give the style the formatting of the selection."},
+		{Label: "Styles Pane", Shortcut: "Ctrl+Alt+Shift+S", Checked: d.pane.open, Tip: "Show or hide the Styles pane."},
 		{Separator: true},
-		{Label: "Find…", Shortcut: "Ctrl+F"},
-		{Label: "Replace…", Shortcut: "Ctrl+H"},
-		{Label: "Go To…", Shortcut: "Ctrl+G"},
+		{Label: "Find…", Shortcut: "Ctrl+F", Tip: "Find text in the document."},
+		{Label: "Replace…", Shortcut: "Ctrl+H", Tip: "Find text and replace it with other text."},
+		{Label: "Go To…", Shortcut: "Ctrl+G", Tip: "Go to a page."},
 		{Separator: true},
-		{Label: "Paste Special…", Shortcut: "Ctrl+Alt+V"},
-		{Label: "Paste as Plain Text"},
-		{Label: "Copy Formatting", Shortcut: "Ctrl+Shift+C"},
-		{Label: "Paste Formatting", Shortcut: "Ctrl+Shift+V", Disabled: d.fmtClip == nil},
+		{Label: "Paste Special…", Shortcut: "Ctrl+Alt+V", Tip: "Choose how to paste the Clipboard: formatted or plain text."},
+		{Label: "Paste as Plain Text", Tip: "Paste only the Clipboard's text, in the formatting where it goes."},
+		{Label: "Copy Formatting", Shortcut: "Ctrl+Shift+C", Tip: "Copy the formatting of the selection to paste on other text."},
+		{Label: "Paste Formatting", Shortcut: "Ctrl+Shift+V", Disabled: d.fmtClip == nil, Tip: "Apply the copied formatting to the selection."},
 		{Separator: true},
-		{Label: "Edit Header"},
-		{Label: "Edit Footer"},
-		{Label: "Page Number (in Footer)"},
-		{Label: "Remove Header"},
-		{Label: "Remove Footer"},
+		{Label: "Edit Header", Tip: "Edit the header at the top of the pages."},
+		{Label: "Edit Footer", Tip: "Edit the footer at the bottom of the pages."},
+		{Label: "Page Number (in Footer)", Tip: "Put the page number in the footer."},
+		{Label: "Remove Header", Tip: "Delete the header."},
+		{Label: "Remove Footer", Tip: "Delete the footer."},
 	}
 }
 
@@ -162,6 +161,9 @@ func (d *window) extraKeys(gtx layout.Context) {
 // Painter, the find bar, header editing) and reports whether it did.
 func (d *window) handleEscape() bool {
 	switch {
+	case d.cancelMouse():
+	case d.v.m.menu.IsOpen():
+		d.v.m.menu.Close()
 	case d.pasteSpec.open:
 		d.pasteSpec.open = false
 	case d.newStyle.open:
@@ -297,13 +299,6 @@ func (d *window) painterRelease() {
 		d.painterOff()
 	}
 	d.edited()
-}
-
-// painterCursor shows the painter cursor over the page view.
-func (d *window) painterCursor(gtx layout.Context) {
-	if d.painter.armed {
-		pointer.CursorCrosshair.Add(gtx.Ops)
-	}
 }
 
 // previewHome sets up the wordshot preview of these features: the find

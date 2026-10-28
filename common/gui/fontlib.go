@@ -29,6 +29,7 @@ type FontLibrary struct {
 	mu      sync.Mutex
 	index   map[string][]string // lower-case family -> font files
 	loaded  map[string][]font.FontFace
+	files   map[font.Face]FaceFile // where each loaded face came from
 	scanned bool
 	dirs    []string
 }
@@ -87,11 +88,50 @@ var FallbackFamilies = []string{"Segoe UI", "Arial", "Liberation Sans", "DejaVu 
 func (l *FontLibrary) Shaper(families ...string) *text.Shaper {
 	faces := l.Faces(append(slices.Clone(families), FallbackFamilies...)...)
 	faces = append(faces, gofontCollection()...)
-	return text.NewShaper(text.NoSystemFonts(), text.WithCollection(faces))
+	sh := text.NewShaper(text.NoSystemFonts(), text.WithCollection(faces))
+	l.registerShaper(sh, faces)
+	return sh
+}
+
+// FaceFile is the font file (and face within a collection) a loaded face
+// was read from.
+type FaceFile struct {
+	Path  string
+	Index int
+}
+
+// registerShaper records, for each face index the shaper gives its
+// glyphs, the file the face came from, so that its glyphs can be drawn by
+// the system rasterizer (see PaintGlyphs). Faces the shaper skips as
+// duplicates take no index, as in Gio's shaper.
+func (l *FontLibrary) registerShaper(sh *text.Shaper, faces []font.FontFace) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	seen := map[any]bool{}
+	var files []FaceFile
+	for _, f := range faces {
+		k := any(f.Face.Face().Font)
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		files = append(files, l.files[f.Face]) // zero for the Go fonts
+	}
+	shaperFaces.Store(sh, files)
+}
+
+// shaperFaces maps each *text.Shaper made by a FontLibrary to its faces'
+// files, by face index.
+var shaperFaces sync.Map
+
+func faceFiles(sh *text.Shaper) []FaceFile {
+	v, _ := shaperFaces.Load(sh)
+	files, _ := v.([]FaceFile)
+	return files
 }
 
 func NewFontLibrary(dirs ...string) *FontLibrary {
-	return &FontLibrary{dirs: dirs, index: map[string][]string{}, loaded: map[string][]font.FontFace{}}
+	return &FontLibrary{dirs: dirs, index: map[string][]string{}, loaded: map[string][]font.FontFace{}, files: map[font.Face]FaceFile{}}
 }
 
 // Faces returns the faces for the given family names and their
@@ -135,6 +175,9 @@ func (l *FontLibrary) Faces(families ...string) []font.FontFace {
 				files[filepath.Dir(p)] = true
 				if b, err := os.ReadFile(p); err == nil {
 					if fs, err := opentype.ParseCollection(prepareFont(b)); err == nil {
+						for i, f := range fs {
+							l.files[f.Face] = FaceFile{p, i}
+						}
 						faces = append(faces, fs...)
 					}
 				}

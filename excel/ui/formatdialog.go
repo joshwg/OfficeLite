@@ -83,8 +83,7 @@ func (a *App) applyFormatCells() {
 	d := &a.fmtDlg
 	o, c := d.orig, d.cur
 	a.ensureFont(c.Font.Family)
-	sel := a.state().view.Sel.Range
-	area, _ := edit.FormatArea(a.wb.Sheets[a.active], sel)
+	sh := a.wb.Sheets[a.active]
 	last := a.book.LastChange()
 	a.formatAt(func(st *model.Style, row, col int) {
 		if c.Font.Family != o.Font.Family {
@@ -127,6 +126,7 @@ func (a *App) applyFormatCells() {
 			st.NumFmtID, st.NumFmtCode = c.NumFmtID, c.NumFmtCode
 		}
 		if d.border >= 0 {
+			area, _ := edit.FormatArea(sh, a.fmtRange) // the range being formatted
 			edit.ApplyBorder(st, edit.BorderKind(d.border), area, row, col)
 		}
 	})

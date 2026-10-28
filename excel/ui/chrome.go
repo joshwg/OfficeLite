@@ -87,45 +87,45 @@ func (a *App) menus() []gui.Menu {
 	return []gui.Menu{
 		menuFile: {Label: "File", Primary: true},
 		menuHome: {Label: "Home", Items: []gui.MenuItem{
-			homeUndo:        {Label: "Undo", Shortcut: "Ctrl+Z", Disabled: !a.book.CanUndo() && !editing},
-			homeRedo:        {Label: "Redo", Shortcut: "Ctrl+Y", Disabled: !a.book.CanRedo() || editing},
+			homeUndo:        {Label: "Undo", Shortcut: "Ctrl+Z", Disabled: !a.book.CanUndo() && !editing, Tip: "Undo your last action."},
+			homeRedo:        {Label: "Redo", Shortcut: "Ctrl+Y", Disabled: !a.book.CanRedo() || editing, Tip: "Redo your last action."},
 			2:               {Separator: true},
-			homeCut:         {Label: "Cut", Shortcut: "Ctrl+X", Disabled: editing},
-			homeCopy:        {Label: "Copy", Shortcut: "Ctrl+C", Disabled: editing},
-			homePaste:       {Label: "Paste", Shortcut: "Ctrl+V", Disabled: editing},
-			homeDelete:      {Label: "Clear Contents", Shortcut: "Delete", Disabled: editing},
-			homeSelectAll:   {Label: "Select All", Shortcut: "Ctrl+A", Disabled: editing},
+			homeCut:         {Label: "Cut", Shortcut: "Ctrl+X", Disabled: editing, Tip: "Move the selection to the Clipboard."},
+			homeCopy:        {Label: "Copy", Shortcut: "Ctrl+C", Disabled: editing, Tip: "Copy the selection to the Clipboard."},
+			homePaste:       {Label: "Paste", Shortcut: "Ctrl+V", Disabled: editing, Tip: "Add content from the Clipboard."},
+			homeDelete:      {Label: "Clear Contents", Shortcut: "Delete", Disabled: editing, Tip: "Delete the contents of the selected cells, keeping their formatting."},
+			homeSelectAll:   {Label: "Select All", Shortcut: "Ctrl+A", Disabled: editing, Tip: "Select every cell on the sheet."},
 			8:               {Separator: true},
-			homeInsertRows:  {Label: "Insert Sheet Rows", Shortcut: "Ctrl+Shift+=", Disabled: wholeCols(sel)},
-			homeInsertCols:  {Label: "Insert Sheet Columns", Disabled: wholeRows(sel)},
-			homeDeleteRows:  {Label: "Delete Sheet Rows", Shortcut: "Ctrl+-", Disabled: wholeCols(sel)},
-			homeDeleteCols:  {Label: "Delete Sheet Columns", Disabled: wholeRows(sel)},
+			homeInsertRows:  {Label: "Insert Sheet Rows", Shortcut: "Ctrl+Shift+=", Disabled: wholeCols(sel), Tip: "Add rows above the selection."},
+			homeInsertCols:  {Label: "Insert Sheet Columns", Disabled: wholeRows(sel), Tip: "Add columns to the left of the selection."},
+			homeDeleteRows:  {Label: "Delete Sheet Rows", Shortcut: "Ctrl+-", Disabled: wholeCols(sel), Tip: "Delete the selected rows."},
+			homeDeleteCols:  {Label: "Delete Sheet Columns", Disabled: wholeRows(sel), Tip: "Delete the selected columns."},
 			13:              {Separator: true},
-			homeInsertSheet: {Label: "Insert Sheet", Shortcut: "Shift+F11"},
-			homeDeleteSheet: {Label: "Delete Sheet", Disabled: visible < 2},
-			homeRenameSheet: {Label: "Rename Sheet"},
+			homeInsertSheet: {Label: "Insert Sheet", Shortcut: "Shift+F11", Tip: "Add a new worksheet."},
+			homeDeleteSheet: {Label: "Delete Sheet", Disabled: visible < 2, Tip: "Delete the active worksheet."},
+			homeRenameSheet: {Label: "Rename Sheet", Tip: "Give the active worksheet a new name."},
 			17:              {Separator: true},
-			homeFillDown:    {Label: "Fill Down", Shortcut: "Ctrl+D", Disabled: editing},
-			homeFillRight:   {Label: "Fill Right", Shortcut: "Ctrl+R", Disabled: editing},
+			homeFillDown:    {Label: "Fill Down", Shortcut: "Ctrl+D", Disabled: editing, Tip: "Copy the top cell of the selection into the cells below."},
+			homeFillRight:   {Label: "Fill Right", Shortcut: "Ctrl+R", Disabled: editing, Tip: "Copy the leftmost cell of the selection into the cells to the right."},
 			20:              {Separator: true},
-			homeSortAsc:     {Label: "Sort A to Z", Disabled: editing},
-			homeSortDesc:    {Label: "Sort Z to A", Disabled: editing},
-			homeCustomSort:  {Label: "Custom Sort…", Disabled: editing},
+			homeSortAsc:     {Label: "Sort A to Z", Disabled: editing, Tip: "Sort the selection from lowest to highest."},
+			homeSortDesc:    {Label: "Sort Z to A", Disabled: editing, Tip: "Sort the selection from highest to lowest."},
+			homeCustomSort:  {Label: "Custom Sort…", Disabled: editing, Tip: "Sort by several columns or in a custom order."},
 			24:              {Separator: true},
-			homeFind:        {Label: "Find…", Shortcut: "Ctrl+F", Disabled: editing},
-			homeReplace:     {Label: "Replace…", Shortcut: "Ctrl+H", Disabled: editing},
-			homeGoTo:        {Label: "Go To…", Shortcut: "Ctrl+G", Disabled: editing},
+			homeFind:        {Label: "Find…", Shortcut: "Ctrl+F", Disabled: editing, Tip: "Find text or numbers on the sheet."},
+			homeReplace:     {Label: "Replace…", Shortcut: "Ctrl+H", Disabled: editing, Tip: "Search for text and replace it with something else."},
+			homeGoTo:        {Label: "Go To…", Shortcut: "Ctrl+G", Disabled: editing, Tip: "Jump to a cell or range by its reference."},
 		}},
 		menuInsert: a.insertMenuDef(),
 		menuFormulas: {Label: "Formulas", Items: []gui.MenuItem{
-			{Label: "Calculate Now", Shortcut: "F9"},
+			{Label: "Calculate Now", Shortcut: "F9", Tip: "Recalculate every formula in the workbook."},
 		}},
 		menuView: {Label: "View", Items: []gui.MenuItem{
-			{Label: "Zoom In", Shortcut: "Ctrl+Alt+="},
-			{Label: "Zoom Out", Shortcut: "Ctrl+Alt+-"},
-			{Label: "100%", Shortcut: "Ctrl+0"},
+			{Label: "Zoom In", Shortcut: "Ctrl+Alt+=", Tip: "Make the sheet bigger on screen."},
+			{Label: "Zoom Out", Shortcut: "Ctrl+Alt+-", Tip: "Make the sheet smaller on screen."},
+			{Label: "100%", Shortcut: "Ctrl+0", Tip: "Zoom to the sheet's actual size."},
 			{Separator: true},
-			{Label: "Gridlines", Checked: a.wb.Sheets[a.active].ShowGridLines},
+			{Label: "Gridlines", Checked: a.wb.Sheets[a.active].ShowGridLines, Tip: "Show or hide the lines between cells."},
 		}},
 	}
 }
@@ -299,6 +299,10 @@ func (a *App) globalKeys(gtx layout.Context) {
 			case a.menu.IsOpen():
 				a.menu.Close()
 				continue
+			case a.cm.grid.IsOpen() || a.cm.tabs.IsOpen():
+				a.cm.grid.Close() // right-click menus (ctxmenu.go)
+				a.cm.tabs.Close()
+				continue
 			case a.ins.kind != dlgNone:
 				a.closeDialog()
 				continue
@@ -439,6 +443,7 @@ func (a *App) vScrollbar(gtx layout.Context) layout.Dimensions {
 	fr := v.Sheet.FreezeRows
 	visible := float64(v.VisibleRows())
 	total := float64(max(v.Sheet.UsedRows(), v.TopRow+int(visible), st.selEnd.Row+1)-fr) + visible
+	a.scrollHints()
 	pos := a.vbar.Layout(gtx, float64(v.TopRow-fr), visible, total)
 	if top := fr + int(pos+0.5); top != v.TopRow {
 		v.TopRow = min(top, model.MaxRows-1)
@@ -452,7 +457,7 @@ func (a *App) bottomBar(gtx layout.Context) layout.Dimensions {
 	gui.HLine(gtx.Ops, 0, gtx.Constraints.Max.X, 0, 1, chromeLine)
 	barW := gtx.Constraints.Max.X * 2 / 5
 	return layout.Flex{}.Layout(gtx,
-		layout.Flexed(1, a.sheetTabs),
+		layout.Flexed(1, a.sheetTabsWithMenu), // ctxmenu.go
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			gtx.Constraints = layout.Exact(image.Pt(barW, h))
 			st := a.state()

@@ -28,6 +28,8 @@ type gridInput struct {
 	resize       *resizeDrag   // a header divider being dragged
 	lastDivider  time.Duration // time of the last press on a divider
 	lastEdge     dividerID
+	move         *moveDrag // the selection being dragged by its border (mouse.go)
+	pointing     bool      // dragging out a reference for a formula (mouse.go)
 }
 
 // doubleClick is the longest time between the presses of a double-click.
@@ -57,6 +59,8 @@ func (a *App) layoutGrid(gtx layout.Context) layout.Dimensions {
 		pointer.CursorColResize.Add(gtx.Ops)
 	case r != nil:
 		pointer.CursorRowResize.Add(gtx.Ops)
+	case a.grid.move != nil:
+		pointer.CursorAllScroll.Add(gtx.Ops)
 	default:
 		pointer.CursorCrosshair.Add(gtx.Ops)
 		a.dividerCursors(gtx, &st.view)
@@ -66,8 +70,14 @@ func (a *App) layoutGrid(gtx layout.Context) layout.Dimensions {
 	cs := clip.Rect{Max: size}.Push(gtx.Ops)
 	defer cs.Pop()
 	d := st.view.Draw(gtx)
+	a.drawEditRefs(gtx, &st.view) // the entry's references, colored (mouse.go)
 	a.layoutCellEditor(gtx, &st.view)
+	if a.grid.resize == nil && a.grid.move == nil {
+		a.borderCursor(gtx, &st.view)
+	}
 	a.drawAnnots(gtx, &st.view) // notes, links, fill drag (notes.go)
+	a.drawMoveDrag(gtx, &st.view)
+	a.layoutGridMenu(gtx)
 	return d
 }
 
@@ -89,10 +99,19 @@ func (a *App) gridPointer(gtx layout.Context, st *sheetState) {
 		}
 		switch e.Kind {
 		case pointer.Press:
+			if e.Buttons.Contain(pointer.ButtonSecondary) {
+				a.gridContextMenu(st, e.Position) // ctxmenu.go
+				continue
+			}
 			if !e.Buttons.Contain(pointer.ButtonPrimary) {
 				continue
 			}
-			// A click elsewhere ends editing (unless the entry is wrong).
+			// While a formula is typed, a click can point at a cell
+			// (mouse.go); otherwise a click elsewhere ends editing
+			// (unless the entry is wrong).
+			if a.ed.active && a.pointPress(st, e.Position, e.Modifiers.Contain(key.ModShift)) {
+				continue
+			}
 			if a.ed.active && !a.commitEdit(0, 0) {
 				continue
 			}
@@ -118,8 +137,12 @@ func (a *App) gridPointer(gtx layout.Context, st *sheetState) {
 			if a.fillPress(v, e.Position.Round()) {
 				continue // dragging the fill handle (fill.go)
 			}
+			if a.movePress(v, e.Position) {
+				continue // dragging the selection by its border (mouse.go)
+			}
 			hit := v.HitTest(e.Position.X, e.Position.Y)
-			if e.Modifiers.Contain(key.ModShortcut) && a.followLinkAt(v, hit) {
+			ctrl, shift := e.Modifiers.Contain(key.ModShortcut), e.Modifiers.Contain(key.ModShift)
+			if ctrl && a.followLinkAt(v, hit) {
 				continue // Ctrl+click on a hyperlink (notes.go)
 			}
 			double := e.Time-a.grid.lastPress < doubleClick && hit == a.grid.lastHit
@@ -132,8 +155,24 @@ func (a *App) gridPointer(gtx layout.Context, st *sheetState) {
 			}
 			a.grid.dragging = true
 			a.grid.dragArea = hit.Area
-			a.pointAt(st, hit, e.Modifiers.Contain(key.ModShift))
+			// Ctrl+click (or drag) adds a range to the selection.
+			extra := v.Sel.Extra
+			if ctrl && !shift && hit.Area != render.AreaCorner {
+				extra = append(extra[:len(extra):len(extra)], v.Sel.Range)
+			}
+			a.pointAt(st, hit, shift)
+			if ctrl && !shift && hit.Area != render.AreaCorner {
+				v.Sel.Extra = extra
+			}
 		case pointer.Drag:
+			if a.grid.move != nil {
+				a.moveTo(v, e.Position)
+				continue
+			}
+			if a.grid.pointing {
+				a.pointDrag(st, e.Position)
+				continue
+			}
 			if a.ins.fill.active {
 				a.fillMove(v, e.Position.Round())
 				continue
@@ -150,6 +189,17 @@ func (a *App) gridPointer(gtx layout.Context, st *sheetState) {
 			}
 		case pointer.Release, pointer.Cancel:
 			a.grid.dragging = false
+			a.grid.pointing = false
+			if m := a.grid.move; m != nil {
+				// Windows sends a Cancel as the button goes up, just
+				// before the Release; a Cancel alone (the drag was
+				// taken away) ends the drag at the next move.
+				if e.Kind == pointer.Release {
+					a.moveRelease(e.Modifiers.Contain(key.ModShortcut))
+				} else {
+					m.done = true
+				}
+			}
 			if a.ins.fill.active {
 				a.fillRelease(e.Kind == pointer.Release)
 			}
@@ -159,6 +209,10 @@ func (a *App) gridPointer(gtx layout.Context, st *sheetState) {
 		case pointer.Scroll:
 			a.wheel(gtx, st, e)
 		case pointer.Move:
+			if m := a.grid.move; m != nil && m.done {
+				a.grid.move = nil // cancelled
+				a.notice = ""
+			}
 			a.gridHover(v, e.Position.Round()) // notes show on hover (notes.go)
 		}
 	}
@@ -167,9 +221,13 @@ func (a *App) gridPointer(gtx layout.Context, st *sheetState) {
 // pointAt selects (or extends the selection to) whatever was clicked.
 func (a *App) pointAt(st *sheetState, hit render.Hit, extend bool) {
 	v := &st.view
+	if !extend {
+		v.Sel.Extra = nil // a plain click selects just one range
+	}
 	switch hit.Area {
 	case render.AreaCorner:
 		v.Sel.Range = model.Range{R2: model.MaxRows - 1, C2: model.MaxCols - 1}
+		v.Sel.Extra = nil
 		return
 	case render.AreaColHeader:
 		top := max(v.TopRow, 0)
@@ -434,6 +492,7 @@ func (a *App) goTo(st *sheetState, to render.Pos, extend bool) {
 	if extend {
 		st.selEnd = to
 	} else {
+		v.Sel.Extra = nil
 		if m, ok := v.Sheet.MergeAt(to.Row, to.Col); ok {
 			to = render.Pos{Row: m.R1, Col: m.C1}
 		}
@@ -491,5 +550,6 @@ func jumpTarget(sh *model.Sheet, p render.Pos, dr, dc int) render.Pos {
 
 // selectAll selects the whole sheet.
 func selectAll(v *render.View) {
+	v.Sel.Extra = nil
 	v.Sel.Range = model.Range{R2: model.MaxRows - 1, C2: model.MaxCols - 1}
 }

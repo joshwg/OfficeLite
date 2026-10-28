@@ -1,6 +1,6 @@
 # OfficeLite
 
-Lightweight, macro-free Office apps in Go. MIT licensed. Version 0.7
+Lightweight, macro-free Office apps in Go. MIT licensed. Version 0.7.0.1
 (`common/version`; `officelite --version`).
 
 - **ExcelLite** (working): opens `.xlsx`/`.xlsm`, `.xls` (Excel 97-2003) and
@@ -205,6 +205,34 @@ leaves header/footer editing, the find bar or the Format Painter.
 - The title shows `•` while there are unsaved changes; closing the window
   then asks to save.
 
+### Mouse
+
+- Right-click menus. ExcelLite: cells (cut/copy/paste and paste values,
+  formulas or formatting, insert/delete, clear, sort, notes, Format Cells,
+  links), row and column headers (plus height/width, hide/unhide) and sheet
+  tabs (insert, delete, rename, hide/unhide). WordLite: cut/copy/paste,
+  Paste Special, Keep Text Only, styles, links, and table rows, columns and
+  the table itself.
+- Hover text: every ribbon button and box shows its name, shortcut and a
+  description; menu items show a description.
+- ExcelLite: Ctrl+click or Ctrl+drag adds separate ranges to the selection
+  (formatting and clearing act on all of them as one undo step; cut, copy
+  and paste refuse, as in Excel). Drag the selection's border to move the
+  cells, Ctrl+drag to copy them; formulas pointing at moved cells follow,
+  and dropping on data asks first. While typing a formula, clicking or
+  dragging over cells (or headers) inserts their reference, and the
+  formula's references are outlined in colour on the sheet.
+- WordLite: in the left margin (arrow cursor) a click selects the line,
+  a double-click the paragraph, a triple-click or Ctrl+click the document;
+  drag to extend, and beside a table row a click selects the row. Drag
+  selected text to move it, Ctrl+drag to copy (Esc cancels). Drag a table's
+  column borders to resize the columns and a row's bottom border to set its
+  height; the sizes are saved in `.docx` and `.doc`.
+- Scrollbars behave as Windows': arrow buttons step and repeat while held,
+  holding the track pages toward the pointer, Shift+click jumps there,
+  dragging the thumb shows the row/column (Excel) or page (Word) and snaps
+  back if the pointer strays far from the bar.
+
 ## Calculation
 
 `excel/formula` parses and evaluates formulas with Excel's semantics: type
@@ -302,6 +330,13 @@ Fonts are indexed from `./Fonts`, `OFFICELITE_FONTS`, the OS font folders and
 Office's cloud-font cache (where Aptos lives); only the families a workbook
 uses are loaded. Embedded bitmap strikes (Calibri has them) are ignored so
 text always renders from outlines.
+
+On Windows, document and cell text is rasterized by DirectWrite (hinted,
+grayscale antialiased, as Word draws it) from the glyphs and positions Gio's
+shaper laid out, so layout is the same on every OS; elsewhere, and for text
+DirectWrite can't take (right-to-left runs, the built-in Go fonts), Gio fills
+the glyph outlines. `OFFICELITE_TEXT=gio` turns DirectWrite off; see
+`common/gui/systext_windows.go` for the other tuning variables.
 
 ## Not yet supported
 

@@ -6,7 +6,8 @@
 // Without a file it renders a built-in sample with headings, lists, tabs,
 // a table and character formatting. With -window the whole WordLite window
 // is drawn (-w, -h; -backstage names a File page, -menu N opens a menu,
-// -dialog style|close shows a dialog).
+// -dialog style|close|context|colresize|dragtext|... shows a dialog or
+// a mouse interaction).
 package main
 
 import (

@@ -36,6 +36,7 @@ type cellEditor struct {
 	cell, bar       widget.Editor
 	focus           *widget.Editor // editor to focus at the next frame
 	barText         string         // what bar shows while not editing
+	point           refPoint       // the reference last put in by pointing (mouse.go)
 }
 
 var editSelection = color.NRGBA{R: 0xA8, G: 0x5C, B: 0x00, A: 0x50}
@@ -79,6 +80,7 @@ func (a *App) beginEdit(text string, enter, bar bool) {
 	ed := &a.ed
 	ed.active, ed.enter, ed.inBar = true, enter, bar
 	ed.sheet, ed.row, ed.col = a.active, p.Row, p.Col
+	ed.point = refPoint{}
 	ed.orig = editText(st.view.Sheet, p)
 	ed.cell.SetText(text)
 	ed.bar.SetText(text)
@@ -273,23 +275,34 @@ func (a *App) layoutCellEditor(gtx layout.Context, v *render.View) {
 	size := unit.Sp(st.Font.SizePt * 96 / 72 * a.zoom)
 	pad := max(1, gtx.Dp(unit.Dp(2*a.zoom)))
 
-	// Measure the entry to size the box: whole columns to the right until
-	// it fits (or the window ends), and taller for several lines.
-	g := gtx
-	g.Constraints = layout.Constraints{Max: image.Pt(1<<20, 1<<20)}
-	m := op.Record(gtx.Ops)
-	need := widget.Label{}.Layout(g, a.shaper, fnt, size, ed.cell.Text()+"M", op.CallOp{})
-	m.Stop()
+	// Size the box as Excel does. A wrapping cell, or one tall enough for
+	// two lines, keeps its width and wraps the entry; any other grows over
+	// whole columns to the right until the entry fits, and wraps at the
+	// window's edge. Either way the box grows down to fit the lines.
+	measure := func(maxW int, s string) layout.Dimensions {
+		g := gtx
+		g.Constraints = layout.Constraints{Max: image.Pt(max(maxW, 1), 1<<20)}
+		m := op.Record(gtx.Ops)
+		d := widget.Label{}.Layout(g, a.shaper, fnt, size, s, op.CallOp{})
+		m.Stop()
+		return d
+	}
+	text := ed.cell.Text() + "M" // room for the caret
+	line := measure(1<<20, "M").Size.Y
 	box := rc
-	for col := ed.col + 1; box.Dx() < need.Size.X+2*pad && box.Max.X < pane.Max.X; col++ {
-		next, _, ok := v.CellRect(ed.row, col)
-		if !ok || col >= model.MaxCols {
-			break
+	if !st.Wrap && rc.Dy() < 2*line {
+		need := measure(1<<20, text)
+		for col := ed.col + 1; box.Dx() < need.Size.X+2*pad && box.Max.X < pane.Max.X; col++ {
+			next, _, ok := v.CellRect(ed.row, col)
+			if !ok || col >= model.MaxCols {
+				break
+			}
+			box.Max.X = next.Max.X
 		}
-		box.Max.X = next.Max.X
 	}
 	box.Max.X = min(box.Max.X, gtx.Constraints.Max.X)
-	box.Max.Y = max(box.Max.Y, box.Min.Y+need.Size.Y+pad)
+	need := measure(box.Dx()-2*pad, text)
+	box.Max.Y = max(box.Max.Y, min(box.Min.Y+need.Size.Y+pad, gtx.Constraints.Max.Y))
 	fill := st.Fill
 	if fill.A == 0 {
 		fill = colors.White
@@ -309,7 +322,7 @@ func (a *App) layoutCellEditor(gtx layout.Context, v *render.View) {
 
 	inner := image.Rect(box.Min.X+pad, box.Min.Y, box.Max.X-pad, box.Max.Y-1)
 	cs := clip.Rect(inner).Push(gtx.Ops)
-	g = gtx
+	g := gtx
 	g.Constraints = layout.Exact(inner.Size())
 	// Single-line entries sit at the bottom of the cell, like its text.
 	y := inner.Min.Y

@@ -1012,25 +1012,31 @@ func (e *Editor) Paste(f *Fragment) {
 	}
 	from, to := e.span()
 	e.edit("paste", from, to, false, func() {
-		p := e.deleteSelection()
-		for i, src := range f.Paras {
-			if i > 0 {
-				p = e.splitPara(p)
-				dst := e.locs[p.Para].P
-				dst.Style, dst.Props = src.Style, copyParaProps(src.Props)
-			}
-			dst := e.locs[p.Para].P
-			if i == 0 && len(f.Paras) > 1 && p.Off == 0 && dst.Len() == 0 {
-				dst.Style, dst.Props = src.Style, copyParaProps(src.Props)
-			}
-			runs := slices.Clone(src.Runs)
-			insertRuns(dst, p.Off, runs...)
-			for k := range runs {
-				p.Off += RunLen(&runs[k])
-			}
-		}
+		p := e.pasteAt(e.deleteSelection(), f)
 		e.Sel = Selection{p, p}
 	})
+}
+
+// pasteAt inserts a fragment at p and returns the end of what it
+// inserted.
+func (e *Editor) pasteAt(p Pos, f *Fragment) Pos {
+	for i, src := range f.Paras {
+		if i > 0 {
+			p = e.splitPara(p)
+			dst := e.locs[p.Para].P
+			dst.Style, dst.Props = src.Style, copyParaProps(src.Props)
+		}
+		dst := e.locs[p.Para].P
+		if i == 0 && len(f.Paras) > 1 && p.Off == 0 && dst.Len() == 0 {
+			dst.Style, dst.Props = src.Style, copyParaProps(src.Props)
+		}
+		runs := slices.Clone(src.Runs)
+		insertRuns(dst, p.Off, runs...)
+		for k := range runs {
+			p.Off += RunLen(&runs[k])
+		}
+	}
+	return p
 }
 
 // PasteText inserts plain text with the caret's formatting; lines become

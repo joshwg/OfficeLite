@@ -49,7 +49,7 @@ func ToolButton(gtx layout.Context, th *Theme, btn *widget.Clickable, icon *widg
 	if checked {
 		hover = colors.Mix(th.AccentTint, th.Accent, 0.15)
 	}
-	return Hoverable(gtx, btn, bg, hover, func(gtx layout.Context) layout.Dimensions {
+	face := func(gtx layout.Context) layout.Dimensions {
 		size := gtx.Dp(28)
 		w := size
 		if icon == nil {
@@ -83,6 +83,11 @@ func ToolButton(gtx layout.Context, th *Theme, btn *widget.Clickable, icon *widg
 			strokeRect(gtx.Ops, image.Rect(0, 0, size, size), colors.Mix(th.Accent, colors.White, 0.5))
 		}
 		return layout.Dimensions{Size: image.Pt(size, size)}
+	}
+	return Hoverable(gtx, btn, bg, hover, func(gtx layout.Context) layout.Dimensions {
+		d := face(gtx)
+		tipButton(gtx, btn, btn.Hovered(), d.Size)
+		return d
 	})
 }
 

@@ -95,6 +95,58 @@ type homeRibbon struct {
 	painterDrag   bool // a selection drag is under way while painting
 
 	fams []string // font families loaded into the shaper
+
+	tipsSet bool
+}
+
+// setTips attaches Excel's tooltips to the ribbon's buttons.
+func (h *homeRibbon) setTips() {
+	tip := gui.SetTip
+	tip(&h.pasteDD, "Paste", "Ctrl+V", "Add content from the Clipboard.")
+	tip(&h.fontDD, "Font", "", "Pick a new font for your text.")
+	tip(&h.sizeDD, "Font Size", "", "Change the size of your text.")
+	tip(&h.numDD, "Number Format", "", "Choose how values in your cells are displayed: as a percentage, as currency, as a date or time, and so on.")
+	tip(&h.cut, "Cut", "Ctrl+X", "Move the selection to the Clipboard.")
+	tip(&h.copy, "Copy", "Ctrl+C", "Copy the selection to the Clipboard.")
+	tip(&h.painter, "Format Painter", "", "Copy formatting to other cells. Double-click to keep it on.")
+	tip(&h.bold, "Bold", "Ctrl+B", "Make your text bold.")
+	tip(&h.italic, "Italic", "Ctrl+I", "Italicize your text.")
+	tip(&h.under, "Underline", "Ctrl+U", "Underline your text.")
+	tip(&h.strike, "Strikethrough", "Ctrl+5", "Cross something out by drawing a line through it.")
+	tip(&h.border, "Borders", "", "Apply the last border to the selected cells.")
+	tip(&h.borderDD, "Borders", "", "Choose borders for the selected cells.")
+	tip(&h.fill, "Fill Color", "", "Color the background of the cells.")
+	tip(&h.fillDD, "Fill Color", "", "Choose a background color for the cells.")
+	tip(&h.color, "Font Color", "", "Change the color of your text.")
+	tip(&h.colorDD, "Font Color", "", "Choose a color for your text.")
+	tip(&h.fontLaunch, "Format Cells: Font", "", "Show the Font tab of the Format Cells dialog.")
+	tip(&h.vTop, "Top Align", "", "Align text to the top.")
+	tip(&h.vMid, "Middle Align", "", "Align text so that it is centered between the top and bottom.")
+	tip(&h.vBot, "Bottom Align", "", "Align text to the bottom.")
+	tip(&h.wrap, "Wrap Text", "", "Wrap long text into multiple lines so you can see all of it.")
+	tip(&h.left, "Align Left", "", "Align your content to the left.")
+	tip(&h.center, "Center", "", "Center your content.")
+	tip(&h.right, "Align Right", "", "Align your content to the right.")
+	tip(&h.indLess, "Decrease Indent", "", "Move your content closer to the cell border.")
+	tip(&h.indMore, "Increase Indent", "", "Move your content farther away from the cell border.")
+	tip(&h.merge, "Merge & Center", "", "Combine the selected cells and center the contents.")
+	tip(&h.mergeDD, "Merge & Center", "", "Choose how to merge the selected cells.")
+	tip(&h.alignLaunch, "Format Cells: Alignment", "", "Show the Alignment tab of the Format Cells dialog.")
+	tip(&h.acct, "Accounting Number Format", "", "Format as dollars.")
+	tip(&h.pct, "Percent Style", "Ctrl+Shift+%", "Format as a percent.")
+	tip(&h.comma, "Comma Style", "", "Format with a thousands separator.")
+	tip(&h.decMore, "Increase Decimal", "", "Show more decimal places for a more precise value.")
+	tip(&h.decLs, "Decrease Decimal", "", "Show fewer decimal places.")
+	tip(&h.numLnch, "Format Cells: Number", "Ctrl+1", "Show the Number tab of the Format Cells dialog.")
+	tip(&h.stylesDD, "Cell Styles", "", "Apply a built-in style to the selected cells.")
+	tip(&h.insertDD, "Insert", "", "Add cells, rows or columns to your workbook.")
+	tip(&h.deleteDD, "Delete", "", "Delete cells, rows or columns from your workbook.")
+	tip(&h.formatDD, "Format", "", "Change the row height or column width, or hide and unhide them.")
+	tip(&h.sumDD, "AutoSum", "", "Add up the cells above or to the left, or pick another function.")
+	tip(&h.fillCmdDD, "Fill", "", "Continue a pattern into adjacent cells.")
+	tip(&h.clearDD, "Clear", "", "Delete everything in the cell, or remove just the formatting or contents.")
+	tip(&h.sortDD, "Sort & Filter", "", "Organize your data so it's easier to analyze.")
+	tip(&h.findDD, "Find & Select", "", "Find, replace or go to specific cells.")
 }
 
 func menuItems(labels []string) []gui.DropItem {
@@ -129,6 +181,10 @@ const ribbonHeight = int(gui.RibbonHeight)
 // layoutRibbon draws the Home ribbon and runs its commands.
 func (a *App) layoutRibbon(gtx layout.Context) layout.Dimensions {
 	h := &a.home
+	if !h.tipsSet {
+		h.setTips()
+		h.tipsSet = true
+	}
 	a.painterUpdate(gtx)
 	a.formatKeys(gtx)
 	st := a.activeStyle()

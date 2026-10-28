@@ -53,6 +53,7 @@ type docView struct {
 	scale        float64 // pixels per point
 	skipSpace    bool    // Ctrl+Space also types a space; drop it
 
+	m                              mouseState // mouse.go
 	vbar                           gui.Scrollbar
 	zoomInBtn, zoomOutBtn, zoomBtn widget.Clickable
 }
@@ -94,8 +95,7 @@ func (d *window) layoutDoc(gtx layout.Context) layout.Dimensions {
 	defer area.Pop()
 	gui.FillRect(gtx.Ops, image.Rectangle{Max: size}, viewBG)
 	event.Op(gtx.Ops, tag)
-	pointer.CursorText.Add(gtx.Ops)
-	d.painterCursor(gtx)
+	d.docCursor(gtx)
 	key.InputHintOp{Tag: tag, Hint: key.HintText}.Add(gtx.Ops)
 
 	px := d.pageX()
@@ -126,6 +126,9 @@ func (d *window) layoutDoc(gtx layout.Context) layout.Dimensions {
 	}
 	d.drawCaret(gtx, px)
 	d.drawInsertOverlay(gtx, px)
+	d.drawDropCaret(gtx, px)
+	d.drawBorderGuide(gtx, px)
+	d.contextMenuLayout(gtx)
 	return layout.Dimensions{Size: size}
 }
 
@@ -192,7 +195,7 @@ func (d *window) docPointer(gtx layout.Context) {
 	for {
 		ev, ok := gtx.Event(pointer.Filter{
 			Target:  v,
-			Kinds:   pointer.Press | pointer.Drag | pointer.Release | pointer.Cancel | pointer.Scroll,
+			Kinds:   pointer.Press | pointer.Drag | pointer.Release | pointer.Cancel | pointer.Scroll | pointer.Move | pointer.Enter | pointer.Leave,
 			ScrollX: pointer.ScrollRange{Min: -1 << 20, Max: 1 << 20},
 			ScrollY: pointer.ScrollRange{Min: -1 << 20, Max: 1 << 20},
 		})
@@ -203,8 +206,14 @@ func (d *window) docPointer(gtx layout.Context) {
 		if !ok {
 			continue
 		}
+		v.m.track(e)
 		switch e.Kind {
 		case pointer.Press:
+			if e.Buttons.Contain(pointer.ButtonSecondary) && !v.dragging {
+				gtx.Execute(key.FocusCmd{Tag: v})
+				d.contextPress(e)
+				continue
+			}
 			if !e.Buttons.Contain(pointer.ButtonPrimary) {
 				continue
 			}
@@ -221,11 +230,20 @@ func (d *window) docPointer(gtx layout.Context) {
 				v.resetBlink()
 				continue
 			}
+			if d.pressBorder(e) || d.pressMargin(e, v.clicks) {
+				v.dragging, v.hasGoal = true, false
+				v.resetBlink()
+				continue
+			}
 			pos := d.viewPos(e.Position)
 			if d.pressObject(e, v.clicks) {
 				v.dragging = d.ins.resizing
 				v.hasGoal = false
 				v.resetBlink()
+				continue
+			}
+			if v.clicks == 1 && !e.Modifiers.Contain(key.ModShift) && d.pressInSelection(e, pos) {
+				v.dragging, v.hasGoal = true, false
 				continue
 			}
 			switch {
@@ -240,7 +258,7 @@ func (d *window) docPointer(gtx layout.Context) {
 			v.hasGoal = false
 			v.resetBlink()
 		case pointer.Drag:
-			if !v.dragging || d.dragObject(e) {
+			if !v.dragging || d.dragObject(e) || d.dragBorder(e) {
 				continue
 			}
 			// Dragging past the edges scrolls.
@@ -248,6 +266,10 @@ func (d *window) docPointer(gtx layout.Context) {
 				v.scrollY += float64(e.Position.Y) / v.scale / 2
 			} else if e.Position.Y > float32(v.size.Y) {
 				v.scrollY += float64(e.Position.Y-float32(v.size.Y)) / v.scale / 2
+			}
+			if d.dragMargin(e) || d.dragMove(e) {
+				v.resetBlink()
+				continue
 			}
 			pos := d.viewPos(e.Position)
 			if v.clicks == 1 {
@@ -267,7 +289,12 @@ func (d *window) docPointer(gtx layout.Context) {
 			}
 			v.resetBlink()
 		case pointer.Release, pointer.Cancel:
-			if v.dragging && e.Kind == pointer.Release {
+			if e.Kind == pointer.Cancel {
+				d.cancelMouse()
+			}
+			moved := d.releaseMove(e) || d.releaseBorder()
+			d.releaseMargin()
+			if v.dragging && e.Kind == pointer.Release && !moved {
 				d.painterRelease()
 			}
 			d.releaseObject()
@@ -308,6 +335,7 @@ func (d *window) vScrollbar(gtx layout.Context) layout.Dimensions {
 	gtx.Constraints.Min.Y = gtx.Constraints.Max.Y
 	if v.scale > 0 {
 		viewH := float64(gtx.Constraints.Max.Y) / v.scale
+		d.scrollHints()
 		v.scrollY = v.vbar.Layout(gtx, v.scrollY, viewH, d.eng.Height)
 	}
 	return layout.Dimensions{Size: gtx.Constraints.Max}

@@ -74,6 +74,7 @@ func (d *DropDown) Layout(gtx layout.Context, th *Theme, width unit.Dp, current 
 		off := op.Offset(image.Pt(w-gtx.Dp(19), (h-gtx.Dp(18))/2)).Push(gtx.Ops)
 		IconDropArrow.Layout(ic, MutedText)
 		off.Pop()
+		tipButton(gtx, d, d.btn.Hovered() && !d.open, image.Pt(w, h))
 		return layout.Dimensions{Size: image.Pt(w, h)}
 	})
 }

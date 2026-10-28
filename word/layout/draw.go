@@ -6,10 +6,8 @@ import (
 	"math"
 	"strings"
 
-	"gioui.org/f32"
 	"gioui.org/op"
 	"gioui.org/op/clip"
-	"gioui.org/op/paint"
 	"gioui.org/text"
 	"golang.org/x/image/math/fixed"
 
@@ -273,12 +271,5 @@ func (e *Engine) drawText(ops *op.Ops, st *TextStyle, str string, x, y, scale fl
 			}
 		}
 	}
-	// Shape draws glyphs relative to the baseline of their line.
-	t := op.Affine(f32.AffineId().Offset(f32.Pt(float32(x), float32(y)))).Push(ops)
-	cl := clip.Outline{Path: sh.Shape(gs)}.Op().Push(ops)
-	paint.ColorOp{Color: st.Color}.Add(ops)
-	paint.PaintOp{}.Add(ops)
-	cl.Pop()
-	sh.Bitmaps(gs).Add(ops)
-	t.Pop()
+	gui.PaintGlyphs(ops, sh, gs, float32(x), float32(y), st.Color)
 }

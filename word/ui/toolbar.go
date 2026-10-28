@@ -55,6 +55,51 @@ type toolbar struct {
 
 	// The Highlight and Font Color buttons repeat the last choice.
 	lastHL, lastColor string
+
+	tipsSet bool
+}
+
+// setTips attaches Word's tooltips to the ribbon's buttons.
+func (t *toolbar) setTips() {
+	tip := gui.SetTip
+	tip(&t.undo, "Undo", "Ctrl+Z", "Undo your last action.")
+	tip(&t.redo, "Redo", "Ctrl+Y", "Redo your last action.")
+	tip(&t.pasteDD, "Paste", "Ctrl+V", "Add content from the Clipboard.")
+	tip(&t.fontDD, "Font", "", "Pick a new font for your text.")
+	tip(&t.sizeDD, "Font Size", "", "Change the size of your text.")
+	tip(&t.styleDD, "Styles", "", "Apply a style to the current paragraph.")
+	tip(&t.cut, "Cut", "Ctrl+X", "Move the selection to the Clipboard.")
+	tip(&t.copy, "Copy", "Ctrl+C", "Copy the selection to the Clipboard.")
+	tip(&t.painter, "Format Painter", "Ctrl+Shift+C", "Copy formatting from one place and apply it to another.")
+	tip(&t.grow, "Increase Font Size", "Ctrl+Shift+>", "Make your text a bit bigger.")
+	tip(&t.shrink, "Decrease Font Size", "Ctrl+Shift+<", "Make your text a bit smaller.")
+	tip(&t.caseDD, "Change Case", "", "Change the selected text to uppercase, lowercase or other common capitalizations.")
+	tip(&t.clear, "Clear All Formatting", "", "Remove all formatting from the selection, leaving only the normal, unformatted text.")
+	tip(&t.bold, "Bold", "Ctrl+B", "Make your text bold.")
+	tip(&t.italic, "Italic", "Ctrl+I", "Italicize your text.")
+	tip(&t.under, "Underline", "Ctrl+U", "Underline your text.")
+	tip(&t.strike, "Strikethrough", "", "Cross something out by drawing a line through it.")
+	tip(&t.sub, "Subscript", "", "Type very small letters just below the line of text.")
+	tip(&t.super, "Superscript", "", "Type very small letters just above the line of text.")
+	tip(&t.hl, "Text Highlight Color", "", "Make your text stand out by highlighting it in a bright color.")
+	tip(&t.hlDD, "Text Highlight Color", "", "Choose a highlight color.")
+	tip(&t.color, "Font Color", "", "Change the color of your text.")
+	tip(&t.colorDD, "Font Color", "", "Choose a color for your text.")
+	tip(&t.bullets, "Bullets", "", "Create a bulleted list.")
+	tip(&t.numbers, "Numbering", "", "Create a numbered list.")
+	tip(&t.indLess, "Decrease Indent", "", "Move your paragraph closer to the margin.")
+	tip(&t.indMore, "Increase Indent", "", "Move your paragraph farther away from the margin.")
+	tip(&t.alignL, "Align Left", "Ctrl+L", "Align your content with the left margin.")
+	tip(&t.alignC, "Center", "Ctrl+E", "Center your content on the page.")
+	tip(&t.alignR, "Align Right", "Ctrl+R", "Align your content with the right margin.")
+	tip(&t.alignJ, "Justify", "Ctrl+J", "Distribute your text evenly between the margins.")
+	tip(&t.spacingDD, "Line and Paragraph Spacing", "", "Choose how much space appears between lines of text or between paragraphs.")
+	tip(&t.modify, "Modify Style", "", "Change the formatting of the current style.")
+	tip(&t.newStyle, "New Style", "", "Create a new style.")
+	tip(&t.stylesPane, "Styles", "Ctrl+Alt+Shift+S", "Show the Styles pane.")
+	tip(&t.find, "Find", "Ctrl+F", "Find text in the document.")
+	tip(&t.replace, "Replace", "Ctrl+H", "Search for text you'd like to change and replace it with something else.")
+	tip(&t.selectDD, "Select", "", "Select text or go to a place in the document.")
 }
 
 // toolState is the selection's formatting shown by the controls.
@@ -227,6 +272,10 @@ const ribbonHeight = int(gui.RibbonHeight)
 // selection's formatting.
 func (d *window) toolbar(gtx layout.Context) layout.Dimensions {
 	t := &d.tb
+	if !t.tipsSet {
+		t.setTips()
+		t.tipsSet = true
+	}
 	ed := d.ed
 	st := d.toolState()
 	th := d.th

@@ -43,8 +43,8 @@ type fillDrag struct {
 // fillHandleRect is where the fill handle is drawn, in grid coordinates.
 func (a *App) fillHandleRect(gtx layout.Context, v *render.View) (image.Rectangle, bool) {
 	r := v.Sel.Range
-	if r.R2 == model.MaxRows-1 && r.C2 == model.MaxCols-1 {
-		return image.Rectangle{}, false
+	if r.R2 == model.MaxRows-1 && r.C2 == model.MaxCols-1 || v.Sel.Multiple() {
+		return image.Rectangle{}, false // none on the whole sheet or several ranges
 	}
 	rc, pane, ok := v.CellRect(r.R2, r.C2)
 	if !ok || !pane.Overlaps(rc) {

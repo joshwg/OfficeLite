@@ -64,6 +64,9 @@ func (a *App) copy(gtx layout.Context, cut bool) {
 	if a.ed.active {
 		return // the editor handles its own clipboard keys
 	}
+	if !a.singleRange() {
+		return
+	}
 	st := a.state()
 	a.clip = a.book.Copy(a.active, st.view.Sel.Range, cut)
 	a.clipText = edit.CopyText(st.view.Sheet, st.view.Sel.Range)
@@ -80,7 +83,7 @@ func (a *App) requestPaste(gtx layout.Context) {
 // the text is what this window copied, otherwise the text parsed as
 // typed input.
 func (a *App) paste(text string) {
-	if a.ed.active {
+	if a.ed.active || !a.singleRange() {
 		return
 	}
 	st := a.state()
@@ -107,10 +110,19 @@ func (a *App) paste(text string) {
 	a.selectRange(a.active, dest)
 }
 
-// clearSelection empties the selected cells, keeping formats (Delete).
+// clearSelection empties the selected cells (every range of a multiple
+// selection), keeping formats (Delete).
 func (a *App) clearSelection() {
-	res := a.book.Clear(a.active, a.state().view.Sel.Range)
+	var res calc.Result
+	a.eachRange(func(r model.Range) { res = joinResult(res, a.book.Clear(a.active, r)) })
 	a.changed(res)
+}
+
+// joinResult adds up the recalculations of several changes.
+func joinResult(a, b calc.Result) calc.Result {
+	a.Calculated += b.Calculated
+	a.Circular = append(a.Circular, b.Circular...)
+	return a
 }
 
 // wholeCols and wholeRows report whether the selection spans entire

@@ -21,7 +21,8 @@ type MenuItem struct {
 	Shortcut  string // shown right-aligned, e.g. "Ctrl+S"
 	Checked   bool
 	Disabled  bool
-	Separator bool // a divider line; the other fields are ignored
+	Separator bool   // a divider line; the other fields are ignored
+	Tip       string // one-line description shown when the pointer rests on it
 }
 
 // Menu is a menu-bar entry. A menu without items acts as a button; Primary
@@ -43,6 +44,7 @@ type MenuBar struct {
 	items   [][]widget.Clickable
 	rects   []image.Rectangle // header bounds, in bar coordinates
 	catcher int               // event tag for clicks outside the drop-down
+	tips    tipper
 }
 
 // IsOpen reports whether a drop-down is showing.
@@ -177,13 +179,7 @@ func (m *MenuBar) dropDown(gtx layout.Context, th *Theme, i int, items []MenuIte
 	g.Constraints = layout.Constraints{Min: image.Pt(width, 0), Max: image.Pt(width, gtx.Constraints.Max.Y)}
 	body := op.Record(gtx.Ops)
 	d := layout.Inset{Top: 4, Bottom: 4}.Layout(g, func(gtx layout.Context) layout.Dimensions {
-		children := make([]layout.FlexChild, len(items))
-		for j, it := range items {
-			children[j] = layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return m.item(gtx, th, &m.items[i][j], it)
-			})
-		}
-		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
+		return menuItems(gtx, th, &m.tips, m.items[i], items)
 	})
 	call := body.Stop()
 	sz := d.Size
@@ -195,11 +191,31 @@ func (m *MenuBar) dropDown(gtx layout.Context, th *Theme, i int, items []MenuIte
 	event.Op(gtx.Ops, &m.items)
 	stop.Pop()
 	call.Add(gtx.Ops)
+	m.tips.layout(gtx, th, image.Rect(-pos.X, -pos.Y, gtx.Constraints.Max.X-pos.X, 1<<15), true)
 	off.Pop()
 	op.Defer(gtx.Ops, rec.Stop())
 }
 
-func (m *MenuBar) item(gtx layout.Context, th *Theme, btn *widget.Clickable, it MenuItem) layout.Dimensions {
+// menuItems lays out a drop-down's entries top to bottom (starting at
+// the top inset) and reports the hovered one to t for its Tip.
+func menuItems(gtx layout.Context, th *Theme, t *tipper, btns []widget.Clickable, items []MenuItem) layout.Dimensions {
+	y := gtx.Dp(4)
+	children := make([]layout.FlexChild, len(items))
+	for j, it := range items {
+		children[j] = layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			d := menuItem(gtx, th, &btns[j], it)
+			if it.Tip != "" && btns[j].Hovered() {
+				t.hover(gtx, &btns[j], Tip{Desc: it.Tip}, image.Rect(0, y, d.Size.X, y+d.Size.Y))
+			}
+			y += d.Size.Y
+			return d
+		})
+	}
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
+}
+
+// menuItem draws one drop-down entry, as wide as gtx.Constraints.Min.X.
+func menuItem(gtx layout.Context, th *Theme, btn *widget.Clickable, it MenuItem) layout.Dimensions {
 	w := gtx.Constraints.Min.X
 	if it.Separator {
 		h := gtx.Dp(9)

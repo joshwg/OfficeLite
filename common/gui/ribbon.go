@@ -68,6 +68,7 @@ var (
 type Ribbon struct {
 	list        layout.List
 	left, right widget.Clickable // scroll buttons shown when it doesn't fit
+	tips        tipper
 }
 
 // RibbonGroup is one captioned group of a ribbon.
@@ -109,6 +110,8 @@ func (r *Ribbon) Layout(gtx layout.Context, th *Theme, groups ...RibbonGroup) la
 	for r.right.Clicked(gtx) {
 		r.list.Position.Offset += w / 2
 	}
+	gtx = withTipper(gtx, &r.tips)
+	r.tips.track(gtx)
 	r.list.Layout(gtx, len(groups), func(gtx layout.Context, i int) layout.Dimensions {
 		return r.group(gtx, th, groups[i])
 	})
@@ -138,6 +141,10 @@ func (r *Ribbon) Layout(gtx layout.Context, th *Theme, groups ...RibbonGroup) la
 		arrow(&r.right, iconScrollRight, w-gtx.Dp(18))
 	}
 	cs.Pop()
+	// The hovered button's tooltip, above everything else.
+	m := op.Record(gtx.Ops)
+	r.tips.layout(gtx, th, image.Rect(0, 0, w, 1<<15), false)
+	op.Defer(gtx.Ops, m.Stop())
 	return layout.Dimensions{Size: image.Pt(w, h)}
 }
 
@@ -176,6 +183,7 @@ func (r *Ribbon) group(gtx layout.Context, th *Theme, g RibbonGroup) layout.Dime
 			o := op.Offset(image.Pt(1, 1)).Push(gtx.Ops)
 			IconLauncher.Layout(ic, MutedText)
 			o.Pop()
+			tipButton(gtx, g.Launcher, g.Launcher.Hovered(), image.Pt(s, s))
 			return layout.Dimensions{Size: image.Pt(s, s)}
 		})
 		o.Pop()
@@ -275,8 +283,8 @@ func bigFace(gtx layout.Context, th *Theme, btn *widget.Clickable, icon *widget.
 	return layout.Dimensions{Size: image.Pt(w, h)}
 }
 
-// paintFace paints a button's background (checked or hovered) and sets
-// the hand cursor.
+// paintFace paints a button's background (checked or hovered), sets
+// the hand cursor and reports the button for its tooltip.
 func paintFace(gtx layout.Context, th *Theme, btn *widget.Clickable, size image.Point, checked bool) {
 	bg := colors.Transparent
 	switch {
@@ -293,6 +301,7 @@ func paintFace(gtx layout.Context, th *Theme, btn *widget.Clickable, size image.
 		pointer.CursorPointer.Add(gtx.Ops)
 		area.Pop()
 	}
+	tipButton(gtx, btn, btn.Hovered(), size)
 }
 
 // DropButton is a small ribbon button (icon and/or label plus a drop

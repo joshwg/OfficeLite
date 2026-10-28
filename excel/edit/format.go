@@ -56,7 +56,7 @@ func (b *Book) GrowRows(sheet int, rows []int, heights []float32) {
 		return
 	}
 	n := len(b.undo)
-	if n == 0 || b.undo[n-1].st != nil || b.undo[n-1].dims != nil ||
+	if n == 0 || b.undo[n-1].st != nil || b.undo[n-1].dims != nil || b.undo[n-1].group != nil ||
 		b.undo[n-1].sheet != nil && (b.undo[n-1].sheet.sheet != sheet || b.undo[n-1].sheet.rows != nil) {
 		b.SetRowHeights(sheet, rows, heights)
 		return

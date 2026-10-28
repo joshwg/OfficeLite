@@ -64,21 +64,21 @@ func (a *App) insertMenuDef() gui.Menu {
 		noteLabel = "Edit Note"
 	}
 	return gui.Menu{Label: "Insert", Items: []gui.MenuItem{
-		insCells:       {Label: "Insert Cells…", Disabled: editing},
-		insDeleteCells: {Label: "Delete Cells…", Disabled: editing},
+		insCells:       {Label: "Insert Cells…", Disabled: editing, Tip: "Add cells, shifting the others right or down, or whole rows or columns."},
+		insDeleteCells: {Label: "Delete Cells…", Disabled: editing, Tip: "Delete the selected cells, shifting the others left or up, or whole rows or columns."},
 		2:              {Separator: true},
-		insRows:        {Label: "Insert Sheet Rows", Disabled: wholeCols(sel)},
-		insCols:        {Label: "Insert Sheet Columns", Disabled: wholeRows(sel)},
-		insSheet:       {Label: "Insert Sheet", Shortcut: "Shift+F11"},
+		insRows:        {Label: "Insert Sheet Rows", Disabled: wholeCols(sel), Tip: "Add rows above the selection."},
+		insCols:        {Label: "Insert Sheet Columns", Disabled: wholeRows(sel), Tip: "Add columns to the left of the selection."},
+		insSheet:       {Label: "Insert Sheet", Shortcut: "Shift+F11", Tip: "Add a new sheet before the current one."},
 		6:              {Separator: true},
-		insFunction:    {Label: "Function…", Shortcut: "Shift+F3"},
-		insSymbol:      {Label: "Symbol…"},
+		insFunction:    {Label: "Function…", Shortcut: "Shift+F3", Tip: "Pick a function to put in the formula."},
+		insSymbol:      {Label: "Symbol…", Tip: "Type a symbol that isn't on your keyboard."},
 		9:              {Separator: true},
-		insHyperlink:   {Label: "Hyperlink…", Shortcut: "Ctrl+K", Disabled: editing},
-		insRemoveLink:  {Label: "Remove Hyperlinks", Disabled: editing || !hasLink},
+		insHyperlink:   {Label: "Hyperlink…", Shortcut: "Ctrl+K", Disabled: editing, Tip: "Link to a web page, a file or a place in this workbook."},
+		insRemoveLink:  {Label: "Remove Hyperlinks", Disabled: editing || !hasLink, Tip: "Remove the links in the selection, keeping the text."},
 		12:             {Separator: true},
-		insNote:        {Label: noteLabel, Shortcut: "Shift+F2", Disabled: editing},
-		insDeleteNote:  {Label: "Delete Notes", Disabled: editing || !hasNote},
+		insNote:        {Label: noteLabel, Shortcut: "Shift+F2", Disabled: editing, Tip: "Add a note to the active cell, or change its note."},
+		insDeleteNote:  {Label: "Delete Notes", Disabled: editing || !hasNote, Tip: "Delete the notes in the selection."},
 	}}
 }
 
@@ -584,7 +584,9 @@ func (a *App) clearHyperlinks() {
 	if !a.commitForCommand() {
 		return
 	}
-	if a.book.ClearHyperlinks(a.active, a.state().view.Sel.Range) {
+	done := false
+	a.eachRange(func(r model.Range) { done = a.book.ClearHyperlinks(a.active, r) || done })
+	if done {
 		a.changed(calc.Result{})
 	}
 }

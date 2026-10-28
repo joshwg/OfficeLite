@@ -239,6 +239,11 @@ func (t *refTok) result(r adjRef, ok bool) string {
 // rewriteRefs calls fn for every reference in f and replaces it with the
 // returned text. String literals and error constants are copied as is.
 func rewriteRefs(f string, fn func(t *refTok) string) string {
+	return rewriteRefsAt(f, func(t *refTok, _ int) string { return fn(t) })
+}
+
+// rewriteRefsAt is rewriteRefs with each reference's byte offset in f.
+func rewriteRefsAt(f string, fn func(t *refTok, at int) string) string {
 	var b strings.Builder
 	b.Grow(len(f) + 8)
 	for i := 0; i < len(f); {
@@ -256,7 +261,7 @@ func rewriteRefs(f string, fn func(t *refTok) string) string {
 			i += n
 		case c == '\'' || boundary && (isIdentStart(c) || c == '$' || c >= '0' && c <= '9'):
 			if t, ok := scanRef(f[i:]); ok {
-				b.WriteString(fn(&t))
+				b.WriteString(fn(&t, i))
 				i += len(t.text)
 				continue
 			}

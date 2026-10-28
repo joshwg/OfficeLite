@@ -1,6 +1,7 @@
 package edit
 
 import (
+	"slices"
 	"time"
 
 	"officelite/excel/calc"
@@ -23,6 +24,10 @@ type Book struct {
 	styles map[model.Style]uint32
 	undo   []*change
 	redo   []*change
+	// grouping collects the changes from undo[groupAt] on into one; see
+	// BeginGroup.
+	grouping bool
+	groupAt  int
 }
 
 // Where is the part of a sheet a change affected, which Undo and Redo
@@ -45,6 +50,8 @@ type change struct {
 	// sheet, when set, changes sheet properties (merges, hidden, default
 	// width) along with cells; see format.go.
 	sheet *sheetChange
+	// group, when set, is a series of changes made as one (BeginGroup).
+	group []*change
 }
 
 type cellChange struct {
@@ -88,7 +95,29 @@ func (b *Book) Undo() (Where, calc.Result, bool) {
 	ch := b.undo[len(b.undo)-1]
 	b.undo = b.undo[:len(b.undo)-1]
 	b.redo = append(b.redo, ch)
+	return ch.where, b.revert(ch), true
+}
+
+// Redo repeats the last change taken back.
+func (b *Book) Redo() (Where, calc.Result, bool) {
+	if len(b.redo) == 0 {
+		return Where{}, calc.Result{}, false
+	}
+	ch := b.redo[len(b.redo)-1]
+	b.redo = b.redo[:len(b.redo)-1]
+	b.undo = append(b.undo, ch)
+	return ch.where, b.reapply(ch), true
+}
+
+// revert takes back one change.
+func (b *Book) revert(ch *change) calc.Result {
 	var res calc.Result
+	if ch.group != nil {
+		for i := len(ch.group) - 1; i >= 0; i-- {
+			res = joinResults(res, b.revert(ch.group[i]))
+		}
+		return res
+	}
 	b.setAnnots(ch.annots, false)
 	switch {
 	case ch.dims != nil:
@@ -101,18 +130,18 @@ func (b *Book) Undo() (Where, calc.Result, bool) {
 	default:
 		res = b.setCells(ch.cells, false)
 	}
-	return ch.where, res, true
+	return res
 }
 
-// Redo repeats the last change taken back.
-func (b *Book) Redo() (Where, calc.Result, bool) {
-	if len(b.redo) == 0 {
-		return Where{}, calc.Result{}, false
-	}
-	ch := b.redo[len(b.redo)-1]
-	b.redo = b.redo[:len(b.redo)-1]
-	b.undo = append(b.undo, ch)
+// reapply makes a change taken back again.
+func (b *Book) reapply(ch *change) calc.Result {
 	var res calc.Result
+	if ch.group != nil {
+		for _, g := range ch.group {
+			res = joinResults(res, b.reapply(g))
+		}
+		return res
+	}
 	b.setAnnots(ch.annots, true)
 	switch {
 	case ch.dims != nil:
@@ -125,16 +154,49 @@ func (b *Book) Redo() (Where, calc.Result, bool) {
 	default:
 		res = b.setCells(ch.cells, true)
 	}
-	return ch.where, res, true
+	return res
+}
+
+func joinResults(a, b calc.Result) calc.Result {
+	a.Calculated += b.Calculated
+	a.Circular = append(a.Circular, b.Circular...)
+	return a
+}
+
+// BeginGroup starts collecting the changes made until EndGroup into one
+// undo step (a command applied to each range of a multiple selection).
+func (b *Book) BeginGroup() {
+	b.grouping, b.groupAt = true, len(b.undo)
+}
+
+// EndGroup ends a group: its changes undo and redo together, and Undo
+// selects where the last of them was.
+func (b *Book) EndGroup() {
+	if !b.grouping {
+		return
+	}
+	b.grouping = false
+	if n := len(b.undo) - b.groupAt; n > 1 {
+		g := slices.Clone(b.undo[b.groupAt:])
+		b.undo = append(b.undo[:b.groupAt], &change{where: g[len(g)-1].where, group: g})
+	}
+	b.trim()
 }
 
 // record adds a change that has been applied to the undo stack.
 func (b *Book) record(ch *change) {
 	b.undo = append(b.undo, ch)
+	b.redo = nil
+	if !b.grouping {
+		b.trim()
+	}
+}
+
+// trim drops the oldest changes past maxUndo.
+func (b *Book) trim() {
 	if len(b.undo) > maxUndo {
 		b.undo = b.undo[len(b.undo)-maxUndo:]
 	}
-	b.redo = nil
 }
 
 // setCells writes the after (or before) side of changes and recalculates.

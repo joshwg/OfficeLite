@@ -13,7 +13,7 @@ import (
 	"gioui.org/op/clip"
 	"gioui.org/text"
 	"gioui.org/unit"
-	"gioui.org/widget"
+	"golang.org/x/image/math/fixed"
 
 	"officelite/common/colors"
 	"officelite/common/gui"
@@ -40,9 +40,62 @@ const overflowScan = 32
 type Pos struct{ Row, Col int }
 
 // Selection is the active cell plus the selected range containing it.
+// Extra holds the other ranges of a multiple selection (Ctrl+click),
+// in the order they were added; Range is the last one.
 type Selection struct {
 	Active Pos
 	Range  model.Range
+	Extra  []model.Range
+}
+
+// Ranges is every selected range, Range last.
+func (s *Selection) Ranges() []model.Range {
+	if len(s.Extra) == 0 {
+		return []model.Range{s.Range}
+	}
+	return append(append([]model.Range(nil), s.Extra...), s.Range)
+}
+
+// Multiple reports whether more than one range is selected.
+func (s *Selection) Multiple() bool { return len(s.Extra) > 0 }
+
+// Contains reports whether any selected range contains row, col.
+func (s *Selection) Contains(row, col int) bool {
+	if s.Range.Contains(row, col) {
+		return true
+	}
+	for _, r := range s.Extra {
+		if r.Contains(row, col) {
+			return true
+		}
+	}
+	return false
+}
+
+// coversCol and coversRow report whether a selected range spans column
+// c (row r), for the highlighted headers.
+func (s *Selection) coversCol(c int) bool {
+	if c >= s.Range.C1 && c <= s.Range.C2 {
+		return true
+	}
+	for _, r := range s.Extra {
+		if c >= r.C1 && c <= r.C2 {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Selection) coversRow(row int) bool {
+	if row >= s.Range.R1 && row <= s.Range.R2 {
+		return true
+	}
+	for _, r := range s.Extra {
+		if row >= r.R1 && row <= r.R2 {
+			return true
+		}
+	}
+	return false
 }
 
 // Area identifies the part of the grid a point falls in.
@@ -402,7 +455,9 @@ func (v *View) drawCellText(gtx layout.Context, p *pane, cell *model.Cell, rc im
 		if align == model.HAlignRight {
 			x = clipR.Max.X - tw - indent
 		}
-		// Compress the text into the cell around its left edge.
+		// Compress the text into the cell around its left edge, drawn as
+		// outlines, which scale cleanly.
+		call, _ = v.shape(gtx, s, st, 1<<20, false, gui.TextLabel{Outlines: true})
 		y := v.textY(st, inner, dims.Size.Y)
 		t := op.Affine(f32.AffineId().Scale(f32.Pt(float32(x), float32(y)), f32.Pt(squeeze, 1))).Push(gtx.Ops)
 		v.placeText(gtx, call, dims, st, image.Pt(x, y), clipR, true)
@@ -506,16 +561,21 @@ func fontFor(mf model.Font) font.Font {
 }
 
 func (v *View) shapeText(gtx layout.Context, s string, st *model.Style, maxW int, wrap bool, align text.Alignment) (op.CallOp, layout.Dimensions) {
-	f := fontFor(st.Font)
-	size := unit.Sp(st.Font.SizePt * 96 / 72 * v.Zoom)
-	mat := gui.Material(gtx.Ops, st.Font.Color)
+	return v.shape(gtx, s, st, maxW, wrap, gui.TextLabel{Alignment: align})
+}
+
+func (v *View) shape(gtx layout.Context, s string, st *model.Style, maxW int, wrap bool, l gui.TextLabel) (op.CallOp, layout.Dimensions) {
+	p := text.Parameters{
+		Font:    fontFor(st.Font),
+		PxPerEm: fixed.I(gtx.Sp(unit.Sp(st.Font.SizePt * 96 / 72 * v.Zoom))),
+	}
 	m := op.Record(gtx.Ops)
 	g := gtx
 	g.Constraints = layout.Constraints{Max: image.Pt(max(maxW, 1), 1<<20)}
 	if wrap {
 		g.Constraints.Min.X = g.Constraints.Max.X
 	}
-	dims := widget.Label{Alignment: align}.Layout(g, v.Shaper, f, size, s, mat)
+	dims := l.Layout(g, v.Shaper, p, s, st.Font.Color)
 	return m.Stop(), dims
 }
 
@@ -608,6 +668,10 @@ func (v *View) drawEdge(ops *op.Ops, side int, rc image.Rectangle, e model.Edge)
 }
 
 func (v *View) drawSelection(gtx layout.Context, p *pane) {
+	if v.Sel.Multiple() {
+		v.drawMultiSelection(gtx, p)
+		return
+	}
 	ops := gtx.Ops
 	rng := v.Sel.Range
 	if rng.R1 >= p.r1 || rng.R2 < p.r0 || rng.C1 >= p.c1 || rng.C2 < p.c0 {
@@ -646,10 +710,53 @@ func (v *View) drawSelection(gtx layout.Context, p *pane) {
 	gui.FillRect(ops, image.Rect(hp.X-h/2, hp.Y-h/2, hp.X+h/2, hp.Y+h/2), accent)
 }
 
+// drawMultiSelection shades every range of a multiple selection, as
+// Excel does: no outline or fill handle, the active cell left white with
+// a thin border.
+func (v *View) drawMultiSelection(gtx layout.Context, p *pane) {
+	ops := gtx.Ops
+	active := v.cellRect(p, v.Sel.Active.Row, v.Sel.Active.Col)
+	if m, ok := v.Sheet.MergeAt(v.Sel.Active.Row, v.Sel.Active.Col); ok {
+		active = v.rangeRect(p, m)
+	}
+	for _, rng := range v.Sel.Ranges() {
+		if rng.R1 >= p.r1 || rng.R2 < p.r0 || rng.C1 >= p.c1 || rng.C2 < p.c0 {
+			continue
+		}
+		outer := v.rangeRect(p, clampRange(rng, p))
+		for _, r := range []image.Rectangle{
+			{Min: outer.Min, Max: image.Pt(outer.Max.X, active.Min.Y)},
+			{Min: image.Pt(outer.Min.X, active.Max.Y), Max: outer.Max},
+			{Min: image.Pt(outer.Min.X, active.Min.Y), Max: image.Pt(active.Min.X, active.Max.Y)},
+			{Min: image.Pt(active.Max.X, active.Min.Y), Max: image.Pt(outer.Max.X, active.Max.Y)},
+		} {
+			if r.Dx() > 0 && r.Dy() > 0 {
+				gui.FillRect(ops, r.Intersect(outer), selectionFill)
+			}
+		}
+	}
+	if v.Sel.Active.Row >= p.r0 && v.Sel.Active.Row < p.r1 && v.Sel.Active.Col >= p.c0 && v.Sel.Active.Col < p.c1 {
+		t := max(1, int(math.Round(float64(v.pxPerDp))))
+		o := active
+		gui.HLine(ops, o.Min.X-1, o.Max.X, o.Min.Y-1, t, accent)
+		gui.HLine(ops, o.Min.X-1, o.Max.X, o.Max.Y-t, t, accent)
+		gui.VLine(ops, o.Min.X-1, o.Min.Y-1, o.Max.Y, t, accent)
+		gui.VLine(ops, o.Max.X-t, o.Min.Y-1, o.Max.Y, t, accent)
+	}
+}
+
+// clampRange limits r to a little beyond pane p's rows and columns, so
+// that a whole-column range doesn't make a rectangle millions of pixels
+// tall.
+func clampRange(r model.Range, p *pane) model.Range {
+	r.R1, r.R2 = max(r.R1, p.r0-1, 0), min(r.R2, p.r1)
+	r.C1, r.C2 = max(r.C1, p.c0-1, 0), min(r.C2, p.c1)
+	return r
+}
+
 func (v *View) drawHeaders(gtx layout.Context) {
 	ops := gtx.Ops
 	g := v.Geo
-	sel := v.Sel.Range
 	hdrStyle := &model.Style{Font: model.Font{Family: "Segoe UI", SizePt: headerFontSize, Color: headerText}}
 	selStyle := &model.Style{Font: model.Font{Family: "Segoe UI", SizePt: headerFontSize, Color: accent, Bold: true}}
 
@@ -669,7 +776,7 @@ func (v *View) drawHeaders(gtx layout.Context) {
 				}
 				rc := v.cellRect(&p, p.r0, c)
 				rc.Min.Y, rc.Max.Y = 0, v.hdrH
-				on := c >= sel.C1 && c <= sel.C2
+				on := v.Sel.coversCol(c)
 				st := hdrStyle
 				if on {
 					st = selStyle
@@ -692,7 +799,7 @@ func (v *View) drawHeaders(gtx layout.Context) {
 				}
 				rc := v.cellRect(&p, r, p.c0)
 				rc.Min.X, rc.Max.X = 0, v.hdrW
-				on := r >= sel.R1 && r <= sel.R2
+				on := v.Sel.coversRow(r)
 				st := hdrStyle
 				if on {
 					st = selStyle
@@ -828,4 +935,28 @@ func (v *View) CellRect(row, col int) (rc, pane image.Rectangle, ok bool) {
 		}
 	}
 	return rc, pane, false
+}
+
+// RangeRect returns the on-screen rectangle (grid coordinates, from the
+// last Draw) of range r, as far as it is visible: its parts in the panes
+// showing it, joined. ok is false when none of it is in view.
+func (v *View) RangeRect(r model.Range) (rc image.Rectangle, ok bool) {
+	if v.scale == 0 {
+		return rc, false
+	}
+	for _, p := range v.panes() {
+		if r.R1 >= p.r1 || r.R2 < p.r0 || r.C1 >= p.c1 || r.C2 < p.c0 {
+			continue
+		}
+		part := v.rangeRect(&p, clampRange(r, &p)).Intersect(p.clip)
+		if part.Empty() {
+			continue
+		}
+		if !ok {
+			rc, ok = part, true
+		} else {
+			rc = rc.Union(part)
+		}
+	}
+	return rc, ok
 }

@@ -1,6 +1,7 @@
 package formula
 
 import (
+	"strings"
 	"testing"
 
 	"officelite/excel/model"
@@ -150,5 +151,20 @@ func TestQuoteSheet(t *testing.T) {
 		if got := QuoteSheet(in); got != want {
 			t.Errorf("QuoteSheet(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestRefSpans(t *testing.T) {
+	f := `SUM(A1:B2,"C3",Sheet2!$D$4)+LOG10(5)+C:C+'My Sheet'!E5`
+	var got []string
+	for _, s := range RefSpans(f) {
+		got = append(got, f[s.Start:s.End]+"@"+s.Sheet)
+	}
+	want := []string{"A1:B2@", "Sheet2!$D$4@Sheet2", "C:C@", "'My Sheet'!E5@My Sheet"}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Errorf("RefSpans = %q, want %q", got, want)
+	}
+	if r := RefSpans("B2:A1")[0].Range; r.R1 != 0 || r.C1 != 0 || r.R2 != 1 || r.C2 != 1 {
+		t.Errorf("range %+v", r)
 	}
 }

@@ -107,6 +107,10 @@ type App struct {
 	fmtDlg formatDialog // Format Cells (formatdialog.go)
 	askDlg askDialog    // Row Height, Column Width, ... prompts
 	ins    insertState  // Insert, Find & Select and Sort dialogs, fill handle (dialogs.go)
+	cm     ctxMenus     // right-click menus (ctxmenu.go)
+	// fmtRange is the range a formatting command is working on: each of
+	// a multiple selection's in turn (format.go).
+	fmtRange model.Range
 }
 
 // bookSeq numbers new workbooks (Book1, Book2, ...) across windows.
@@ -337,6 +341,9 @@ func (a *App) setWorkbook(wb *model.Workbook) {
 	a.ed.active = false
 	a.rename.active = false
 	a.clip = nil
+	a.cm.grid.Close()
+	a.cm.tabs.Close()
+	a.grid.move, a.grid.pointing = nil, false
 	a.states = map[int]*sheetState{}
 	a.tabBtns = make([]widget.Clickable, len(wb.Sheets))
 	a.active = 0

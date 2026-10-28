@@ -44,6 +44,9 @@ func main() {
 	window := flag.Bool("window", false, "draw the whole window, not just the grid")
 	typed := flag.String("edit", "", "draw the window editing the active cell with this text")
 	ask := flag.Bool("ask", false, "draw the window asking to save changes")
+	sel := flag.String("select", "", "select these ranges first, e.g. B2:C4,E6 (window views)")
+	ctx := flag.String("ctx", "", "draw the window with a right-click menu open: cell, row, col or tab")
+	drag := flag.String("drag", "", "draw the window dragging the selection by its border to this cell")
 	flag.Parse()
 	if flag.NArg() != 1 {
 		flag.Usage()
@@ -92,7 +95,7 @@ func main() {
 		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
 		Constraints: layout.Exact(image.Pt(*w, *h)),
 	}
-	if *page != "" || *menu >= 0 || *window || *typed != "" || *ask {
+	if *page != "" || *menu >= 0 || *window || *typed != "" || *ask || *sel != "" || *ctx != "" || *drag != "" {
 		list := recent.Open("")
 		for _, s := range []string{"Samples/leasing.xls", flag.Arg(0)} {
 			if abs, err := filepath.Abs(s); err == nil {
@@ -102,7 +105,8 @@ func main() {
 		path, _ := filepath.Abs(flag.Arg(0))
 		var router input.Router
 		gtx.Source = router.Source() // enabled widgets, as in a window
-		ui.Preview(gtx, fonts, list, wb, path, ui.PreviewOptions{Page: *page, Menu: *menu, Edit: *typed, Ask: *ask})
+		ui.Preview(gtx, fonts, list, wb, path, ui.PreviewOptions{Page: *page, Menu: *menu, Edit: *typed, Ask: *ask,
+			Select: *sel, Context: *ctx, Drag: *drag})
 	} else {
 		v.Draw(gtx)
 	}

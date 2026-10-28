@@ -59,18 +59,27 @@ func (a *App) formatGrow(f func(st *model.Style)) {
 	}
 }
 
+// formatAt formats every range of the selection; a.fmtRange is the
+// range being formatted, for f.
 func (a *App) formatAt(f func(st *model.Style, row, col int)) {
 	if !a.readyToChange() {
 		return
 	}
-	a.changed(a.book.Format(a.active, a.state().view.Sel.Range, f))
+	var res calc.Result
+	a.eachRange(func(r model.Range) {
+		a.fmtRange = r
+		res = joinResult(res, a.book.Format(a.active, r, f))
+	})
+	a.changed(res)
 }
 
 func (a *App) borders(kind edit.BorderKind) {
 	if !a.readyToChange() {
 		return
 	}
-	a.changed(a.book.Borders(a.active, a.state().view.Sel.Range, kind))
+	var res calc.Result
+	a.eachRange(func(r model.Range) { res = joinResult(res, a.book.Borders(a.active, r, kind)) })
+	a.changed(res)
 }
 
 // setFontColor sets the font color; zero is Automatic (the Normal
@@ -220,6 +229,9 @@ func (a *App) formatKeys(gtx layout.Context) {
 // pasteSpecial pastes the cells copied in this window: all of them, or
 // only their values, formulas or formats.
 func (a *App) pasteSpecial(mode edit.PasteMode) {
+	if !a.singleRange() {
+		return
+	}
 	if mode == edit.PasteAll {
 		a.requestPaste(a.gtx)
 		return
@@ -569,10 +581,11 @@ func (a *App) clearMenu(i int) {
 	if !a.readyToChange() {
 		return
 	}
-	r := a.state().view.Sel.Range
 	switch i {
 	case 0, 1:
-		a.changed(a.book.ClearFormats(a.active, r, i == 0))
+		var res calc.Result
+		a.eachRange(func(r model.Range) { res = joinResult(res, a.book.ClearFormats(a.active, r, i == 0)) })
+		a.changed(res)
 	case 2:
 		a.clearSelection()
 	case 3:

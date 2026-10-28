@@ -47,6 +47,25 @@ type Page struct {
 	// hdrftr.go).
 	Header, Footer      *Band
 	BodyTop, BodyBottom float64
+	// TableRows are the rows of the body's tables placed on the page, for
+	// resizing columns and rows by their borders.
+	TableRows []TableRowBox
+}
+
+// TableRowBox is a table row placed on a page: its top and bottom and the
+// x of each cell edge, left to right, in page coordinates.
+type TableRowBox struct {
+	Table  *model.Table
+	Row    int
+	Y0, Y1 float64
+	Edges  []TableEdge
+}
+
+// TableEdge is a vertical cell border: its x and the grid column
+// boundary it is on (0 is the table's left edge, n its right edge).
+type TableEdge struct {
+	X    float64
+	Grid int
 }
 
 // LineRef points at a placed line.
@@ -516,6 +535,17 @@ func (e *Engine) placeTable(t *model.Table) {
 		pg := e.page
 		var lines []Placed
 		e.emitRow(rows, r, e.textLeft()+x0, e.y, &lines, &pg.Fills, &pg.Rules, t.Borders)
+		box := TableRowBox{Table: t, Row: r, Y0: e.y, Y1: e.y + rb.height}
+		g := 0
+		for i, cb := range rb.cells {
+			x := e.textLeft() + x0 + cb.x
+			if i == 0 {
+				box.Edges = append(box.Edges, TableEdge{X: x, Grid: g})
+			}
+			g += max(cb.cell.Span, 1)
+			box.Edges = append(box.Edges, TableEdge{X: x + cb.w, Grid: g})
+		}
+		pg.TableRows = append(pg.TableRows, box)
 		for _, pl := range lines {
 			e.place(pl)
 		}

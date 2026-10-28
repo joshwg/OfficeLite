@@ -81,7 +81,9 @@ func (a *App) clearNotes() {
 	if !a.commitForCommand() {
 		return
 	}
-	if a.book.ClearNotes(a.active, a.state().view.Sel.Range) {
+	done := false
+	a.eachRange(func(r model.Range) { done = a.book.ClearNotes(a.active, r) || done })
+	if done {
 		a.changed(calc.Result{})
 	}
 }

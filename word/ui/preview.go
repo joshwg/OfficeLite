@@ -15,7 +15,8 @@ import (
 // window, for the wordshot tool. page names a File page ("home", "info",
 // "save as", ...) or is empty for the document; menu >= 0 opens that
 // menu's drop-down; dialog "style" or "close" shows Modify Style or the
-// save prompt.
+// save prompt; "context", "colresize" and "dragtext" show the right-click
+// menu, a table border being dragged and selected text being dragged.
 func Preview(gtx layout.Context, fonts *gui.FontLibrary, list *recent.List, doc *model.Document, path, page string, menu int, dialog string) {
 	d := newWindow(nil, Config{Fonts: fonts, Recent: list})
 	d.setDoc(doc, fonts.Shaper(docFonts(doc)...), docFonts(doc))
@@ -40,6 +41,11 @@ func Preview(gtx layout.Context, fonts *gui.FontLibrary, list *recent.List, doc 
 		d.previewInsert(dialog)
 	case "find", "replace", "goto", "header", "footer", "styles", "newstyle", "paste":
 		d.previewHome(dialog)
+	case "context", "colresize", "dragtext":
+		// These need the page view laid out once to place themselves.
+		d.layout(gtx)
+		gtx.Ops.Reset()
+		d.previewMouse(dialog)
 	}
 	d.layout(gtx)
 }

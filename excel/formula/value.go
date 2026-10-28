@@ -119,11 +119,32 @@ func (r Ref) Contains(row, col int) bool {
 	return row >= r.R1 && row <= r.R2 && col >= r.C1 && col <= r.C2
 }
 
-// Lambda is a function value created by LAMBDA.
+// Lambda is a function value created by LAMBDA, or a worksheet function
+// named without parentheses where a function is expected (Excel's
+// "eta-reduced" lambda: BYROW(A1:B3,SUM), GROUPBY(A2:A9,B2:B9,AVERAGE)).
 type Lambda struct {
 	Params []string // upper-case
 	Body   Node
 	scope  *scope
+
+	Func *Spec // the worksheet function, for an eta-reduced lambda
+}
+
+// Name is the function's name for an eta-reduced lambda ("SUM"), otherwise
+// "LAMBDA".
+func (l *Lambda) Name() string {
+	if l.Func != nil {
+		return l.Func.Name
+	}
+	return "LAMBDA"
+}
+
+// Accepts reports whether the lambda can be called with n arguments.
+func (l *Lambda) Accepts(n int) bool {
+	if l.Func != nil {
+		return n >= l.Func.Min && (l.Func.Max == Variadic || n <= l.Func.Max)
+	}
+	return n <= len(l.Params)
 }
 
 // --- coercion -----------------------------------------------------------

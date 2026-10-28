@@ -37,7 +37,7 @@ type token struct {
 }
 
 // prefixes Excel writes in files for functions and names added after 2007.
-var futurePrefixes = []string{"_XLFN._XLWS.", "_XLFN.", "_XLWS.", "_XLPM.", "_XLUDF."}
+var futurePrefixes = []string{"_XLFN._XLWS.", "_XLFN.", "_XLWS.", "_XLPM.", "_XLUDF.", "_XLETA."}
 
 func stripPrefixes(s string) string {
 	for again := true; again; {

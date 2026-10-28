@@ -97,6 +97,59 @@ var futureFuncs = func() map[string]string {
 	return m
 }()
 
+// classicFuncs are the worksheet functions older than Excel 2010 (those
+// with a BIFF8 id, the Analysis ToolPak and the Excel 2007 additions).
+// N and T are left out: as bare names they are more likely defined names.
+var classicFuncs = strings.Fields(`
+	ABS ACCRINT ACCRINTM ACOS ACOSH ADDRESS AMORDEGRC AMORLINC AND AREAS ASC ASIN ASINH ATAN
+	ATAN2 ATANH AVEDEV AVERAGE AVERAGEA AVERAGEIF AVERAGEIFS BAHTTEXT BESSELI BESSELJ BESSELK
+	BESSELY BETADIST BETAINV BIN2DEC BIN2HEX BIN2OCT BINOMDIST CEILING CELL CHAR CHIDIST CHIINV
+	CHITEST CHOOSE CLEAN CODE COLUMN COLUMNS COMBIN COMPLEX CONCATENATE CONFIDENCE CONVERT
+	CORREL COS COSH COUNT COUNTA COUNTBLANK COUNTIF COUNTIFS COUPDAYBS COUPDAYS COUPDAYSNC
+	COUPNCD COUPNUM COUPPCD COVAR CRITBINOM CUMIPMT CUMPRINC DATE DATEDIF DATEVALUE DAVERAGE
+	DAY DAYS360 DB DBCS DCOUNT DCOUNTA DDB DEC2BIN DEC2HEX DEC2OCT DEGREES DELTA DEVSQ DGET
+	DISC DMAX DMIN DOLLAR DOLLARDE DOLLARFR DPRODUCT DSTDEV DSTDEVP DSUM DURATION DVAR DVARP
+	EDATE EFFECT EOMONTH ERF ERFC ERROR.TYPE EVEN EXACT EXP EXPONDIST FACT FACTDOUBLE FDIST
+	FIND FINDB FINV FISHER FISHERINV FIXED FLOOR FORECAST FREQUENCY FTEST FV FVSCHEDULE
+	GAMMADIST GAMMAINV GAMMALN GCD GEOMEAN GESTEP GETPIVOTDATA GROWTH HARMEAN HEX2BIN HEX2DEC
+	HEX2OCT HLOOKUP HOUR HYPERLINK HYPGEOMDIST IF IFERROR IMABS IMAGINARY IMARGUMENT
+	IMCONJUGATE IMCOS IMDIV IMEXP IMLN IMLOG10 IMLOG2 IMPOWER IMPRODUCT IMREAL IMSIN IMSQRT
+	IMSUB IMSUM INDEX INDIRECT INFO INT INTERCEPT INTRATE IPMT IRR ISBLANK ISERR ISERROR
+	ISEVEN ISLOGICAL ISNA ISNONTEXT ISNUMBER ISODD ISPMT ISREF ISTEXT KURT LARGE LCM LEFT
+	LEFTB LEN LENB LINEST LN LOG LOG10 LOGEST LOGINV LOGNORMDIST LOOKUP LOWER MATCH MAX MAXA
+	MDETERM MDURATION MEDIAN MID MIDB MIN MINA MINUTE MINVERSE MIRR MMULT MOD MODE MONTH
+	MROUND MULTINOMIAL NA NEGBINOMDIST NETWORKDAYS NOMINAL NORMDIST NORMINV NORMSDIST NORMSINV
+	NOT NOW NPER NPV OCT2BIN OCT2DEC OCT2HEX ODD ODDFPRICE ODDFYIELD ODDLPRICE ODDLYIELD OFFSET
+	OR PEARSON PERCENTILE PERCENTRANK PERMUT PHONETIC PI PMT POISSON POWER PPMT PRICE
+	PRICEDISC PRICEMAT PROB PRODUCT PROPER PV QUARTILE QUOTIENT RADIANS RAND RANDBETWEEN RANK
+	RATE RECEIVED REPLACE REPLACEB REPT RIGHT RIGHTB ROMAN ROUND ROUNDDOWN ROUNDUP ROW ROWS
+	RSQ RTD SEARCH SEARCHB SECOND SERIESSUM SIGN SIN SINH SKEW SLN SLOPE SMALL SQRT SQRTPI
+	STANDARDIZE STDEV STDEVA STDEVP STDEVPA STEYX SUBSTITUTE SUBTOTAL SUM SUMIF SUMIFS
+	SUMPRODUCT SUMSQ SUMX2MY2 SUMX2PY2 SUMXMY2 SYD TAN TANH TBILLEQ TBILLPRICE TBILLYIELD TDIST
+	TEXT TIME TIMEVALUE TINV TODAY TRANSPOSE TREND TRIM TRIMMEAN TRUNC TTEST TYPE UPPER
+	USDOLLAR VALUE VAR VARA VARP VARPA VDB VLOOKUP WEEKDAY WEEKNUM WEIBULL WORKDAY XIRR XNPV
+	YEAR YEARFRAC YIELD YIELDDISC YIELDMAT ZTEST`)
+
+// lambdaTakers are the functions with function arguments.
+var lambdaTakers = map[string]bool{
+	"BYROW": true, "BYCOL": true, "MAP": true, "REDUCE": true, "SCAN": true, "MAKEARRAY": true,
+	"GROUPBY": true, "PIVOTBY": true,
+}
+
+// etaFuncs are the function names that, written alone as a name (an
+// eta-reduced lambda: GROUPBY(A2:A9,B2:B9,SUM)), Excel stores with the
+// "_xleta." prefix.
+var etaFuncs = func() map[string]bool {
+	m := map[string]bool{}
+	for f := range futureFuncs {
+		m[f] = true
+	}
+	for _, f := range classicFuncs {
+		m[f] = true
+	}
+	return m
+}()
+
 // FuturePrefix returns the prefix Excel writes in files before the
 // function name (upper case, without prefixes): "_xlfn.", "_xlfn._xlws."
 // or "" for functions every file format knows.
@@ -104,7 +157,8 @@ func FuturePrefix(name string) string { return futureFuncs[name] }
 
 // AddFuturePrefixes adds the prefixes Excel requires in files to formula
 // text typed without them: =XLOOKUP(...) is stored as _xlfn.XLOOKUP(...),
-// and LET and LAMBDA variables get "_xlpm.". Prefixes already present are
+// LET and LAMBDA variables get "_xlpm." and function names used as values
+// (eta-reduced lambdas, =BYROW(A1:B3,SUM)) "_xleta.". Prefixes already present are
 // kept. Text that does not lex is returned unchanged.
 func AddFuturePrefixes(f string) string {
 	toks, err := Tokens(f)
@@ -119,17 +173,38 @@ func AddFuturePrefixes(f string) string {
 		arg  int
 		toks int // tokens in the current argument
 	}
+	// Function names used as values: a name that is a whole argument of a
+	// function taking a function (or of HSTACK/VSTACK inside GROUPBY or
+	// PIVOTBY, which take vectors of functions). Elsewhere a bare name such
+	// as Rate is taken to be a defined name.
+	eta := map[int]bool{}
 	var stack []frame
+	endArg := func(i int) {
+		n := len(stack)
+		if n == 0 || stack[n-1].toks != 1 || toks[i-1].Kind != TokName || toks[i-1].Sheet != "" {
+			return
+		}
+		fr := stack[n-1]
+		switch {
+		case fr.fn == "LAMBDA" || fr.fn == "LET" && fr.arg%2 == 0:
+			if t := toks[i]; t.Kind == TokComma {
+				params[strings.ToUpper(toks[i-1].Text)] = true
+			}
+		case lambdaTakers[fr.fn]:
+			eta[i-1] = true
+		case (fr.fn == "HSTACK" || fr.fn == "VSTACK") && n > 1 &&
+			(stack[n-2].fn == "GROUPBY" || stack[n-2].fn == "PIVOTBY"):
+			eta[i-1] = true
+		}
+	}
 	for i, t := range toks {
+		if t.Kind == TokComma || t.Kind == TokRParen {
+			endArg(i)
+		}
 		if t.Kind == TokComma {
 			if n := len(stack); n > 0 {
-				fr := &stack[n-1]
-				if fr.toks == 1 && toks[i-1].Kind == TokName && toks[i-1].Sheet == "" &&
-					(fr.fn == "LAMBDA" || fr.fn == "LET" && fr.arg%2 == 0) {
-					params[strings.ToUpper(toks[i-1].Text)] = true
-				}
-				fr.arg++
-				fr.toks = 0
+				stack[n-1].arg++
+				stack[n-1].toks = 0
 			}
 			continue
 		}
@@ -155,7 +230,7 @@ func AddFuturePrefixes(f string) string {
 
 	var b strings.Builder
 	last, changed := 0, false
-	for _, t := range toks {
+	for i, t := range toks {
 		raw := f[t.Pos:t.End]
 		prefix := ""
 		switch t.Kind {
@@ -164,8 +239,13 @@ func AddFuturePrefixes(f string) string {
 				prefix = futureFuncs[t.Text]
 			}
 		case TokName:
-			if t.Sheet == "" && stripPrefixes(raw) == raw && params[strings.ToUpper(t.Text)] {
+			up := strings.ToUpper(t.Text)
+			switch {
+			case t.Sheet != "" || stripPrefixes(raw) != raw:
+			case params[up]:
 				prefix = "_xlpm."
+			case eta[i] && etaFuncs[up]:
+				prefix = "_xleta."
 			}
 		}
 		if prefix != "" {

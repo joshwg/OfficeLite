@@ -55,5 +55,13 @@ func TestLogical(t *testing.T) {
 		{"=BYCOL({1,2;3,4},LAMBDA(c,REDUCE(1,c,LAMBDA(a,v,a*v))))", ftest.Arr{{3.0, 8.0}}},
 		{"=MAKEARRAY(2,3,LAMBDA(r,c,r*10+c))", ftest.Arr{{11.0, 12.0, 13.0}, {21.0, 22.0, 23.0}}},
 		{"=BYROW({1,2;3,4},LAMBDA(r,r))", ftest.Arr{{f.ErrCalc}, {f.ErrCalc}}},
+		// Functions named as values (eta-reduced lambdas).
+		{"=BYROW({TRUE,FALSE;TRUE,TRUE},AND)", ftest.Arr{{false}, {true}}},
+		{"=MAP({TRUE,FALSE},NOT)", ftest.Arr{{false, true}}},
+		{"=REDUCE(FALSE,{FALSE,TRUE},OR)", true},
+		{"=SCAN(FALSE,{TRUE,TRUE},XOR)", ftest.Arr{{true, false}}},
+		{"=MAP({1,2},NOT,NOT)", ftest.Arr{{f.ErrValue, f.ErrValue}}}, // NOT takes one argument
+		{"=MAP({1,2},IF)", f.ErrName},                                // IF is not a function value
+		{"=AND", f.ErrCalc},
 	})
 }

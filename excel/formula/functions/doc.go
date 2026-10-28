@@ -2,16 +2,21 @@
 // lives in its own subpackage with a Register(*formula.Registry) function:
 //
 //	logical/    IF, IFS, SWITCH, IFERROR, AND, ... MAP, REDUCE, BYROW, ...
+//	database/   DSUM, DAVERAGE, DCOUNT, DGET, ... (criteria ranges)
 //	datetime/   DATE, EDATE, NETWORKDAYS, YEARFRAC, ...
 //	financial/  FV, NPV, PMT
 //	info/       ISBLANK, ISNUMBER, CELL, TYPE, ...
-//	lookup/     XLOOKUP, FILTER, UNIQUE, VLOOKUP, INDEX, MATCH, ...
+//	lookup/     XLOOKUP, FILTER, UNIQUE, VLOOKUP, INDEX, MATCH, OFFSET, ...
+//	            (and the array-shaping TAKE, DROP, VSTACK, TOCOL, ...,
+//	            TRIMRANGE, GROUPBY and PIVOTBY)
 //	mathtrig/   SUM, SUMIFS, ROUND, SUBTOTAL, AGGREGATE, SEQUENCE, ...
-//	            (plus the statistics SUBTOTAL/AGGREGATE need: COUNT,
-//	            COUNTA, COUNTIFS, AVERAGE, MIN, MAX, MEDIAN, STDEV, ...)
+//	            (and the statistical functions: COUNT, COUNTIFS, AVERAGE,
+//	            MEDIAN, STDEV, RANK, CORREL, LINEST, NORM.DIST, T.TEST, ...)
 //	text/       LEFT, TEXT, TEXTBEFORE, TEXTSPLIT, REGEXEXTRACT, ...
 //
-// LET and LAMBDA are built into the evaluator (excel/formula).
+// LET and LAMBDA are built into the evaluator (excel/formula), as are
+// functions named as values (eta-reduced lambdas: BYROW(A1:B3,SUM)); a
+// function taking a lambda calls either kind with e.CallLambda.
 //
 // # Conventions for function implementations
 //
@@ -56,7 +61,8 @@
 // may return an *Array; the cell spills it.
 //
 // Other services: e.Now(), e.Date1904(), e.Rand(), e.CallLambda(fn,
-// args...), e.Ctx (sheet names, formulas, used size), f.Compare / f.Equal
+// args...), e.Ctx (sheet names, formulas, used size), e.Reference (text
+// to a reference, as INDIRECT reads it), f.Compare / f.Equal
 // (Excel ordering: numbers < text < booleans, text case-insensitive),
 // f.ParseCriteria(v).Match(x), f.WildcardMatch, f.ParseNumber,
 // f.ParseDateTime, f.DateSerial, f.SerialToYMD, f.SerialToTime,

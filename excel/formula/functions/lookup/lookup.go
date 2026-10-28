@@ -1,7 +1,9 @@
 // Package lookup implements Excel's lookup and reference functions:
 // XLOOKUP, XMATCH, VLOOKUP, HLOOKUP, LOOKUP, MATCH, INDEX, CHOOSE, ROW,
-// ROWS, COLUMN, COLUMNS, ADDRESS, TRANSPOSE and the dynamic-array
-// functions FILTER, UNIQUE, SORT and SORTBY.
+// ROWS, COLUMN, COLUMNS, ADDRESS, OFFSET, INDIRECT, TRANSPOSE and the
+// dynamic-array functions FILTER, UNIQUE, SORT, SORTBY, GROUPBY and PIVOTBY
+// and the array-shaping CHOOSECOLS, CHOOSEROWS, TAKE, DROP, EXPAND, HSTACK,
+// VSTACK, TOCOL, TOROW, WRAPCOLS, WRAPROWS and TRIMRANGE.
 package lookup
 
 import (
@@ -36,11 +38,47 @@ func Register(r *f.Registry) {
 			return count(a[0], false)
 		}},
 		f.Spec{Name: "ADDRESS", Min: 2, Max: 5, Fn: address},
+		f.Spec{Name: "OFFSET", Min: 3, Max: 5, Refs: f.Only(0), Arrays: f.Only(0), Volatile: true, Fn: offset},
+		f.Spec{Name: "INDIRECT", Min: 1, Max: 2, Volatile: true, Fn: indirect},
 		f.Spec{Name: "TRANSPOSE", Min: 1, Max: 1, Arrays: f.All, Fn: transpose},
 		f.Spec{Name: "FILTER", Min: 2, Max: 3, Arrays: f.All, Fn: filter},
 		f.Spec{Name: "UNIQUE", Min: 1, Max: 3, Arrays: f.All, Fn: unique},
 		f.Spec{Name: "SORT", Min: 1, Max: 4, Arrays: f.All, Fn: sortFn},
 		f.Spec{Name: "SORTBY", Min: 2, Max: f.Variadic, Arrays: f.All, Fn: sortBy},
+		f.Spec{Name: "CHOOSECOLS", Min: 2, Max: f.Variadic, Arrays: f.All, Fn: func(e *f.Env, a []f.Value) f.Value {
+			return chooseLines(e, a, false)
+		}},
+		f.Spec{Name: "CHOOSEROWS", Min: 2, Max: f.Variadic, Arrays: f.All, Fn: func(e *f.Env, a []f.Value) f.Value {
+			return chooseLines(e, a, true)
+		}},
+		f.Spec{Name: "TAKE", Min: 2, Max: 3, Refs: f.Only(0), Arrays: f.Only(0), Fn: func(e *f.Env, a []f.Value) f.Value {
+			return takeDrop(e, a, true)
+		}},
+		f.Spec{Name: "DROP", Min: 2, Max: 3, Refs: f.Only(0), Arrays: f.Only(0), Fn: func(e *f.Env, a []f.Value) f.Value {
+			return takeDrop(e, a, false)
+		}},
+		f.Spec{Name: "EXPAND", Min: 2, Max: 4, Arrays: f.Only(0), Fn: expand},
+		f.Spec{Name: "HSTACK", Min: 1, Max: f.Variadic, Arrays: f.All, Fn: func(e *f.Env, a []f.Value) f.Value {
+			return stack(e, a, false)
+		}},
+		f.Spec{Name: "VSTACK", Min: 1, Max: f.Variadic, Arrays: f.All, Fn: func(e *f.Env, a []f.Value) f.Value {
+			return stack(e, a, true)
+		}},
+		f.Spec{Name: "TOCOL", Min: 1, Max: 3, Arrays: f.Only(0), Fn: func(e *f.Env, a []f.Value) f.Value {
+			return flatten(e, a, true)
+		}},
+		f.Spec{Name: "TOROW", Min: 1, Max: 3, Arrays: f.Only(0), Fn: func(e *f.Env, a []f.Value) f.Value {
+			return flatten(e, a, false)
+		}},
+		f.Spec{Name: "WRAPROWS", Min: 2, Max: 3, Arrays: f.Only(0), Fn: func(e *f.Env, a []f.Value) f.Value {
+			return wrap(e, a, true)
+		}},
+		f.Spec{Name: "WRAPCOLS", Min: 2, Max: 3, Arrays: f.Only(0), Fn: func(e *f.Env, a []f.Value) f.Value {
+			return wrap(e, a, false)
+		}},
+		f.Spec{Name: "GROUPBY", Min: 3, Max: 8, Arrays: f.All, Fn: groupBy},
+		f.Spec{Name: "PIVOTBY", Min: 4, Max: 11, Arrays: f.All, Fn: pivotBy},
+		f.Spec{Name: "TRIMRANGE", Min: 1, Max: 3, Refs: f.Only(0), Arrays: f.Only(0), Fn: trimRange},
 	)
 }
 

@@ -465,6 +465,9 @@ func compileFormula(ctx fmlaContext, src string, sheet int, name bool) (rgce, ex
 		// Excel does not evaluate LET and LAMBDA variables read from .xls.
 		return nil, nil, errors.New("LET and LAMBDA cannot be saved in .xls")
 	}
+	if usesEta(src) {
+		return nil, nil, errors.New("functions used as values (GROUPBY(...,SUM)) cannot be saved in .xls")
+	}
 	root := byte('V')
 	if name {
 		root = 'R'
@@ -824,6 +827,19 @@ func appendString(b []byte, s string) []byte {
 func appendShortString(b []byte, s string) []byte {
 	b = append(b, byte(strLen(s)))
 	return appendChars(b, s)
+}
+
+// usesEta reports whether the formula names a function as a value (an
+// eta-reduced lambda, GROUPBY(A1:A9,B1:B9,SUM), _xleta.SUM in files).
+func usesEta(src string) bool {
+	src = formula.AddFuturePrefixes(src)
+	toks, _ := formula.Tokens(src)
+	for _, t := range toks {
+		if t.Kind == formula.TokName && strings.HasPrefix(strings.ToUpper(src[t.Pos:t.End]), "_XLETA.") {
+			return true
+		}
+	}
+	return false
 }
 
 // usesLambda reports whether the formula calls LET or LAMBDA.

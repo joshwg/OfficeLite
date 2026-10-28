@@ -48,6 +48,40 @@ var xlsFormulas = []string{
 	`LEN(REPT("x",300))`,
 	"_xlfn._xlws.FILTER(A1:A3,A1:A3>1)",
 	"SUM(A1:A3*2)",
+	"OFFSET(A1,1,0)",
+	"SUM(OFFSET(A1,0,0,3,1))",
+	"SUM(A1:OFFSET(A1,2,0))",
+	`INDIRECT("Other!B"&2)`,
+	`SUM(INDIRECT("R1C1:R3C1",FALSE))`,
+	"RANK(A2,A1:A3)",
+	"RANK(A2,A1:A3,1)",
+	"TDIST(1.5,10,2)",
+	"NORMDIST(A1,2,1,TRUE)",
+	"CORREL(A1:A3,A1:A3)",
+	"INDEX(LINEST(A1:A3,,TRUE,TRUE),3,1)",
+	"PERCENTRANK(A1:A3,2)",
+	"BETADIST(0.5,2,3)",
+	"_xlfn.NORM.S.DIST(A1,TRUE)",
+	"_xlfn.T.TEST(A1:A3,A1:A3,2,1)",
+	"_xlfn.PERCENTRANK.INC(A1:A3,2)",
+	"_xlfn.BINOM.DIST.RANGE(10,0.5,3,5)",
+	"_xlfn.FORECAST.LINEAR(4,A1:A3,A1:A3)+_xlfn.GAMMA(2.5)",
+	"PV(0.08/12,240,500)+NPER(0.01,-100,-1000)+RATE(48,-200,8000,0,0,0.1)",
+	"IPMT(0.1,1,3,8000)+PPMT(0.1,1,3,8000,0,1)+ISPMT(0.1,1,3,8000)",
+	"IRR(A1:A3,-0.1)+MIRR(A1:A3,0.1,0.12)",
+	"SLN(30000,7500,10)+SYD(30000,7500,10,1)+DB(1000000,100000,6,1,7)+DDB(2400,300,10,2,1.5)",
+	"VDB(2400,300,10,0,0.875,1.5,TRUE)",
+	"XNPV(0.09,A1:A3,A1:A3)+XIRR(A1:A3,A1:A3,0.1)",
+	"CUMIPMT(0.0075,360,125000,13,24,0)+CUMPRINC(0.0075,360,125000,13,24,0)",
+	"EFFECT(0.0525,4)+NOMINAL(0.05,4)+FVSCHEDULE(1,{0.09,0.11})",
+	"DOLLARDE(1.02,16)+DOLLARFR(1.125,16)+TBILLEQ(39538,39600,0.0914)+TBILLPRICE(39538,39600,0.09)+TBILLYIELD(39538,39600,98.45)",
+	"_xlfn.PDURATION(0.025,2000,2200)+_xlfn.RRI(96,10000,11000)",
+	"SUM(_xlfn.TAKE(A1:A3,2))+SUM(_xlfn.DROP(A1:B3,-1,1))+COUNTA(_xlfn.VSTACK(A1,B1),_xlfn.HSTACK(A2:A3,B2))",
+	"ROWS(_xlfn.TRIMRANGE(A:A))+SUM(_xlfn.CHOOSECOLS(A1:B3,-1))+SUM(_xlfn.CHOOSEROWS(A1:B3,{1,3}))",
+	`DSUM(A1:B3,"x",A1:A2)+DAVERAGE(A1:B3,2,A1:A2)+DCOUNT(A1:B3,,A1:A2)+DCOUNTA(A1:B3,1,A1:A2)`,
+	`DGET(A1:B3,2,A1:A2)+DMAX(A1:B3,2,A1:A2)+DMIN(A1:B3,2,A1:A2)+DPRODUCT(A1:B3,2,A1:A2)`,
+	`DSTDEV(A1:B3,2,A1:A2)+DSTDEVP(A1:B3,2,A1:A2)+DVAR(A1:B3,2,A1:A2)+DVARP(A1:B3,2,A1:A2)`,
+	"SUM(_xlfn.EXPAND(A1:A2,3,2,0))+SUM(_xlfn.WRAPROWS(_xlfn.TOROW(A1:A3,1),2,0))+SUM(_xlfn.WRAPCOLS(_xlfn.TOCOL(A1:B3,3,TRUE),4,0))",
 }
 
 // buildXLSWorkbook makes a workbook with what a .xls file holds: values,
@@ -185,6 +219,11 @@ func TestXLSSamples(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			for _, sh := range want.Sheets {
+				if len(sh.Spills) > 0 {
+					t.Skip("dynamic arrays, which .xls cannot hold")
+				}
+			}
 			if fits := Fits(want, XLS); len(fits) != 0 {
 				t.Errorf("Fits = %q", fits)
 			}
@@ -204,9 +243,11 @@ func TestXLSFits(t *testing.T) {
 	sh.Spills[[2]int{1, 0}] = model.Range{R1: 1, C1: 0, R2: 3, C2: 0}
 	sh.Set(2, 0, model.Cell{Formula: "1+1", Kind: model.KindNumber, Num: 2, Text: "2", Dynamic: true}) // typed, no spill
 	sh.Set(4, 0, model.Cell{Formula: "_xlfn.LET(_xlpm.x,2,_xlpm.x*3)", Kind: model.KindNumber, Num: 6, Text: "6"})
+	sh.Set(5, 0, model.Cell{Formula: "INDEX(GROUPBY(B1:B3,C1:C3,SUM,0,0),1,2)", Kind: model.KindNumber, Num: 6, Text: "6"})
 	fits := Fits(wb, XLS)
-	want := []string{"will be named", "cells beyond row 65,536", "A1 (=SUM(A1:A70000)", "A5 (=_xlfn.LET", ": 1 dynamic-array"}
-	if len(fits) != len(want)-1 { // A1 and A5 are one item
+	want := []string{"will be named", "cells beyond row 65,536", "A1 (=SUM(A1:A70000)", "A5 (=_xlfn.LET",
+		"A6 (=INDEX(GROUPBY(B1:B3,C1:C3,SUM,0,0),1,2): functions used as values", ": 1 dynamic-array"}
+	if len(fits) != len(want)-2 { // A1, A5 and A6 are one item
 		t.Errorf("Fits = %q", fits)
 	}
 	for _, w := range want {
@@ -232,6 +273,9 @@ func TestXLSFits(t *testing.T) {
 	}
 	if c := sh2.Get(0, 0); c.Formula != "" || c.Num != 3 {
 		t.Errorf("A1 = %+v, want the value 3 without its formula", c)
+	}
+	if c := sh2.Get(5, 0); c.Formula != "" || c.Num != 6 {
+		t.Errorf("A6 = %+v, want the value 6 without its formula", c)
 	}
 	if c := sh2.Get(1, 0); c.Formula != "_xlfn.SEQUENCE(3)" || c.Dynamic {
 		t.Errorf("A2 = %+v, want an ordinary formula", c)

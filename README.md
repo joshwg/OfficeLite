@@ -9,7 +9,7 @@ Lightweight, macro-free Office apps in Go. MIT licensed. Version 0.7.0.1
   sheets. Up to 256K rows × 2K columns per sheet. Cells can be edited as in
   Excel (see Editing below), formatted from a Home ribbon, and saved back as
   `.xlsx`, `.xls`, `.csv` or tab-delimited text, or exported to PDF.
-  A calculation engine (255 functions) computes formulas that have no stored
+  A calculation engine (416 functions) computes formulas that have no stored
   value on open, and recalculates everything with F9.
 - **WordLite** (working): opens, edits and saves `.docx`, `.doc` (Word
   97-2003) and `.txt` in a page view with Word's styles: style gallery,
@@ -237,15 +237,31 @@ leaves header/footer editing, the find bar or the Format Painter.
 
 `excel/formula` parses and evaluates formulas with Excel's semantics: type
 coercion, dynamic arrays (element-wise "lifting", spilling, `A1#`), LET and
-LAMBDA, defined names, criteria (`">=5"`, wildcards), 1900/1904 dates.
+LAMBDA, functions named as values (`BYROW(A1:C9,SUM)`), defined names,
+criteria (`">=5"`, wildcards), 1900/1904 dates.
 `excel/calc` recalculates a workbook in dependency order, detects circular
 references and reports `#SPILL!`. Functions, by category
 (`excel/formula/functions/*`): date & time, information, logical (incl.
-MAP/REDUCE/SCAN/BYROW/BYCOL/MAKEARRAY), math & trig, statistics used by
-SUBTOTAL/AGGREGATE (COUNT, COUNTA, COUNTIFS, AVERAGE, ...), text (incl.
+MAP/REDUCE/SCAN/BYROW/BYCOL/MAKEARRAY), math & trig, statistics
+(COUNT, COUNTIFS, AVERAGE, MEDIAN, STDEV, PERCENTILE, RANK, PERCENTRANK,
+FREQUENCY, KURT, SKEW, TRIMMEAN, CORREL, COVARIANCE, SLOPE, FORECAST,
+LINEST/LOGEST with statistics, TREND/GROWTH; the normal, t, χ², F,
+binomial, Poisson, gamma, beta, lognormal, Weibull, hypergeometric and
+negative binomial distributions with their inverses; T.TEST, F.TEST,
+CHISQ.TEST, Z.TEST, CONFIDENCE, PROB, and the pre-2010 names such as NORMDIST
+and TDIST), text (incl.
 REGEX*, TEXTSPLIT), lookup (XLOOKUP, FILTER, UNIQUE, SORT, VLOOKUP, INDEX,
-MATCH, ...) and FV/NPV/PMT. STOCKHISTORY, TRANSLATE and DETECTLANGUAGE need
-Microsoft's online services and return `#CONNECT!`.
+MATCH, OFFSET, INDIRECT, ...; the array-shaping CHOOSECOLS, CHOOSEROWS,
+TAKE, DROP, EXPAND, HSTACK, VSTACK, TOCOL, TOROW, WRAPCOLS, WRAPROWS and
+TRIMRANGE; GROUPBY and PIVOTBY with totals, subtotals, sorting, filtering
+and several functions) and financial (PV, FV, PMT, NPER, RATE,
+IPMT, PPMT, CUMIPMT, CUMPRINC, ISPMT; NPV, IRR, XNPV, XIRR, MIRR,
+FVSCHEDULE, EFFECT, NOMINAL, RRI, PDURATION; SLN, SYD, DB, DDB, VDB;
+DOLLARDE, DOLLARFR and the T-bill functions) and database (DSUM, DAVERAGE,
+DCOUNT, DCOUNTA, DGET, DMAX, DMIN, DPRODUCT, DSTDEV(P), DVAR(P) with
+criteria ranges: AND across a row, OR down rows, Advanced Filter's
+begins-with text, and computed criteria formulas). STOCKHISTORY, TRANSLATE and
+DETECTLANGUAGE need Microsoft's online services and return `#CONNECT!`.
 
 `calccheck` recalculates workbooks and diffs the results against the values
 Excel saved — any real workbook becomes a test:
@@ -341,7 +357,9 @@ the glyph outlines. `OFFICELITE_TEXT=gio` turns DirectWrite off; see
 ## Not yet supported
 
 No macros (VBA is never run; `.xlsm`/`.docm` macros are dropped on save, with
-a warning) and no functions beyond the 255 implemented.
+a warning) and no functions beyond the 416 implemented (FORECAST.ETS and its
+relatives, exponential smoothing, and the bond/coupon functions such as
+PRICE, YIELD, COUPNCD, ACCRINT and DURATION are among those missing).
 
 Both apps: direct printing (Print goes through a PDF opened in the default
 viewer), PDF paper is Letter only (no page setup is read), password-protected
@@ -353,6 +371,8 @@ ExcelLite:
   note text), row/column default styles, rich text runs within a cell.
   Rotated text is kept but drawn flat.
 - Calculation: 3-D references (`Sheet1:Sheet3!A1`) and union references,
+  the trim-reference operators (`A1:.A10`, `A1.:A10`, `A1.:.A10`; TRIMRANGE
+  does the same),
   hidden-row awareness in SUBTOTAL/AGGREGATE, PCRE-only regex features (Go's
   RE2 is used); STOCKHISTORY/TRANSLATE/DETECTLANGUAGE return `#CONNECT!`.
 - Editing: references can't be picked with the mouse while typing a
@@ -373,7 +393,8 @@ ExcelLite:
   charts/images.
 - `.xls` save: BIFF8 limits (65,536 × 256, 4,000 styles); dynamic arrays
   that spill become ordinary formulas (Excel shows `=@...`); LET/LAMBDA
-  formulas and references to other workbooks are saved as values only.
+  formulas, functions named as values (`GROUPBY(...,SUM)`) and references
+  to other workbooks are saved as values only.
   `fileio.Fits` lists what won't fit before saving.
 
 WordLite:

@@ -58,6 +58,29 @@ func ParseCriteria(v Value) Criteria {
 	return c
 }
 
+// ParseDatabaseCriteria interprets a condition cell of a database
+// function's criteria range (DSUM, DCOUNT ...). It differs from
+// ParseCriteria in two ways: a blank cell is no condition at all (ok is
+// false; the cell matches every record), and text without a comparison
+// operator matches text that begins with it, as in Advanced Filter: "Ap"
+// is "Ap*" while "=Ap" is an exact match.
+func ParseDatabaseCriteria(v Value) (c Criteria, ok bool) {
+	switch x := v.(type) {
+	case Blank, Missing:
+		return Criteria{}, false
+	case String:
+		if x == "" {
+			return Criteria{}, false
+		}
+	}
+	c = ParseCriteria(v)
+	if s, isText := v.(String); isText && c.op == "=" && !strings.HasPrefix(string(s), "=") &&
+		!c.isNum && c.boolean == nil && c.err == "" && !c.empty {
+		c.text += "*"
+	}
+	return c, true
+}
+
 // Match reports whether a cell value satisfies the criteria.
 func (c Criteria) Match(v Value) bool {
 	switch {

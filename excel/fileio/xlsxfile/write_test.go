@@ -73,6 +73,23 @@ func buildModel() *model.Workbook {
 
 	second := model.NewSheet("Second")
 	second.Set(0, 0, model.Cell{Formula: "Data!A2", Num: 1234.5, Text: "1234.5", Kind: model.KindNumber})
+	second.Set(1, 0, model.Cell{Formula: "SUM(OFFSET(Data!A2,0,0,1,2))", Num: 1234.75, Text: "1234.75", Kind: model.KindNumber})
+	second.Set(2, 0, model.Cell{Formula: `INDIRECT("Data!B2")`, Num: 0.25, Text: "0.25", Kind: model.KindNumber, Dynamic: true})
+	second.Set(3, 0, model.Cell{Formula: "OFFSET(Data!A2,0,0,1,2)", Num: 1234.5, Text: "1234.5", Kind: model.KindNumber, Dynamic: true})
+	second.Set(3, 1, model.Cell{Num: 0.25, Text: "0.25", Kind: model.KindNumber})
+	second.Spills[[2]int{3, 0}] = model.Range{R1: 3, C1: 0, R2: 3, C2: 1}
+	second.Set(4, 0, model.Cell{Formula: "NORM.S.DIST(0,TRUE)+NORMSDIST(0)+T.TEST(A1:A3,B1:B3,2,1)", Num: 2, Text: "2", Kind: model.KindNumber})
+	second.Set(5, 0, model.Cell{Formula: "PDURATION(0.025,2000,2200)+RRI(96,10000,11000)+PV(0.1,1,-110)+XNPV(0.1,A1:A2,B1:B2)", Num: 1, Text: "1", Kind: model.KindNumber})
+	second.Set(6, 0, model.Cell{Formula: "SUM(TAKE(A1:A3,2))+ROWS(DROP(A1:B3,1))+COUNTA(VSTACK(A1,B1),HSTACK(A2,B2))+SUM(EXPAND(A1,2,2,0))", Num: 1, Text: "1", Kind: model.KindNumber})
+	second.Set(7, 0, model.Cell{Formula: "ROWS(TRIMRANGE(A:A))+SUM(WRAPROWS(TOROW(A1:A3),2,0))+SUM(WRAPCOLS(TOCOL(A1:A3),2,0))+SUM(CHOOSEROWS(A1:A3,-1))+SUM(CHOOSECOLS(A1:B1,2))", Num: 1, Text: "1", Kind: model.KindNumber})
+	// GROUPBY with a function named as a value (eta-reduced, _xleta.SUM).
+	second.Set(8, 0, model.Cell{Formula: "GROUPBY(A1:A2,B1:B2,SUM,0,0)", Text: "a", Kind: model.KindText, Dynamic: true})
+	second.Set(8, 1, model.Cell{Num: 1, Text: "1", Kind: model.KindNumber})
+	second.Set(9, 0, model.Cell{Text: "b", Kind: model.KindText})
+	second.Set(9, 1, model.Cell{Num: 2, Text: "2", Kind: model.KindNumber})
+	second.Spills[[2]int{8, 0}] = model.Range{R1: 8, C1: 0, R2: 9, C2: 1}
+	second.Set(10, 0, model.Cell{Formula: "PIVOTBY(A1:A2,B1:B2,C1:C2,LAMBDA(x,SUM(x)),0,0,,0)", Num: 1, Text: "1", Kind: model.KindNumber, Dynamic: true})
+	second.Set(11, 0, model.Cell{Formula: `DSUM(A1:C3,1,E1:E2)+DCOUNT(A1:C3,,E1:E2)+DGET(A1:C3,2,E1:F2)+DSTDEVP(A:C,3,E:E)`, Num: 1, Text: "1", Kind: model.KindNumber})
 	second.ActiveRow, second.ActiveCol = 4, 1
 	hidden := model.NewSheet("Hidden")
 	hidden.Hidden = true
@@ -181,6 +198,23 @@ func TestWriteRoundTrip(t *testing.T) {
 	parts := zipParts(t, data)
 	if !strings.Contains(parts["xl/worksheets/sheet1.xml"], `<f>_xlfn.XLOOKUP(1,A:A,B:B)</f>`) {
 		t.Error("XLOOKUP written without its _xlfn. prefix")
+	}
+	if !strings.Contains(parts["xl/worksheets/sheet2.xml"], `<f>_xlfn.NORM.S.DIST(0,TRUE)+NORMSDIST(0)+_xlfn.T.TEST(A1:A3,B1:B3,2,1)</f>`) {
+		t.Error("statistical functions written without their _xlfn. prefixes")
+	}
+	if !strings.Contains(parts["xl/worksheets/sheet2.xml"], `<f>_xlfn.PDURATION(0.025,2000,2200)+_xlfn.RRI(96,10000,11000)+PV(0.1,1,-110)+XNPV(0.1,A1:A2,B1:B2)</f>`) {
+		t.Error("financial functions written with the wrong prefixes")
+	}
+	if !strings.Contains(parts["xl/worksheets/sheet2.xml"], `<f>DSUM(A1:C3,1,E1:E2)+DCOUNT(A1:C3,,E1:E2)+DGET(A1:C3,2,E1:F2)+DSTDEVP(A:C,3,E:E)</f>`) {
+		t.Error("database functions written with a prefix")
+	}
+	if !strings.Contains(parts["xl/worksheets/sheet2.xml"], `<f>SUM(_xlfn.TAKE(A1:A3,2))+ROWS(_xlfn.DROP(A1:B3,1))+COUNTA(_xlfn.VSTACK(A1,B1),_xlfn.HSTACK(A2,B2))+SUM(_xlfn.EXPAND(A1,2,2,0))</f>`) ||
+		!strings.Contains(parts["xl/worksheets/sheet2.xml"], `<f>ROWS(_xlfn.TRIMRANGE(A:A))+SUM(_xlfn.WRAPROWS(_xlfn.TOROW(A1:A3),2,0))+SUM(_xlfn.WRAPCOLS(_xlfn.TOCOL(A1:A3),2,0))+SUM(_xlfn.CHOOSEROWS(A1:A3,-1))+SUM(_xlfn.CHOOSECOLS(A1:B1,2))</f>`) {
+		t.Error("array-shaping functions written without their _xlfn. prefixes")
+	}
+	if !strings.Contains(parts["xl/worksheets/sheet2.xml"], `<f t="array" ref="A9:B10">_xlfn.GROUPBY(A1:A2,B1:B2,_xleta.SUM,0,0)</f>`) ||
+		!strings.Contains(parts["xl/worksheets/sheet2.xml"], `_xlfn.PIVOTBY(A1:A2,B1:B2,C1:C2,_xlfn.LAMBDA(_xlpm.x,SUM(_xlpm.x)),0,0,,0)</f>`) {
+		t.Error("GROUPBY/PIVOTBY written without their prefixes")
 	}
 	if !strings.Contains(parts["xl/worksheets/sheet1.xml"], `cm="1"><f t="array" ref="A6:A8">_xlfn.SEQUENCE(3)</f><v>1</v></c>`) {
 		t.Error("dynamic array anchor not written")

@@ -286,3 +286,65 @@ func transpose(e *f.Env, a []f.Value) f.Value {
 	}
 	return a[0]
 }
+
+// OFFSET(reference, rows, cols, [height], [width]): the reference moved
+// down rows and right cols, height×width in size (by default reference's
+// size). A negative height or width extends up or left from the moved
+// top-left cell, as current Excel does; 0 is #REF!, as is a result off the
+// sheet. The result is a reference, so SUM(OFFSET(...)) and
+// OFFSET(...):B5 work.
+func offset(e *f.Env, a []f.Value) f.Value {
+	ref, ok := a[0].(f.Ref)
+	if !ok {
+		if err, ok := a[0].(f.Error); ok {
+			return err
+		}
+		return f.ErrValue
+	}
+	dr, err := f.Int(a[1])
+	if err != nil {
+		return err
+	}
+	dc, err := f.Int(a[2])
+	if err != nil {
+		return err
+	}
+	h, err := intArg(a, 3, ref.Rows())
+	if err != nil {
+		return err
+	}
+	w, err := intArg(a, 4, ref.Cols())
+	if err != nil {
+		return err
+	}
+	if h == 0 || w == 0 {
+		return f.ErrRef
+	}
+	r := f.Ref{Sheet: ref.Sheet, R1: ref.R1 + dr, C1: ref.C1 + dc}
+	r.R2, r.C2 = r.R1+h-1, r.C1+w-1
+	if h < 0 {
+		r.R1, r.R2 = r.R1+h+1, r.R1
+	}
+	if w < 0 {
+		r.C1, r.C2 = r.C1+w+1, r.C1
+	}
+	if r.R1 < 0 || r.C1 < 0 || r.R2 >= model.MaxRows || r.C2 >= model.MaxCols {
+		return f.ErrRef
+	}
+	return r
+}
+
+// INDIRECT(ref_text, [a1]): the reference ref_text names, in A1 style or,
+// with a1 FALSE, R1C1 style (relative parts relative to the formula's
+// cell). Text that is not a reference on this workbook is #REF!.
+func indirect(e *f.Env, a []f.Value) f.Value {
+	text, err := f.Str(a[0])
+	if err != nil {
+		return err
+	}
+	a1, err := boolArg(a, 1, true)
+	if err != nil {
+		return err
+	}
+	return e.Reference(text, a1)
+}

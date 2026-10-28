@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"officelite/excel/formula"
+	"officelite/excel/formula/functions/database"
 	"officelite/excel/formula/functions/datetime"
 	"officelite/excel/formula/functions/financial"
 	"officelite/excel/formula/functions/info"
@@ -24,6 +25,7 @@ func Default() *formula.Registry {
 	once.Do(func() {
 		registry = formula.NewRegistry()
 		for _, register := range []func(*formula.Registry){
+			database.Register,
 			datetime.Register,
 			financial.Register,
 			info.Register,

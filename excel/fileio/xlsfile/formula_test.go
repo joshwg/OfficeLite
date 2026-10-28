@@ -146,6 +146,12 @@ func TestEncodeDecode(t *testing.T) {
 		"IF(A1>0,,B1)", "VLOOKUP(2,A1:B3,2,FALSE)", "ROUND(PI(),2)", "NOW()+RAND()",
 		"TaxRate*2", "EDATE(A1,1)", "IFERROR(1/0,0)", "_xlfn.XLOOKUP(1,A:A,B:B)",
 		"{1,-2;\"x\",TRUE}", "SUM((A1,B2))", "SUM( A1, (B1 + 2))", "A1:INDEX(B1:B9,2)",
+		"OFFSET(A1,1,2,3,4)", "SUM(OFFSET(A1,,,2))", `INDIRECT("A"&B1)`, `ROWS(INDIRECT("R1C1:R2C2",FALSE))`,
+		"RANK(A1,A1:A3,1)", "TDIST(1.5,10,2)", "LINEST(A1:A3,B1:B3,TRUE,TRUE)", "BETADIST(0.5,2,3)",
+		"PV(0.1,5,-100,,1)", "RATE(48,-200,8000,0,0,0.1)", "IRR(A1:A3,-0.1)", "MIRR(A1:A3,0.1,0.12)",
+		"VDB(2400,300,10,0,0.875,1.5,TRUE)", "DB(1000000,100000,6,1,7)+ISPMT(0.1,1,3,8000)",
+		`DSUM(A1:E7,"Profit",G1:H2)`, "DCOUNT(A1:E7,,G1:G3)+DCOUNTA(A:E,2,G:G)", `DGET(A1:E7,"Yield",G1:H2)`,
+		"DPRODUCT(A1:E7,4,G1:H2)+DSTDEVP(A1:E7,4,G1:H2)+DVARP(A1:E7,4,G1:H2)",
 	} {
 		p := testParser()
 		rgce, extra, err := compileFormula(fakeWriter{p}, src, 0, false)
@@ -173,6 +179,9 @@ func TestEncodeClasses(t *testing.T) {
 		"SUMPRODUCT(A1)": {0x64, 0, 0, 0, 0xC0, 0x42, 1, 228, 0},                     // array argument
 		"SUM(A1*2)":      {0x64, 0, 0, 0, 0xC0, ptgInt, 2, 0, ptgMul, 0x42, 1, 4, 0}, // operators on arrays
 		"NOW()":          {ptgAttr, attrVolatile, 0, 0, 0x41, 74, 0},
+		// OFFSET is volatile and returns a reference: reference class inside SUM.
+		"SUM(OFFSET(A1,1,1))": {ptgAttr, attrVolatile, 0, 0, 0x24, 0, 0, 0, 0xC0, ptgInt, 1, 0, ptgInt, 1, 0, 0x22, 3, 78, 0, 0x42, 1, 4, 0},
+		`INDIRECT("A1")`:      {ptgAttr, attrVolatile, 0, 0, 0x17, 2, 0, 'A', '1', 0x42, 1, 148, 0},
 	} {
 		got, _, err := compileFormula(fakeWriter{testParser()}, src, 0, false)
 		if err != nil || string(got) != string(want) {

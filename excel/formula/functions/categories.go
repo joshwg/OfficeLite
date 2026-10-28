@@ -4,6 +4,7 @@ import (
 	"slices"
 
 	"officelite/excel/formula"
+	"officelite/excel/formula/functions/database"
 	"officelite/excel/formula/functions/datetime"
 	"officelite/excel/formula/functions/financial"
 	"officelite/excel/formula/functions/info"
@@ -29,6 +30,7 @@ func Categories() []Category {
 		register func(*formula.Registry)
 		extra    []string
 	}{
+		{"Database", database.Register, nil},
 		{"Date & Time", datetime.Register, nil},
 		{"Financial", financial.Register, nil},
 		{"Information", info.Register, nil},

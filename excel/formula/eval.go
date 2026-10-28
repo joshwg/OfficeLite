@@ -228,6 +228,11 @@ func (e *Env) name(n nameNode) Value {
 	}
 	src, ok := e.Ctx.Name(n.name, sh)
 	if !ok {
+		// A worksheet function named without its parentheses is a function
+		// value (an eta-reduced lambda), as in BYROW(A1:B3,SUM).
+		if s := e.Funcs.Lookup(n.name); s != nil && s.Lazy == nil && n.sheet == "" {
+			return &Lambda{Func: s}
+		}
 		return ErrName
 	}
 	node, ok := parsedNames.Load(src)
@@ -467,7 +472,8 @@ func (e *Env) invokeValue(fn Value, argNodes []Node) Value {
 }
 
 // CallLambda calls a LAMBDA value with the given arguments (fewer
-// arguments than parameters leaves the rest Missing; see ISOMITTED).
+// arguments than parameters leaves the rest Missing; see ISOMITTED), or
+// the worksheet function of an eta-reduced lambda.
 func (e *Env) CallLambda(fn Value, args ...Value) Value {
 	l, ok := fn.(*Lambda)
 	if !ok {
@@ -476,8 +482,14 @@ func (e *Env) CallLambda(fn Value, args ...Value) Value {
 		}
 		return ErrValue
 	}
-	if len(args) > len(l.Params) {
+	if !l.Accepts(len(args)) {
 		return ErrValue
+	}
+	if l.Func != nil {
+		if l.Func.Volatile {
+			e.Volatile = true
+		}
+		return e.nested(func() Value { return e.Apply(l.Func, append([]Value(nil), args...)) })
 	}
 	saved := e.scope
 	defer func() { e.scope = saved }()

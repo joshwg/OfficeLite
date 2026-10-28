@@ -5,6 +5,7 @@ import (
 
 	f "officelite/excel/formula"
 	"officelite/excel/formula/functions/internal/ftest"
+	"officelite/excel/formula/functions/mathtrig"
 )
 
 func setup(ctx *f.TestContext) {
@@ -308,5 +309,107 @@ func TestLookup(t *testing.T) {
 		{"=SORTBY({1,2;3,4},{2;1},1,{1,2})", f.ErrValue},
 		{"=SORTBY({1,2;3,4},{2;1})", ftest.Arr{{3.0, 4.0}, {1.0, 2.0}}},
 		{"=SORTBY({\"x\";\"y\";\"z\"},{1;#N/A;\"t\"})", ftest.Arr{{"x"}, {"z"}, {"y"}}},
+	})
+}
+
+func TestOffsetIndirect(t *testing.T) {
+	r := f.NewRegistry()
+	Register(r)
+	mathtrig.Register(r) // SUM
+	ftest.Run(t, r, func(ctx *f.TestContext) {
+		setup(ctx)
+		ctx.SetRange("Sheet2!A1", [][]any{{"s2", 7}, {8, 9}})
+		ctx.Set("A999", "above")
+		ctx.Set("D1", "B3")
+		ctx.Names["DENSITY"] = "Sheet1!$A$2:$A$10"
+		ctx.Names["RATE"] = "Sheet2!$B$1"
+		ctx.Names["CONST"] = "42"
+	}, []ftest.Case{
+		// OFFSET.
+		{"=OFFSET(A1,1,1)", 3.55},
+		{"=OFFSET(A2,0,0)", .457},
+		{"=OFFSET(A1,,)", "Density"},
+		{"=OFFSET(C3,-1,-2)", .457},
+		{"=OFFSET(A1,1,0,2,2)", ftest.Arr{{.457, 3.55}, {.525, 3.25}}},
+		{"=OFFSET(A2:B3,1,0)", ftest.Arr{{.525, 3.25}, {.606, 2.93}}},
+		{"=SUM(OFFSET(C1,1,0,3,1))", 1200.0},
+		{"=SUM(OFFSET(C1,1,0,3))", 1200.0},
+		{"=ROWS(OFFSET(A1,0,0,4,3))", 4.0},
+		{"=COLUMNS(OFFSET(A1:C2,0,0,,2))", 2.0},
+		{"=ROW(OFFSET(A1,4,2))", 5.0},
+		{"=SUM(A2:OFFSET(A2,1,1))", .457 + 3.55 + .525 + 3.25},
+		{"=SUM(OFFSET(C4,0,0,-3,1))", 1200.0},  // a negative height extends up
+		{"=SUM(OFFSET(C2,0,0,1,-3))", 504.007}, // a negative width extends left
+		{"=OFFSET(A1,0,0,0,1)", f.ErrRef},
+		{"=OFFSET(A1,-1,0)", f.ErrRef},
+		{"=OFFSET(A1,0,-1)", f.ErrRef},
+		{"=OFFSET(A2,0,0,-3)", f.ErrRef},
+		{"=OFFSET(A1,262144,0)", f.ErrRef},
+		{"=ROWS(OFFSET(A:A,0,1))", 262144.0},
+		{"=OFFSET(A:A,1,0)", f.ErrRef},
+		{"=OFFSET({1,2},0,0)", f.ErrValue},
+		{"=OFFSET(5,0,0)", f.ErrValue},
+		{"=OFFSET(A1,\"x\",0)", f.ErrValue},
+		{"=OFFSET(#N/A,0,0)", f.ErrNA},
+		{"=OFFSET(A1,1/0,0)", f.ErrDiv0},
+		{"=OFFSET(A1,1.9,1.9)", 3.55}, // truncated
+		{"=OFFSET(INDEX(A1:C10,2,1),1,2)", 400.0},
+		{"=OFFSET(Sheet2!A1,1,1)", 9.0},
+		{"=OFFSET(A1,{1;2},0)", ftest.Arr{{.457}, {.525}}},
+
+		// INDIRECT, A1 style.
+		{"=INDIRECT(\"B2\")", 3.55},
+		{"=INDIRECT(\"$B$2\")", 3.55},
+		{"=INDIRECT(D1)", 3.25},
+		{"=INDIRECT(\"b\"&2)", 3.55},
+		{"=INDIRECT(\"A2:B3\")", ftest.Arr{{.457, 3.55}, {.525, 3.25}}},
+		{"=SUM(INDIRECT(\"C2:C4\"))", 1200.0},
+		{"=INDIRECT(\"Sheet2!B1\")", 7.0},
+		{"=INDIRECT(\"'Sheet2'!A1:B2\")", ftest.Arr{{"s2", 7.0}, {8.0, 9.0}}},
+		{"=ROWS(INDIRECT(\"A:A\"))", 262144.0},
+		{"=COLUMNS(INDIRECT(\"3:3\"))", 2048.0},
+		{"=SUM(INDIRECT(\"C:C\"))", 1950.0},
+		{"=SUM(INDIRECT(\"Density\"))", .457 + .525 + .606 + .675 + .746 + .835 + .946 + 1.09 + 1.29},
+		{"=INDIRECT(\"Rate\")", 7.0},
+		{"=INDIRECT(\"Const\")", f.ErrRef},
+		{"=INDIRECT(\"Nope\")", f.ErrRef},
+		{"=INDIRECT(\"\")", f.ErrRef},
+		{"=INDIRECT(\"A1+1\")", f.ErrRef},
+		{"=INDIRECT(\"=A1\")", f.ErrRef},
+		{"=INDIRECT(\"Sheet9!A1\")", f.ErrRef},
+		{"=INDIRECT(\"[Book2.xlsx]Sheet1!A1\")", f.ErrRef},
+		{"=INDIRECT(\"'[Book2.xlsx]Sheet1'!A1\")", f.ErrRef},
+		{"=INDIRECT(\"A1:Sheet2!B2\")", f.ErrRef},
+		{"=INDIRECT(\"ZZZ1\")", f.ErrRef}, // beyond this program's columns
+		{"=INDIRECT(\"R2C2\")", f.ErrRef},
+		{"=INDIRECT(\"A2\",TRUE)", .457},
+		{"=INDIRECT(5)", f.ErrRef},
+		{"=INDIRECT(#N/A)", f.ErrNA},
+		{"=OFFSET(INDIRECT(\"A1\"),1,2)", 500.0},
+		{"=INDIRECT({\"A2\",\"B2\"})", ftest.Arr{{.457, 3.55}}},
+		{"=LET(Rate,1,INDIRECT(\"Rate\"))", 7.0}, // names, not LET variables
+
+		// INDIRECT, R1C1 style (the formula is in A1000).
+		{"=INDIRECT(\"R2C2\",FALSE)", 3.55},
+		{"=INDIRECT(\"r2c2\",FALSE)", 3.55},
+		{"=INDIRECT(\"R[-1]C\",FALSE)", "above"},
+		{"=INDIRECT(\"R[-998]C[1]\",FALSE)", 3.55},
+		{"=INDIRECT(\"R2C[+2]\",FALSE)", 500.0},
+		{"=INDIRECT(\"R2C1:R3C2\",FALSE)", ftest.Arr{{.457, 3.55}, {.525, 3.25}}},
+		{"=SUM(INDIRECT(\"R2C3:R4C3\",0))", 1200.0},
+		{"=SUM(INDIRECT(\"C3\",FALSE))", 1950.0},
+		{"=ROWS(INDIRECT(\"C1:C3\",FALSE))", 262144.0},
+		{"=COLUMNS(INDIRECT(\"C1:C3\",FALSE))", 3.0},
+		{"=COLUMNS(INDIRECT(\"R2\",FALSE))", 2048.0},
+		{"=ROW(INDIRECT(\"R\",FALSE))", 1000.0},
+		{"=INDIRECT(\"Sheet2!R1C2\",FALSE)", 7.0},
+		{"=INDIRECT(\"'Sheet2'!R2C1\",FALSE)", 8.0},
+		{"=INDIRECT(\"Rate\",FALSE)", 7.0},
+		{"=INDIRECT(\"B2\",FALSE)", f.ErrRef},
+		{"=INDIRECT(\"R0C1\",FALSE)", f.ErrRef},
+		{"=INDIRECT(\"R[-1000]C\",FALSE)", f.ErrRef},
+		{"=INDIRECT(\"R1C1:R2\",FALSE)", f.ErrRef},
+		{"=INDIRECT(\"R[1C1\",FALSE)", f.ErrRef},
+		{"=INDIRECT(\"R1C1\",\"x\")", f.ErrValue},
 	})
 }

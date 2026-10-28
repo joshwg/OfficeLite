@@ -1,7 +1,7 @@
 // Package mathtrig implements Excel's math & trigonometry functions (SUM,
 // ROUND, SUMIFS, SUBTOTAL, AGGREGATE, MMULT, SEQUENCE, ROMAN, ...) and the
-// counting/statistical functions they depend on (COUNT, COUNTIFS, AVERAGE,
-// MIN, MAX, MEDIAN, STDEV, PERCENTILE, ...).
+// statistical functions (COUNT, COUNTIFS, AVERAGE, MEDIAN, STDEV,
+// PERCENTILE, RANK, CORREL, LINEST, NORM.DIST, T.TEST, BINOM.DIST, ...).
 package mathtrig
 
 import (
@@ -28,6 +28,10 @@ func Register(r *f.Registry) {
 	registerConditional(r)
 	registerMatrix(r)
 	registerStats(r)
+	registerDescriptive(r)
+	registerRegression(r)
+	registerHypothesis(r)
+	registerDist(r)
 }
 
 // --- argument helpers -------------------------------------------------------

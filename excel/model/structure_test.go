@@ -54,3 +54,16 @@ func TestDeleteRowsSpills(t *testing.T) {
 		t.Errorf("spill after inserting columns: %v", s.Spills)
 	}
 }
+
+func TestPxToColWidth(t *testing.T) {
+	for _, mdw := range []float64{6, 7, 8, 9} {
+		for px := 6.0; px < 400; px++ {
+			if got := ColWidthToPx(float64(PxToColWidth(px, mdw)), mdw); float64(got) != px {
+				t.Fatalf("mdw %v: %vpx -> %v chars -> %vpx", mdw, px, PxToColWidth(px, mdw), got)
+			}
+		}
+	}
+	if PxToColWidth(0, 7) != 0 {
+		t.Error("0px should hide")
+	}
+}

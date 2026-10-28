@@ -38,6 +38,16 @@ func ColWidthToPx(chars, mdw float64) float32 {
 	return float32(math.Trunc((256*chars + math.Trunc(128/mdw)) / 256 * mdw))
 }
 
+// PxToColWidth is the inverse of ColWidthToPx: the width in characters
+// Excel stores for a column dragged to px pixels (0 hides it).
+func PxToColWidth(px, mdw float64) float32 {
+	if px <= 0 {
+		return 0
+	}
+	chars := math.Trunc(max(px-5, 0)/mdw*100+0.5) / 100 // as Excel shows it, padding excluded
+	return float32(math.Trunc((chars*mdw+5)/mdw*256) / 256)
+}
+
 // BaseColWidthToPx converts a default width in characters excluding
 // padding; Excel adds the padding and rounds up to a multiple of 8 pixels.
 func BaseColWidthToPx(chars, mdw float64) float32 {
@@ -193,6 +203,10 @@ type Sheet struct {
 	// Spills maps a dynamic-array (or legacy array) formula's cell to the
 	// range its result occupies.
 	Spills map[[2]int]Range
+
+	// Notes (Excel's comments) and hyperlinks by cell; see annot.go.
+	Notes map[[2]int]Note
+	Links map[[2]int]Hyperlink
 }
 
 func NewSheet(name string) *Sheet {

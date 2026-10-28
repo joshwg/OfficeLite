@@ -32,7 +32,7 @@ const appName = "WordLite"
 
 var (
 	accent     = gui.WordAccent
-	accentDark = colors.RGB(0x10418A)
+	accentDark = colors.RGB(0x45289A)
 )
 
 var templates = []gui.Template{
@@ -68,8 +68,10 @@ type window struct {
 	win  *app.Window
 	th   *gui.Theme
 	expl *explorer.Explorer
-	cfg  Config
-	gtx  layout.Context // the frame being laid out, for backstage pages
+	// files is the Open dialog with Word/Excel file-type filters.
+	files gui.FileDialog
+	cfg   Config
+	gtx   layout.Context // the frame being laid out, for backstage pages
 
 	doc      *model.Document
 	ed       *model.Editor
@@ -97,12 +99,23 @@ type window struct {
 	tb      toolbar
 	v       docView
 	dlg     styleDialog
+	ins     insertState // Insert menu dialogs, pictures and links (insert.go)
 	results chan loadResult
 	calls   chan func()
 
 	clip     *model.Fragment // last copied content, for pasting with formatting
 	clipText string          // its plain text, to recognise it on the clipboard
 	stats    statsCache
+
+	// Home commands (find.go, homecmds.go, hdrftr.go, styles_pane.go).
+	find       findBar
+	hf         hfEdit
+	painter    painterState
+	fmtClip    *model.FormatCopy // copied formatting (Format Painter, Ctrl+Shift+C)
+	pasteSpec  pasteSpecial
+	pastePlain bool // the next clipboard read pastes plain text
+	pane       stylesPane
+	newStyle   newStyleDialog
 }
 
 // Run drives a document window until it is closed.
@@ -122,6 +135,7 @@ func Run(w *app.Window, cfg Config) error {
 	for {
 		e := w.Event()
 		d.expl.ListenEvents(e)
+		d.files.ListenEvents(e)
 		switch e := e.(type) {
 		case app.DestroyEvent:
 			return e.Err
@@ -268,6 +282,16 @@ func (d *window) openDialog() {
 		return
 	}
 	go func() {
+		// The native dialog lists Word documents, then Excel files (which
+		// openFile routes to an ExcelLite window).
+		path, err := d.files.Open(gui.WordFilter, gui.ExcelFilter, gui.AllFilter)
+		switch {
+		case err == nil:
+			d.post(func() { d.openFile(path) })
+			return
+		case errors.Is(err, gui.ErrCancelled):
+			return
+		}
 		rc, err := d.expl.ChooseFile(openExtensions...)
 		if errors.Is(err, explorer.ErrUserDecline) {
 			return
@@ -335,13 +359,16 @@ func (d *window) setDoc(doc *model.Document, shaper *text.Shaper, fams []string)
 	d.laidOut = -1
 	d.notice = ""
 	d.stats = statsCache{}
+	d.hf = hfEdit{}
+	d.find.matches, d.find.key = nil, findKey{}
+	d.painter = painterState{}
 	d.bs.info = infoCache{}
 	d.v.scrollY, d.v.scrollX = 0, 0
 	d.v.focusPending = true
 	d.updateTitle()
 }
 
-func (d *window) modified() bool { return d.ed != nil && d.ed.Version != d.saved }
+func (d *window) modified() bool { return d.ed != nil && d.bodyEd().Version != d.saved }
 
 // updateTitle sets the OS window title when the name or modified state
 // changes.

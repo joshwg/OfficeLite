@@ -38,6 +38,13 @@ type change struct {
 	where Where
 	cells []cellChange
 	st    *structural
+	dims  *dimChange
+	// annots are note and hyperlink changes, alone or with cells; see
+	// cells.go.
+	annots []annotChange
+	// sheet, when set, changes sheet properties (merges, hidden, default
+	// width) along with cells; see format.go.
+	sheet *sheetChange
 }
 
 type cellChange struct {
@@ -82,9 +89,16 @@ func (b *Book) Undo() (Where, calc.Result, bool) {
 	b.undo = b.undo[:len(b.undo)-1]
 	b.redo = append(b.redo, ch)
 	var res calc.Result
-	if ch.st != nil {
+	b.setAnnots(ch.annots, false)
+	switch {
+	case ch.dims != nil:
+		ch.dims.set(b.WB, false)
+	case ch.st != nil:
 		res = b.revertStructural(ch.st)
-	} else {
+	case ch.sheet != nil:
+		ch.sheet.set(b.WB, false)
+		res = b.setCells(ch.cells, false)
+	default:
 		res = b.setCells(ch.cells, false)
 	}
 	return ch.where, res, true
@@ -99,9 +113,16 @@ func (b *Book) Redo() (Where, calc.Result, bool) {
 	b.redo = b.redo[:len(b.redo)-1]
 	b.undo = append(b.undo, ch)
 	var res calc.Result
-	if ch.st != nil {
+	b.setAnnots(ch.annots, true)
+	switch {
+	case ch.dims != nil:
+		ch.dims.set(b.WB, true)
+	case ch.st != nil:
 		res, _ = b.applyStructural(ch.st)
-	} else {
+	case ch.sheet != nil:
+		ch.sheet.set(b.WB, true)
+		res = b.setCells(ch.cells, true)
+	default:
 		res = b.setCells(ch.cells, true)
 	}
 	return ch.where, res, true

@@ -32,6 +32,9 @@ type DrawOptions struct {
 	SelColor  color.NRGBA
 	Y0, Y1    float64 // visible part of the page (points); both 0 = all
 	NoPageBox bool    // don't paint the white sheet
+	// HFDim dims the headers and footers (the page view while the body is
+	// edited); BodyDim dims the body instead (while they are edited).
+	HFDim, BodyDim bool
 }
 
 // DrawPage draws a page with its top-left corner at the current origin.
@@ -90,6 +93,8 @@ func (e *Engine) DrawPage(ops *op.Ops, pg *Page, o DrawOptions) {
 		}
 		gui.FillRect(ops, rr, ruleColor)
 	}
+	e.drawPictureFrame(ops, pg, o.Sel, s)
+	e.drawBands(ops, pg, o)
 }
 
 // drawLine draws a line's label, text, objects and decorations.
@@ -186,6 +191,9 @@ func (e *Engine) drawLeader(ops *op.Ops, it *Item, x, base, s float64) {
 
 func (e *Engine) drawObject(ops *op.Ops, it *Item, x, base, s float64) {
 	px := func(v float64) int { return int(math.Round(v * s)) }
+	if isPicture(it) && e.drawPicture(ops, it, x, base, s) {
+		return
+	}
 	if it.Obj != nil && it.Obj.Width > 0 && it.Obj.Height > 0 {
 		r := image.Rect(px(x), px(base-it.Obj.Height), px(x+it.Obj.Width), px(base))
 		gui.FillRect(ops, r, placeholderBG)

@@ -52,7 +52,7 @@ func (d *window) menus() []gui.Menu {
 	sel := !d.ed.Sel.Empty()
 	return []gui.Menu{
 		menuFile: {Label: "File", Primary: true},
-		menuHome: {Label: "Home", Items: []gui.MenuItem{
+		menuHome: {Label: "Home", Items: append([]gui.MenuItem{
 			{Label: "Undo", Shortcut: "Ctrl+Z", Disabled: !d.ed.CanUndo()},
 			{Label: "Redo", Shortcut: "Ctrl+Y", Disabled: !d.ed.CanRedo()},
 			{Separator: true},
@@ -71,12 +71,8 @@ func (d *window) menus() []gui.Menu {
 			{Label: "Heading 3", Shortcut: "Ctrl+Alt+3"},
 			{Label: "Clear Formatting", Shortcut: "Ctrl+Space"},
 			{Label: "Modify Style…"},
-		}},
-		menuInsert: {Label: "Insert", Items: []gui.MenuItem{
-			{Label: "Page Break", Shortcut: "Ctrl+Enter"},
-			{Label: "Line Break", Shortcut: "Shift+Enter"},
-			{Label: "Tab", Shortcut: "Tab"},
-		}},
+		}, d.homeExtraItems()...)},
+		menuInsert: {Label: "Insert", Items: d.insertMenu()},
 		menuView: {Label: "View", Items: []gui.MenuItem{
 			{Label: "Zoom In", Shortcut: "Ctrl++"},
 			{Label: "Zoom Out", Shortcut: "Ctrl+-"},
@@ -118,16 +114,11 @@ func (d *window) menuChosen(ev gui.MenuEvent) {
 			d.ed.ClearCharFormatting()
 		case homeModify:
 			d.dlg.openFor(d, d.ed.ParaStyleID(d.ed.Sel.Caret.Para))
+		default:
+			d.homeExtra(ev.Item)
 		}
 	case menuInsert:
-		switch ev.Item {
-		case 0:
-			d.ed.InsertSpecial(model.RunPageBreak)
-		case 1:
-			d.ed.InsertSpecial(model.RunBreak)
-		case 2:
-			d.ed.InsertSpecial(model.RunTab)
-		}
+		d.insertChosen(ev.Item)
 	case menuView:
 		switch ev.Item {
 		case 0:
@@ -144,6 +135,7 @@ func (d *window) menuChosen(ev gui.MenuEvent) {
 func (d *window) layout(gtx layout.Context) {
 	d.gtx = gtx
 	d.globalKeys(gtx)
+	d.extraKeys(gtx)
 	gui.FillRect(gtx.Ops, image.Rectangle{Max: gtx.Constraints.Max}, gui.ChromeBG)
 	d.relayout()
 	if d.back.Visible {
@@ -160,10 +152,13 @@ func (d *window) layout(gtx layout.Context) {
 				return d.menu.Layout(gtx, d.th, d.menus(), d.menuChosen)
 			}),
 			layout.Rigid(d.toolbar),
+			layout.Rigid(d.hfBar),
+			layout.Rigid(d.findBarLayout),
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{}.Layout(gtx,
 					layout.Flexed(1, d.layoutDoc),
 					layout.Rigid(d.vScrollbar),
+					layout.Rigid(d.stylesPaneLayout),
 				)
 			}),
 			layout.Rigid(d.statusBar),
@@ -172,6 +167,8 @@ func (d *window) layout(gtx layout.Context) {
 	if d.dlg.open {
 		d.dlg.layout(gtx, d)
 	}
+	d.ins.layout(gtx, d)
+	d.extraDialogs(gtx)
 	if d.confirm.show {
 		d.confirm.layout(gtx, d)
 	}
@@ -187,9 +184,11 @@ func (d *window) relayout() {
 		return
 	}
 	ps, all := d.ed.TakeDirty()
+	d.hfSync()
 	d.eng.Invalidate(ps, all)
 	d.eng.Layout()
 	d.laidOut = d.ed.Version
+	d.hfAfterLayout()
 }
 
 // edited runs after any command: the layout catches up, the caret is
@@ -256,10 +255,13 @@ func (d *window) globalKeys(gtx layout.Context) {
 				d.closeAfterSave = false
 			case d.dlg.open:
 				d.dlg.open = false
+			case d.ins.modal():
+				d.ins.close(d)
 			case d.menu.IsOpen():
 				d.menu.Close()
 			case d.back.Visible:
 				d.back.Hide()
+			case d.handleEscape():
 			}
 			d.v.focusPending = true
 		case "+", "=":
@@ -324,11 +326,11 @@ func (d *window) statusBar(gtx layout.Context) layout.Dimensions {
 	gui.FillRect(gtx.Ops, image.Rect(0, 0, w, h), gui.ChromeBG)
 	gui.HLine(gtx.Ops, 0, w, 0, 1, gui.ChromeLine)
 
-	left := fmt.Sprintf("Page %d of %d", d.eng.PageOfPos(d.ed.Sel.Caret)+1, max(len(d.eng.Pages), 1))
+	left := fmt.Sprintf("Page %d of %d", d.ceng().PageOfPos(d.ed.Sel.Caret)+1, max(len(d.eng.Pages), 1))
 	words := d.docStats().words
 	left += fmt.Sprintf("     %d words", words)
 	if !d.ed.Sel.Empty() {
-		left = fmt.Sprintf("Page %d of %d     %d of %d words", d.eng.PageOfPos(d.ed.Sel.Caret)+1, len(d.eng.Pages),
+		left = fmt.Sprintf("Page %d of %d     %d of %d words", d.ceng().PageOfPos(d.ed.Sel.Caret)+1, len(d.eng.Pages),
 			countWords(d.ed.Copy()), words)
 	}
 	msg, msgColor := "", gui.MutedText

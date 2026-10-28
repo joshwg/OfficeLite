@@ -163,7 +163,7 @@ func (r *reader) readStyles() {
 		if si == nil {
 			continue
 		}
-		s := &model.Style{ID: r.styleIDs[i], Name: firstAlias(si.name), Hidden: si.hidden}
+		s := &model.Style{ID: r.styleIDs[i], Name: firstAlias(si.name), Hidden: si.hidden, Custom: si.sti == stiUser}
 		switch si.stk {
 		case stkPara:
 			s.Type = model.ParagraphStyle

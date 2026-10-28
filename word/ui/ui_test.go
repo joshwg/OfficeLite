@@ -138,7 +138,7 @@ func TestClickPlacesCaret(t *testing.T) {
 	if !ok {
 		t.Fatal("no caret")
 	}
-	viewTop := 36 + 30 + 38 // title, menu bar, toolbar
+	viewTop := 36 + 30 + ribbonHeight // title, menu bar, ribbon
 	x := float32(d.pageX()) + float32(c.X*d.v.scale)
 	y := float32(viewTop) + float32((d.eng.Pages[0].Top+c.Y+c.H/2-d.v.scrollY)*d.v.scale)
 	pt := f32.Pt(x, y)

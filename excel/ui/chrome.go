@@ -25,7 +25,7 @@ import (
 
 var (
 	accent      = gui.ExcelAccent
-	accentDark  = colors.RGB(0x0B5A2F)
+	accentDark  = colors.RGB(0x7E4400)
 	chromeBG    = gui.ChromeBG
 	chromeLine  = gui.ChromeLine
 	chromeText  = gui.ChromeText
@@ -38,6 +38,7 @@ var (
 const (
 	menuFile = iota
 	menuHome
+	menuInsert
 	menuFormulas
 	menuView
 )
@@ -61,6 +62,17 @@ const (
 	homeInsertSheet
 	homeDeleteSheet
 	homeRenameSheet
+	_
+	homeFillDown
+	homeFillRight
+	_
+	homeSortAsc
+	homeSortDesc
+	homeCustomSort
+	_
+	homeFind
+	homeReplace
+	homeGoTo
 )
 
 func (a *App) menus() []gui.Menu {
@@ -92,7 +104,19 @@ func (a *App) menus() []gui.Menu {
 			homeInsertSheet: {Label: "Insert Sheet", Shortcut: "Shift+F11"},
 			homeDeleteSheet: {Label: "Delete Sheet", Disabled: visible < 2},
 			homeRenameSheet: {Label: "Rename Sheet"},
+			17:              {Separator: true},
+			homeFillDown:    {Label: "Fill Down", Shortcut: "Ctrl+D", Disabled: editing},
+			homeFillRight:   {Label: "Fill Right", Shortcut: "Ctrl+R", Disabled: editing},
+			20:              {Separator: true},
+			homeSortAsc:     {Label: "Sort A to Z", Disabled: editing},
+			homeSortDesc:    {Label: "Sort Z to A", Disabled: editing},
+			homeCustomSort:  {Label: "Custom Sort…", Disabled: editing},
+			24:              {Separator: true},
+			homeFind:        {Label: "Find…", Shortcut: "Ctrl+F", Disabled: editing},
+			homeReplace:     {Label: "Replace…", Shortcut: "Ctrl+H", Disabled: editing},
+			homeGoTo:        {Label: "Go To…", Shortcut: "Ctrl+G", Disabled: editing},
 		}},
+		menuInsert: a.insertMenuDef(),
 		menuFormulas: {Label: "Formulas", Items: []gui.MenuItem{
 			{Label: "Calculate Now", Shortcut: "F9"},
 		}},
@@ -133,7 +157,25 @@ func (a *App) menuChosen(ev gui.MenuEvent) {
 			a.deleteSheet()
 		case homeRenameSheet:
 			a.startRename(a.active)
+		case homeFillDown:
+			a.fillDown()
+		case homeFillRight:
+			a.fillRight()
+		case homeSortAsc:
+			a.sortAscending()
+		case homeSortDesc:
+			a.sortDescending()
+		case homeCustomSort:
+			a.customSortDialog()
+		case homeFind:
+			a.showFind()
+		case homeReplace:
+			a.showReplace()
+		case homeGoTo:
+			a.showGoTo()
 		}
+	case menuInsert:
+		a.insertChosen(ev.Item)
 	case menuFormulas:
 		a.recalculate()
 	case menuView:
@@ -149,7 +191,7 @@ func (a *App) menuChosen(ev gui.MenuEvent) {
 			sh.ShowGridLines = !sh.ShowGridLines
 		}
 	}
-	if !a.back.Visible && !a.ed.active && !a.rename.active {
+	if !a.back.Visible && !a.ed.active && !a.rename.active && a.ins.kind == dlgNone {
 		a.grid.focusPending = true
 	}
 }
@@ -164,6 +206,11 @@ func (a *App) layout(gtx layout.Context) {
 		}
 	}
 	defer a.dialog.Layout(gtx, a.ui)
+	defer a.layoutDialogs(gtx)
+	defer a.layoutInsertDialogs(gtx)
+	a.dialogInput(gtx) // before the shortcuts: Esc and Enter go to an open dialog
+	a.insertDialogInput(gtx)
+	a.insertKeys(gtx)
 	a.globalKeys(gtx)
 	a.editKeys(gtx)
 	gui.FillRect(gtx.Ops, image.Rectangle{Max: gtx.Constraints.Max}, chromeBG)
@@ -181,6 +228,7 @@ func (a *App) layout(gtx layout.Context) {
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return a.menu.Layout(gtx, a.ui, a.menus(), a.menuChosen)
 		}),
+		layout.Rigid(a.layoutRibbon),
 		layout.Rigid(a.formulaBar),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{}.Layout(gtx,
@@ -250,6 +298,9 @@ func (a *App) globalKeys(gtx layout.Context) {
 				continue
 			case a.menu.IsOpen():
 				a.menu.Close()
+				continue
+			case a.ins.kind != dlgNone:
+				a.closeDialog()
 				continue
 			case a.back.Visible:
 				a.back.Hide()

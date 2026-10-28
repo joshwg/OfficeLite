@@ -62,6 +62,10 @@ func Write(doc *model.Document, w io.Writer) error {
 	return err
 }
 
+// WarnHeadersLost is the warning for headers and footers, which the .doc
+// writer doesn't save.
+const WarnHeadersLost = "Headers and footers can't be saved in a .doc file by WordLite and are left out."
+
 // Warnings returns what saving doc as .doc loses (empty when nothing is).
 func Warnings(doc *model.Document) []string {
 	wr := newWriter(doc)
@@ -403,6 +407,9 @@ func (w *writer) endPara(mark uint16, markChpx []byte, istd int, papx []byte) {
 
 // body writes the document's blocks.
 func (w *writer) body() {
+	if w.doc.HF.Any() {
+		w.warn(WarnHeadersLost)
+	}
 	blocks := w.doc.Body
 	if len(blocks) == 0 {
 		blocks = []model.Block{&model.Paragraph{}}

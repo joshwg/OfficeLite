@@ -36,6 +36,7 @@ type reader struct {
 	sst     []string
 	formats []cellFormat // indexed by cellXfs index
 	nf      *numfmt.Formatter
+	links   []xLink // <hyperlink> elements of the sheet being read
 }
 
 // Read parses an .xlsx package.
@@ -96,9 +97,11 @@ func Read(data []byte) (*model.Workbook, error) {
 		sheetIndex[i] = len(r.wb.Sheets)
 		sh := model.NewSheet(s.Name)
 		sh.Hidden = s.State == "hidden" || s.State == "veryHidden"
+		r.links = r.links[:0]
 		if err := r.readSheet(rel.Target, sh); err != nil {
 			return nil, fmt.Errorf("sheet %q: %w", s.Name, err)
 		}
+		r.readAnnotations(rel.Target, sh)
 		r.wb.Sheets = append(r.wb.Sheets, sh)
 	}
 	for _, dn := range book.Names {
@@ -454,6 +457,8 @@ func (r *reader) readSheet(name string, sh *model.Sheet) error {
 				if rr, cc, ok := parseCellRef(attr(t, "activeCell")); ok {
 					sh.ActiveRow, sh.ActiveCol = rr, cc
 				}
+			case "hyperlink":
+				r.links = append(r.links, xLinkOf(t))
 			case "pane":
 				if st := attr(t, "state"); st == "frozen" || st == "frozenSplit" {
 					sh.FreezeCols = int(parseFloat(attr(t, "xSplit")))

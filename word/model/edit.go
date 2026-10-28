@@ -632,6 +632,9 @@ func (e *Editor) caretRun(p Pos) Run {
 			out.Span = r.Span
 		}
 	}
+	if out.Span == nil && linkOf(r.Span) != nil {
+		out.Style = e.unlinkedStyle(r.Style) // text typed after a link isn't link-styled
+	}
 	return out
 }
 
@@ -1424,5 +1427,6 @@ func (d *Document) Clone() *Document {
 	c.Body = CopyBlocks(d.Body)
 	c.Lists = copyLists(d.Lists)
 	c.Warnings = slices.Clone(d.Warnings)
+	c.HF = d.HF.Clone()
 	return &c
 }

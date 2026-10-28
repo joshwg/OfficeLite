@@ -56,7 +56,7 @@ func TestDragSelect(t *testing.T) {
 		return f32.Point{}
 	}
 	// Grid origin in window coordinates: title + menu + formula bar.
-	off := f32.Pt(0, float32(36+30+30))
+	off := f32.Pt(0, float32(gridTop))
 	b2, d5 := pt(5, 4).Add(off), pt(9, 7).Add(off) // E6, H10
 	r.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, Buttons: pointer.ButtonPrimary, Position: b2})
 	frame()

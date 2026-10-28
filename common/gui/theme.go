@@ -26,8 +26,8 @@ var (
 	ErrorText  = colors.RGB(0xC42B1C)
 )
 
-// Theme is a material theme plus the app's accent colors (green for
-// ExcelLite, blue for WordLite).
+// Theme is a material theme plus the app's accent colors (amber for
+// ExcelLite, violet for WordLite).
 type Theme struct {
 	*material.Theme
 	Accent     color.NRGBA // title bar, Home tab, backstage nav

@@ -42,6 +42,11 @@ type Page struct {
 	Lines         []Placed
 	Fills         []Fill
 	Rules         []Rect // table borders, as thin rectangles
+	// Header and Footer are the page's header and footer (nil when it has
+	// none); BodyTop and BodyBottom bound the body text area (see
+	// hdrftr.go).
+	Header, Footer      *Band
+	BodyTop, BodyBottom float64
 }
 
 // LineRef points at a placed line.
@@ -62,6 +67,7 @@ type Engine struct {
 	glyphs []text.Glyph
 	adv    []float32
 	styles map[TextStyle]*TextStyle
+	pics   map[*model.Picture]picCache // see picture.go
 	cache  map[*model.Paragraph]*Para
 	used   map[*model.Paragraph]bool
 	dirty  map[*model.Paragraph]bool
@@ -79,6 +85,11 @@ type Engine struct {
 	empty     bool // nothing placed on the page yet
 	hardBreak bool // the page was started by a page break
 	setup     model.PageSetup
+
+	// FieldValue, when set, gives the shown value of fields (PAGE in a
+	// header); see hdrftr.go.
+	FieldValue func(instr string) (string, bool)
+	hf         hfState
 }
 
 // New returns an engine for doc measuring text with shaper.
@@ -115,6 +126,7 @@ func (e *Engine) Invalidate(paras []*model.Paragraph, all bool) {
 func (e *Engine) Layout() {
 	start := time.Now()
 	e.LastRelaid = 0
+	relayAll := e.all
 	if e.all {
 		clear(e.cache)
 		clear(e.styles)
@@ -139,6 +151,7 @@ func (e *Engine) Layout() {
 		e.setup = model.LetterPage()
 	}
 	e.Pages = nil
+	e.prepareHF(relayAll)
 	e.newPage(false)
 	body := e.Doc.Body
 	for bi, b := range body {
@@ -158,6 +171,7 @@ func (e *Engine) Layout() {
 			delete(e.cache, p)
 		}
 	}
+	e.placeHF()
 	top := float64(PageGap)
 	for _, pg := range e.Pages {
 		pg.Top = top
@@ -171,9 +185,9 @@ func (e *Engine) textLeft() float64 { return math.Abs(e.setup.MarginLeft) }
 func (e *Engine) textWidth() float64 {
 	return max(e.setup.Width-math.Abs(e.setup.MarginLeft)-math.Abs(e.setup.MarginRight), 72)
 }
-func (e *Engine) textTop() float64 { return math.Abs(e.setup.MarginTop) }
+func (e *Engine) textTop() float64 { return max(math.Abs(e.setup.MarginTop), e.hfTop()) }
 func (e *Engine) textBottom() float64 {
-	return max(e.setup.Height-math.Abs(e.setup.MarginBottom), e.textTop()+72)
+	return max(min(e.setup.Height-math.Abs(e.setup.MarginBottom), e.hfBottom()), e.textTop()+72)
 }
 
 func (e *Engine) newPage(hard bool) {

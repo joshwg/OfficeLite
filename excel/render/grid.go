@@ -23,11 +23,11 @@ import (
 var (
 	gridLineColor  = colors.RGB(0xE1E1E1)
 	headerBG       = colors.RGB(0xF5F5F5)
-	headerSelBG    = colors.RGB(0xD3E7DA)
+	headerSelBG    = colors.RGB(0xF6E2C6)
 	headerLine     = colors.RGB(0xD4D4D4)
 	headerText     = colors.RGB(0x444444)
-	accent         = colors.RGB(0x107C41) // Excel green
-	selectionFill  = color.NRGBA{R: 0x10, G: 0x7C, B: 0x41, A: 0x1E}
+	accent         = gui.ExcelAccent
+	selectionFill  = color.NRGBA{R: 0xA8, G: 0x5C, B: 0x00, A: 0x1E}
 	freezeLine     = colors.RGB(0xA6A6A6)
 	headerFontSize = float32(11)
 )

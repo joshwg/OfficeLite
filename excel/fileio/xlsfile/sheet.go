@@ -25,6 +25,7 @@ func (p *parser) readSheet(pos int, sh *model.Sheet) {
 		exps       []expCell                 // cells whose formula is a tExp
 		shared     = map[[2]int]sharedFmla{} // SHRFMLA / ARRAY / TABLE by anchor
 		badFormula int
+		annots     = annotReader{lastObj: -1}
 	)
 	set := func(row, col int, c model.Cell) {
 		if !sh.Set(row, col, c) && c.Kind != model.KindEmpty {
@@ -74,6 +75,9 @@ func (p *parser) readSheet(pos int, sh *model.Sheet) {
 				c.Text = s
 			}
 			strSegs, pendingRow = nil, -1
+		}
+		if annots.record(r) {
+			return true // notes and hyperlinks
 		}
 		switch r.id {
 		case recString, recShrFmla, recArray, recTable:
@@ -247,6 +251,7 @@ func (p *parser) readSheet(pos int, sh *model.Sheet) {
 			c.Text = (&segments{segs: strSegs}).str()
 		}
 	}
+	annots.apply(sh)
 	if frozen {
 		sh.FreezeCols, sh.FreezeRows = paneX, paneY
 	} else {

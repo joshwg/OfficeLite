@@ -38,7 +38,7 @@ type cellEditor struct {
 	barText         string         // what bar shows while not editing
 }
 
-var editSelection = color.NRGBA{R: 0x10, G: 0x7C, B: 0x41, A: 0x50}
+var editSelection = color.NRGBA{R: 0xA8, G: 0x5C, B: 0x00, A: 0x50}
 
 // editText is a cell's content as editing starts with it: the formula,
 // the value (percentages as 12%), or the text with its line breaks.

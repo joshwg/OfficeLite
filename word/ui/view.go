@@ -27,7 +27,7 @@ import (
 var (
 	viewBG     = colors.RGB(0xE3E3E3)
 	pageShadow = colors.RGBA(0, 0, 0, 0x30)
-	selColor   = colors.RGB(0xC5DBF6)
+	selColor   = colors.RGB(0xDDD3F7)
 	caretColor = colors.RGB(0x000000)
 )
 
@@ -80,6 +80,7 @@ func (d *window) layoutDoc(gtx layout.Context) layout.Dimensions {
 	}
 	d.docPointer(gtx)
 	d.docKeys(gtx)
+	d.insertKeys(gtx)
 	d.relayout()
 	if v.ensureCaret {
 		v.ensureCaret = false
@@ -94,6 +95,7 @@ func (d *window) layoutDoc(gtx layout.Context) layout.Dimensions {
 	gui.FillRect(gtx.Ops, image.Rectangle{Max: size}, viewBG)
 	event.Op(gtx.Ops, tag)
 	pointer.CursorText.Add(gtx.Ops)
+	d.painterCursor(gtx)
 	key.InputHintOp{Tag: tag, Hint: key.HintText}.Add(gtx.Ops)
 
 	px := d.pageX()
@@ -106,16 +108,24 @@ func (d *window) layoutDoc(gtx layout.Context) layout.Dimensions {
 		r := image.Rect(px, int(math.Round(top)), px+int(math.Round(pg.Width*v.scale)), int(math.Round(top+h)))
 		gui.FillRect(gtx.Ops, r.Add(image.Pt(2, 2)), pageShadow)
 		off := op.Offset(r.Min).Push(gtx.Ops)
+		sel := d.ed.Sel
+		if d.hf.on {
+			sel = model.Selection{} // drawn by drawPageExtras
+		}
 		d.eng.DrawPage(gtx.Ops, pg, wl.DrawOptions{
 			Scale:    v.scale,
-			Sel:      d.ed.Sel,
+			Sel:      sel,
 			SelColor: selColor,
 			Y0:       max(-top/v.scale, 0),
 			Y1:       (float64(size.Y) - top) / v.scale,
+			HFDim:    !d.hf.on,
+			BodyDim:  d.hf.on,
 		})
+		d.drawPageExtras(gtx, pg)
 		off.Pop()
 	}
 	d.drawCaret(gtx, px)
+	d.drawInsertOverlay(gtx, px)
 	return layout.Dimensions{Size: size}
 }
 
@@ -130,11 +140,11 @@ func (d *window) drawCaret(gtx layout.Context, px int) {
 	if phase%2 == 1 {
 		return
 	}
-	c, ok := d.eng.CaretAt(d.ed.Sel.Caret)
+	c, ok := d.ceng().CaretAt(d.ed.Sel.Caret)
 	if !ok {
 		return
 	}
-	pg := d.eng.Pages[c.Page]
+	pg := d.ceng().Pages[c.Page]
 	x := px + int(math.Round(c.X*v.scale))
 	y := (pg.Top + c.Y - v.scrollY) * v.scale
 	w := max(1, gtx.Dp(1))
@@ -144,11 +154,11 @@ func (d *window) drawCaret(gtx layout.Context, px int) {
 // scrollToCaret scrolls the least amount that shows the caret.
 func (d *window) scrollToCaret() {
 	v := &d.v
-	c, ok := d.eng.CaretAt(d.ed.Sel.Caret)
+	c, ok := d.ceng().CaretAt(d.ed.Sel.Caret)
 	if !ok || v.scale == 0 {
 		return
 	}
-	top := d.eng.Pages[c.Page].Top + c.Y
+	top := d.ceng().Pages[c.Page].Top + c.Y
 	viewH := float64(v.size.Y) / v.scale
 	margin := min(24.0, viewH/4)
 	if top-margin < v.scrollY {
@@ -174,7 +184,7 @@ func (d *window) viewPos(p f32.Point) model.Pos {
 	v := &d.v
 	x := (float64(p.X) - float64(d.pageX())) / v.scale
 	y := v.scrollY + float64(p.Y)/v.scale
-	return d.eng.HitView(x, y)
+	return d.ceng().HitView(x, y)
 }
 
 func (d *window) docPointer(gtx layout.Context) {
@@ -206,7 +216,18 @@ func (d *window) docPointer(gtx layout.Context) {
 				v.clicks = 1
 			}
 			v.lastClick, v.lastPos = now, e.Position
+			if d.hfPress(e.Position, v.clicks) {
+				v.dragging, v.hasGoal = false, false
+				v.resetBlink()
+				continue
+			}
 			pos := d.viewPos(e.Position)
+			if d.pressObject(e, v.clicks) {
+				v.dragging = d.ins.resizing
+				v.hasGoal = false
+				v.resetBlink()
+				continue
+			}
 			switch {
 			case v.clicks == 2:
 				d.ed.SelectWord(pos)
@@ -219,7 +240,7 @@ func (d *window) docPointer(gtx layout.Context) {
 			v.hasGoal = false
 			v.resetBlink()
 		case pointer.Drag:
-			if !v.dragging {
+			if !v.dragging || d.dragObject(e) {
 				continue
 			}
 			// Dragging past the edges scrolls.
@@ -230,7 +251,7 @@ func (d *window) docPointer(gtx layout.Context) {
 			}
 			pos := d.viewPos(e.Position)
 			if v.clicks == 1 {
-				d.ed.SetCaret(pos, true)
+				d.dragTo(pos)
 			} else {
 				// Extend by words or paragraphs from the original selection.
 				a, b := d.ed.Sel.Ordered()
@@ -246,6 +267,10 @@ func (d *window) docPointer(gtx layout.Context) {
 			}
 			v.resetBlink()
 		case pointer.Release, pointer.Cancel:
+			if v.dragging && e.Kind == pointer.Release {
+				d.painterRelease()
+			}
+			d.releaseObject()
 			v.dragging = false
 		case pointer.Scroll:
 			d.wheel(gtx, e)
@@ -383,7 +408,7 @@ func (d *window) key(gtx layout.Context, e key.Event) {
 			last := ed.NumParas() - 1
 			to = model.Pos{Para: last, Off: ed.Para(last).Len()}
 		default:
-			a, b := d.eng.LineBounds(ed.Sel.Caret)
+			a, b := d.ceng().LineBounds(ed.Sel.Caret)
 			to = a
 			if e.Name == key.NameEnd {
 				to = b
@@ -413,6 +438,9 @@ func (d *window) key(gtx layout.Context, e key.Event) {
 			ed.Enter()
 		}
 	case key.NameTab:
+		if !ctrl && d.tableTab(shift) {
+			break // in a table: the next or previous cell
+		}
 		// In a list, Tab at the start of an item changes its level.
 		if p := ed.Para(ed.Sel.Caret.Para); ed.ListKind(p) != "" && ed.Sel.Empty() && ed.Sel.Caret.Off == 0 {
 			if shift {
@@ -470,14 +498,14 @@ func (d *window) key(gtx layout.Context, e key.Event) {
 func (d *window) verticalMove(dir int, extend bool) {
 	d.relayout()
 	ed := d.ed
-	c, ok := d.eng.CaretAt(ed.Sel.Caret)
+	c, ok := d.ceng().CaretAt(ed.Sel.Caret)
 	if !ok {
 		return
 	}
 	if !d.v.hasGoal {
 		d.v.goalX, d.v.hasGoal = c.X, true
 	}
-	to, ok := d.eng.Vertical(ed.Sel.Caret, dir, d.v.goalX)
+	to, ok := d.ceng().Vertical(ed.Sel.Caret, dir, d.v.goalX)
 	if !ok {
 		if dir < 0 {
 			to = model.Pos{}
@@ -512,7 +540,7 @@ func (d *window) paragraphMove(dir int, extend bool) {
 func (d *window) pageMove(down bool, extend bool) {
 	d.relayout()
 	v := &d.v
-	c, ok := d.eng.CaretAt(d.ed.Sel.Caret)
+	c, ok := d.ceng().CaretAt(d.ed.Sel.Caret)
 	if !ok || v.scale == 0 {
 		return
 	}
@@ -524,9 +552,9 @@ func (d *window) pageMove(down bool, extend bool) {
 	if !v.hasGoal {
 		v.goalX, v.hasGoal = c.X, true
 	}
-	y := d.eng.Pages[c.Page].Top + c.Y + c.H/2 + dy
+	y := d.ceng().Pages[c.Page].Top + c.Y + c.H/2 + dy
 	v.scrollY += dy
-	to := d.eng.HitView(v.goalX, min(max(y, 0), d.eng.Height))
+	to := d.ceng().HitView(v.goalX, min(max(y, 0), d.eng.Height))
 	d.ed.SetCaret(to, extend)
 }
 
@@ -552,7 +580,10 @@ func (d *window) paste(gtx layout.Context) {
 // formatting, anything else is plain text.
 func (d *window) pasteData(s string) {
 	norm := func(s string) string { return strings.ReplaceAll(s, "\r\n", "\n") }
-	if d.clip != nil && norm(s) == norm(d.clipText) {
+	if d.pastePlain {
+		d.pastePlain = false
+		d.ed.PasteText(s)
+	} else if d.clip != nil && norm(s) == norm(d.clipText) {
 		d.ed.Paste(d.clip)
 	} else {
 		d.ed.PasteText(s)

@@ -455,8 +455,10 @@ func (x *writer) sheetRecords(si int, sh *model.Sheet) []byte {
 		x.issue("%s: %d dynamic-array formulas will be saved as ordinary formulas; the cells they spill into keep their current values", sh.Name, nDynamic)
 	}
 
+	b = x.notes(b, si, sh)
 	b = x.window(b, si, sh)
 	b = x.merges(b, sh)
+	b = x.annotations(b, sh)
 	return rec(b, recEOF, nil)
 }
 
@@ -963,6 +965,7 @@ func (x *writer) stream() []byte {
 	}
 	b = rec(b, recCountry, le(1, 1))
 	b = x.links(b)
+	b = x.drawingGroup(b)
 	b = x.sstRecords(b)
 	b = rec(b, recEOF, nil)
 	for i, data := range x.sheetData {

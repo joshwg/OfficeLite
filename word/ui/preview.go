@@ -36,6 +36,10 @@ func Preview(gtx layout.Context, fonts *gui.FontLibrary, list *recent.List, doc 
 		d.dlg.openFor(d, d.ed.ParaStyleID(0))
 	case "close":
 		d.confirm.show = true
+	case "table", "picker", "link", "symbol", "date":
+		d.previewInsert(dialog)
+	case "find", "replace", "goto", "header", "footer", "styles", "newstyle", "paste":
+		d.previewHome(dialog)
 	}
 	d.layout(gtx)
 }

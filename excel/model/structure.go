@@ -1,6 +1,9 @@
 package model
 
-import "slices"
+import (
+	"maps"
+	"slices"
+)
 
 // Structural edits: inserting and deleting rows and columns moves the
 // cells and everything positioned by row or column (sizes, merged cells,
@@ -149,6 +152,7 @@ func (s *Sheet) shift(rows bool, at, n int) {
 		}
 	}
 	s.Spills = spills
+	s.shiftAnnots(rows, at, n)
 
 	freeze := &s.FreezeCols
 	if rows {
@@ -210,6 +214,8 @@ func (s *Sheet) Clone() *Sheet {
 	for k, v := range s.Spills {
 		c.Spills[k] = v
 	}
+	c.Notes = maps.Clone(s.Notes)
+	c.Links = maps.Clone(s.Links)
 	return &c
 }
 

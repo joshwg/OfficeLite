@@ -262,7 +262,7 @@ func TestFormulaBarAndDoubleClick(t *testing.T) {
 		t.Errorf("bar on A2 = %q", got)
 	}
 	// Clicking the formula bar edits there.
-	h.click(200, 36+30+15)
+	h.click(200, float32(36+30+ribbonHeight+15))
 	if !a.ed.active || !a.ed.inBar {
 		t.Fatalf("bar click: editing %v, in bar %v", a.ed.active, a.ed.inBar)
 	}
@@ -278,7 +278,7 @@ func TestFormulaBarAndDoubleClick(t *testing.T) {
 			break
 		}
 	}
-	x, y = 60, y+3+36+30+30
+	x, y = 60, y+3+float32(gridTop)
 	h.click(x, y)
 	h.click(x, y)
 	if !a.ed.active || a.ed.inBar || a.ed.cell.Text() != "x" {

@@ -25,6 +25,9 @@ type gridInput struct {
 	wheelZoom    float32
 	lastPress    time.Duration // time of the last press, for double-clicks
 	lastHit      render.Hit
+	resize       *resizeDrag   // a header divider being dragged
+	lastDivider  time.Duration // time of the last press on a divider
+	lastEdge     dividerID
 }
 
 // doubleClick is the longest time between the presses of a double-click.
@@ -49,13 +52,22 @@ func (a *App) layoutGrid(gtx layout.Context) layout.Dimensions {
 	size := gtx.Constraints.Max
 	area := clip.Rect{Max: size}.Push(gtx.Ops)
 	event.Op(gtx.Ops, tag)
-	pointer.CursorCrosshair.Add(gtx.Ops)
+	switch r := a.grid.resize; {
+	case r != nil && r.cols:
+		pointer.CursorColResize.Add(gtx.Ops)
+	case r != nil:
+		pointer.CursorRowResize.Add(gtx.Ops)
+	default:
+		pointer.CursorCrosshair.Add(gtx.Ops)
+		a.dividerCursors(gtx, &st.view)
+	}
 	area.Pop()
 
 	cs := clip.Rect{Max: size}.Push(gtx.Ops)
 	defer cs.Pop()
 	d := st.view.Draw(gtx)
 	a.layoutCellEditor(gtx, &st.view)
+	a.drawAnnots(gtx, &st.view) // notes, links, fill drag (notes.go)
 	return d
 }
 
@@ -64,7 +76,7 @@ func (a *App) gridPointer(gtx layout.Context, st *sheetState) {
 	for {
 		ev, ok := gtx.Event(pointer.Filter{
 			Target:  &a.grid,
-			Kinds:   pointer.Press | pointer.Drag | pointer.Release | pointer.Cancel | pointer.Scroll,
+			Kinds:   pointer.Press | pointer.Drag | pointer.Release | pointer.Cancel | pointer.Scroll | pointer.Move,
 			ScrollX: pointer.ScrollRange{Min: -1 << 20, Max: 1 << 20},
 			ScrollY: pointer.ScrollRange{Min: -1 << 20, Max: 1 << 20},
 		})
@@ -88,7 +100,28 @@ func (a *App) gridPointer(gtx layout.Context, st *sheetState) {
 				a.finishRename(true)
 			}
 			requestFocus(gtx, &a.grid)
+			if a.beginResize(st, e.Position) {
+				// A double-click on a divider fits the column (row) to its
+				// contents, as in Excel.
+				d := a.grid.resize
+				id := dividerID{d.cols, d.edge}
+				if a.grid.lastDivider != 0 && e.Time-a.grid.lastDivider < doubleClick && a.grid.lastEdge == id {
+					a.endResize(st, false)
+					a.autoFit(gtx, st, d)
+					a.grid.lastDivider = 0
+				} else {
+					a.grid.lastDivider, a.grid.lastEdge = e.Time, id
+				}
+				a.grid.lastPress = 0
+				continue
+			}
+			if a.fillPress(v, e.Position.Round()) {
+				continue // dragging the fill handle (fill.go)
+			}
 			hit := v.HitTest(e.Position.X, e.Position.Y)
+			if e.Modifiers.Contain(key.ModShortcut) && a.followLinkAt(v, hit) {
+				continue // Ctrl+click on a hyperlink (notes.go)
+			}
 			double := e.Time-a.grid.lastPress < doubleClick && hit == a.grid.lastHit
 			a.grid.lastPress, a.grid.lastHit = e.Time, hit
 			if double && hit.Area == render.AreaCell && !e.Modifiers.Contain(key.ModShift) {
@@ -101,6 +134,14 @@ func (a *App) gridPointer(gtx layout.Context, st *sheetState) {
 			a.grid.dragArea = hit.Area
 			a.pointAt(st, hit, e.Modifiers.Contain(key.ModShift))
 		case pointer.Drag:
+			if a.ins.fill.active {
+				a.fillMove(v, e.Position.Round())
+				continue
+			}
+			if a.grid.resize != nil {
+				a.dragResize(gtx, st, e.Position)
+				continue
+			}
 			if a.grid.dragging {
 				hit := v.HitTest(e.Position.X, e.Position.Y)
 				hit.Area = a.grid.dragArea
@@ -109,8 +150,16 @@ func (a *App) gridPointer(gtx layout.Context, st *sheetState) {
 			}
 		case pointer.Release, pointer.Cancel:
 			a.grid.dragging = false
+			if a.ins.fill.active {
+				a.fillRelease(e.Kind == pointer.Release)
+			}
+			if a.grid.resize != nil {
+				a.endResize(st, e.Kind == pointer.Release)
+			}
 		case pointer.Scroll:
 			a.wheel(gtx, st, e)
+		case pointer.Move:
+			a.gridHover(v, e.Position.Round()) // notes show on hover (notes.go)
 		}
 	}
 }

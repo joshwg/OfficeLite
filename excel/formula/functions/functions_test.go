@@ -75,3 +75,13 @@ func TestCombined(t *testing.T) {
 		}
 	}
 }
+
+func TestCategories(t *testing.T) {
+	n := 0
+	for _, c := range Categories() {
+		n += len(c.Funcs)
+	}
+	if want := len(Default().Names()) + 2; n != want {
+		t.Errorf("%d functions in categories, want %d", n, want)
+	}
+}

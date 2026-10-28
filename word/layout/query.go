@@ -200,10 +200,16 @@ func (e *Engine) SelectionRects(pg *Page, a, b model.Pos) []Rect {
 		return nil
 	}
 	var out []Rect
+	cross := e.cellOf(a.Para) != e.cellOf(b.Para)
 	for i := range pg.Lines {
 		pl := &pg.Lines[i]
 		l := pl.Line
 		ls, le := model.Pos{Para: pl.Para, Off: l.Start}, model.Pos{Para: pl.Para, Off: l.End}
+		if cross && e.cellSelected(pl.Para, a, b) {
+			// A selection across cells highlights whole cells.
+			out = append(out, Rect{pl.X - cellMargin, pl.Y, pl.X + pl.W + cellMargin, pl.Y + l.Height})
+			continue
+		}
 		if !ls.Less(b) || !(a.Less(le) || l.Last && a == le && b.Para > pl.Para) {
 			continue
 		}
@@ -235,4 +241,29 @@ func (e *Engine) PageOfPos(p model.Pos) int {
 		return c.Page
 	}
 	return 0
+}
+
+// cellOf returns the table cell paragraph i is in, or nil.
+func (e *Engine) cellOf(i int) *model.TableCell {
+	if i < 0 || i >= len(e.locs) {
+		return nil
+	}
+	return e.locs[i].Cell
+}
+
+// cellSelected reports whether the selection [a, b) covers all of the
+// cell paragraph i is in.
+func (e *Engine) cellSelected(i int, a, b model.Pos) bool {
+	c := e.cellOf(i)
+	if c == nil {
+		return false
+	}
+	first, last := i, i
+	for first > 0 && e.locs[first-1].Cell == c {
+		first--
+	}
+	for last+1 < len(e.locs) && e.locs[last+1].Cell == c {
+		last++
+	}
+	return !(model.Pos{Para: first}).Less(a) && !b.Less(model.Pos{Para: last, Off: e.locs[last].P.Len()})
 }

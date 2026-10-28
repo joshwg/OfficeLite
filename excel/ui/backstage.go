@@ -41,6 +41,7 @@ type backstageState struct {
 	exportOpts [2]widget.Clickable
 	pdfOpt     widget.Clickable
 	printBtn   widget.Clickable
+	pdf        pdfState // PDF export and Print via PDF (pdfexport.go)
 	info       infoCache
 }
 
@@ -335,21 +336,12 @@ func (a *App) backstagePage(p gui.Page) []layout.Widget {
 		})
 		return rows
 	case gui.PagePrint:
-		for bs.printBtn.Clicked(a.gtx) {
-		}
-		return []layout.Widget{
-			th.Paragraph("Printing isn't available in "+version.String()+" yet. "+
-				"Save a copy as Excel Workbook or CSV to print it from another program.", gui.MutedText),
-			layout.Spacer{Height: 16}.Layout,
-			func(gtx layout.Context) layout.Dimensions { return th.Button(gtx.Disabled(), &bs.printBtn, "Print") },
-		}
+		return a.printPageRows()
 	case gui.PageExport:
 		for i := range exportFormats {
 			for bs.exportOpts[i].Clicked(a.gtx) {
 				a.saveAs(exportFormats[i], true)
 			}
-		}
-		for bs.pdfOpt.Clicked(a.gtx) {
 		}
 		rows := []layout.Widget{th.Heading("Change file type")}
 		for i, ef := range exportFormats {
@@ -357,10 +349,7 @@ func (a *App) backstagePage(p gui.Page) []layout.Widget {
 				return th.Option(gtx, &bs.exportOpts[i], formatIcon(ef), ef.String(), formatDesc(ef), false)
 			})
 		}
-		rows = append(rows, th.Heading("Create document"), func(gtx layout.Context) layout.Dimensions {
-			return th.Option(gtx.Disabled(), &bs.pdfOpt, gui.IconFile, "PDF", "Not available in this version", false)
-		})
-		return rows
+		return append(rows, a.pdfExportRows()...)
 	}
 	return nil
 }

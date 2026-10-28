@@ -34,6 +34,7 @@ type backstageState struct {
 	exportOpts [2]widget.Clickable
 	pdfOpt     widget.Clickable
 	printBtn   widget.Clickable
+	pdf        pdfState // PDF export (pdfexport.go)
 	info       infoCache
 }
 
@@ -118,7 +119,7 @@ func (d *window) saveTo(f fileio.Format) {
 		return
 	}
 	d.errMsg = ""
-	d.saved = d.ed.Version
+	d.saved = d.bodyEd().Version
 	d.fileInfo, _ = os.Stat(d.path)
 	d.notice = "Saved " + filepath.Base(d.path)
 	d.afterSave()
@@ -151,7 +152,7 @@ func (d *window) saveAs(f fileio.Format, export bool) {
 
 func (d *window) writeAs(f fileio.Format, export bool) {
 	d.saving.Store(true)
-	doc, version := d.doc.Clone(), d.ed.Version
+	doc, version := d.doc.Clone(), d.bodyEd().Version
 	name := d.baseName() + f.Ext()
 	go func() {
 		defer d.saving.Store(false)
@@ -245,21 +246,12 @@ func (d *window) backstagePage(p gui.Page) []layout.Widget {
 		}
 		return rows
 	case gui.PagePrint:
-		for bs.printBtn.Clicked(d.gtx) {
-		}
-		return []layout.Widget{
-			th.Paragraph("Printing isn't available in "+version.String()+" yet. "+
-				"Save a copy as Word Document to print it from another program.", gui.MutedText),
-			layout.Spacer{Height: 16}.Layout,
-			func(gtx layout.Context) layout.Dimensions { return th.Button(gtx.Disabled(), &bs.printBtn, "Print") },
-		}
+		return d.printPageRows()
 	case gui.PageExport:
 		for i := range exportFormats {
 			for bs.exportOpts[i].Clicked(d.gtx) {
 				d.saveAs(exportFormats[i], true)
 			}
-		}
-		for bs.pdfOpt.Clicked(d.gtx) {
 		}
 		rows := []layout.Widget{th.Heading("Change file type")}
 		for i, ef := range exportFormats {
@@ -267,9 +259,7 @@ func (d *window) backstagePage(p gui.Page) []layout.Widget {
 				return th.Option(gtx, &bs.exportOpts[i], formatIcon(ef), ef.String(), formatDesc(ef), false)
 			})
 		}
-		rows = append(rows, th.Heading("Create document"), func(gtx layout.Context) layout.Dimensions {
-			return th.Option(gtx.Disabled(), &bs.pdfOpt, gui.IconFile, "PDF", "Not available in this version", false)
-		})
+		rows = append(rows, d.pdfExportRows()...)
 		if d.errMsg != "" {
 			rows = append(rows, layout.Spacer{Height: 12}.Layout, th.Paragraph(d.errMsg, gui.ErrorText))
 		}

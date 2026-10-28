@@ -50,6 +50,7 @@ func Write(doc *model.Document, w io.Writer) error {
 			wr.rels = append(wr.rels, rel{"rId3", relTypePrefix + relNumbering, "numbering.xml", ""})
 		}
 	}
+	wr.prepareHeaders()
 	docXML := wr.documentXML()
 	styles := wr.stylesXML()
 	numbering := wr.numberingXML()
@@ -71,6 +72,11 @@ type writer struct {
 	srcNum    *node
 	rels      []rel // main part relationships (with additions)
 	relsDirty bool
+	hfParts   []hfPart // header and footer parts (hdrftr.go)
+	// pictures written as new media parts (picture.go)
+	picRels map[*model.Picture]string
+	media   []media
+	docPrID int
 }
 
 func (w *writer) warn(s string) {
@@ -380,6 +386,10 @@ func (w *writer) run(b *strings.Builder, r *model.Run) {
 			b.Write(r.Opaque.Data)
 			return
 		}
+		if r.Opaque != nil && r.Opaque.Picture != nil && r.Opaque.Width > 0 && r.Opaque.Height > 0 {
+			w.pictureRun(b, r)
+			return
+		}
 		if r.Opaque != nil && r.Opaque.Field != "" {
 			b.WriteString(`<w:fldSimple w:instr="` + escAttr(" "+r.Opaque.Field+" ") + `">`)
 			w.textRun(b, r, r.Text)
@@ -636,6 +646,7 @@ func (w *writer) sectPr(b *strings.Builder, sect *node) {
 		{[]string{"w:pgMar"}, has(orig, "w:pgMar") && pg.MarginTop == o.MarginTop && pg.MarginBottom == o.MarginBottom &&
 			pg.MarginLeft == o.MarginLeft && pg.MarginRight == o.MarginRight && pg.Header == o.Header && pg.Footer == o.Footer, mar},
 	}
+	groups = append(groups, w.hfGroups(orig)...)
 	if sect == nil {
 		groups = append(groups,
 			propGroup{[]string{"w:cols"}, false, `<w:cols w:space="720"/>`},
@@ -675,6 +686,9 @@ func (w *writer) stylesXML() []byte {
 		b.WriteString(`<w:style w:type="` + styleTypeNames[st.Type] + `"`)
 		if st.Default {
 			b.WriteString(` w:default="1"`)
+		}
+		if st.Custom {
+			b.WriteString(` w:customStyle="1"`)
 		}
 		b.WriteString(` w:styleId="` + escAttr(st.ID) + `">`)
 		orig := parseFragment(st.DocxXML)
@@ -897,6 +911,12 @@ func (w *writer) writeInto(out io.Writer, docXML, styles, numbering []byte) erro
 		}
 		replace[numPart] = numbering
 	}
+	if w.addHFParts(replace, ct) {
+		ctDirty = true
+	}
+	if w.addMedia(ct, replace) {
+		ctDirty = true
+	}
 	if w.relsDirty {
 		replace[relsPath(w.main)] = relsXML(w.rels)
 	}
@@ -967,6 +987,15 @@ func (w *writer) writeNew(out io.Writer, docXML, styles, numbering []byte) error
 		`<dcterms:created xsi:type="dcterms:W3CDTF">` + now + `</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">` + now + `</dcterms:modified></cp:coreProperties>`
 	app := xmlHeader + `<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><Application>OfficeLite</Application></Properties>`
 
+	mediaParts := map[string][]byte{}
+	w.addMedia(ct, mediaParts)
+	for _, p := range w.hfParts {
+		ct.setOverride(p.name, p.ctype)
+	}
+	if w.doc.HF.EvenOdd {
+		settings = strings.Replace(settings, "<w:characterSpacingControl", "<w:evenAndOddHeaders/><w:characterSpacingControl", 1)
+	}
+
 	zw := zip.NewWriter(out)
 	parts := []struct {
 		name string
@@ -990,6 +1019,21 @@ func (w *writer) writeNew(out io.Writer, docXML, styles, numbering []byte) error
 	for _, p := range parts {
 		if err := deflate(zw, p.name, p.data); err != nil {
 			return err
+		}
+	}
+	for _, m := range w.media {
+		if err := deflate(zw, m.part, mediaParts[m.part]); err != nil {
+			return err
+		}
+	}
+	for _, p := range w.hfParts {
+		if err := deflate(zw, p.name, p.data); err != nil {
+			return err
+		}
+		if p.rels != nil {
+			if err := deflate(zw, relsPath(p.name), p.rels); err != nil {
+				return err
+			}
 		}
 	}
 	return zw.Close()

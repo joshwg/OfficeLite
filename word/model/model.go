@@ -257,6 +257,7 @@ type Style struct {
 	Next    string // ID of the style for the following paragraph
 	Default bool   // the default style of its type ("Normal", "DefaultParagraphFont")
 	Hidden  bool   // not shown in the style gallery
+	Custom  bool   // a user-defined style (not one of Word's built-in styles); only these can be deleted
 	Para    ParaProps
 	Run     RunProps
 	// DocxXML is the original <w:style> content other than pPr/rPr
@@ -346,6 +347,9 @@ type Opaque struct {
 	// the content is a field; Text is then its last result. Fields are not
 	// recalculated.
 	Field string
+	// Picture is the image the content shows (an inline picture), drawn
+	// at Width × Height; nil for other content.
+	Picture *Picture
 }
 
 // Paragraph is a block of runs ending in a paragraph mark.
@@ -463,6 +467,8 @@ type Document struct {
 	// DefaultTabStop is the interval of the default tab stops, points
 	// (0 = 36, half an inch).
 	DefaultTabStop float64
+	// HF holds the headers and footers (see hdrftr.go).
+	HF HeadersFooters
 }
 
 // New returns an empty document with Word's default styles.

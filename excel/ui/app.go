@@ -57,6 +57,7 @@ type App struct {
 	ui     *gui.Theme
 	th     *material.Theme // ui.Theme
 	expl   *explorer.Explorer
+	files  gui.FileDialog // Open dialog with Excel/Word file-type filters
 	fonts  *gui.FontLibrary
 	recent *recent.List
 	launch func(kind doctype.Kind, path string)
@@ -101,6 +102,11 @@ type App struct {
 	results chan loadResult
 	calls   chan func() // work posted to the UI goroutine
 	stats   statsCache
+
+	home   homeRibbon   // the Home ribbon (ribbon.go)
+	fmtDlg formatDialog // Format Cells (formatdialog.go)
+	askDlg askDialog    // Row Height, Column Width, ... prompts
+	ins    insertState  // Insert, Find & Select and Sort dialogs, fill handle (dialogs.go)
 }
 
 // bookSeq numbers new workbooks (Book1, Book2, ...) across windows.
@@ -161,6 +167,7 @@ func Run(w *app.Window, cfg Config) error {
 	for {
 		e := w.Event()
 		a.expl.ListenEvents(e)
+		a.files.ListenEvents(e)
 		switch e := e.(type) {
 		case *app.ClosingEvent:
 			// Gio lets a window refuse to close (WM_CLOSE on Windows):
@@ -219,6 +226,16 @@ func (a *App) openPath(path string) {
 // platform gives no path, the data is read into this window.
 func (a *App) openDialog() {
 	go func() {
+		// The native dialog lists Excel files, then Word documents (which
+		// openFile routes to a WordLite window).
+		path, err := a.files.Open(gui.ExcelFilter, gui.WordFilter, gui.AllFilter)
+		switch {
+		case err == nil:
+			a.post(func() { a.openFile(path) })
+			return
+		case errors.Is(err, gui.ErrCancelled):
+			return
+		}
 		rc, err := a.expl.ChooseFile(openExtensions...)
 		if errors.Is(err, explorer.ErrUserDecline) {
 			return
@@ -332,6 +349,9 @@ func (a *App) setWorkbook(wb *model.Workbook) {
 	a.stats = statsCache{}
 	a.notice = ""
 	a.bs.info = infoCache{}
+	a.home = homeRibbon{}
+	a.fmtDlg.open, a.askDlg.open = false, false
+	a.ins = insertState{}
 	if a.win != nil {
 		a.win.Option(windowTitle(wb.Name))
 	}
@@ -360,6 +380,7 @@ func (a *App) state() *sheetState {
 	}
 	st.view.Shaper = a.shaper
 	st.view.Zoom = a.zoom
+	st.view.Styles = a.wb.Styles // formatting adds styles
 	return st
 }
 

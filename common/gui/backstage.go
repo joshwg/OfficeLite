@@ -339,8 +339,8 @@ func (b *Backstage) recentRows(th *Theme, list []recent.Entry, n int) []layout.W
 
 // Accent colors of the apps, for recent-file icons.
 var (
-	ExcelAccent = colors.RGB(0x107C41)
-	WordAccent  = colors.RGB(0x185ABD)
+	ExcelAccent = colors.RGB(0xA85C00) // the icon's amber, deepened for white text
+	WordAccent  = colors.RGB(0x5E3FBF) // the icon's violet
 )
 
 func kindAccent(k recent.Kind, th *Theme) color.NRGBA {

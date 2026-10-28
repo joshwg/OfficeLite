@@ -2,6 +2,7 @@ package docxfile
 
 import (
 	"fmt"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -11,12 +12,11 @@ import (
 
 // Warnings shown to the user for content WordLite reads but doesn't show.
 const (
-	warnHeaders   = "Headers and footers aren't shown (they are kept when saving as .docx)."
 	warnNotes     = "Footnotes and endnotes aren't shown; only their reference marks are (they are kept when saving as .docx)."
 	warnComments  = "Comments aren't shown (they are kept when saving as .docx)."
 	warnTracked   = "Tracked changes aren't shown: insertions appear as normal text and deletions are hidden."
 	warnColumns   = "Text columns aren't shown; the text is laid out in one column."
-	warnPictures  = "Pictures, shapes, charts and equations are shown as placeholders."
+	warnPictures  = "Shapes, charts, equations and pictures in formats WordLite can't draw (such as EMF) are shown as placeholders."
 	warnFields    = "Fields (page numbers, tables of contents...) show their last result and aren't updated."
 	warnMacros    = "This document contains macros. WordLite never runs them, and they are removed when the document is saved."
 	warnTextBoxes = "Text boxes are shown as placeholders."
@@ -38,6 +38,7 @@ func Read(data []byte) (*model.Document, error) {
 		return nil, fmt.Errorf("document.xml: %w", err)
 	}
 	r := &reader{doc: &model.Document{Page: model.LetterPage(), Lists: map[int]*model.List{}}, warned: map[string]bool{}}
+	r.pkg, r.main = p, main
 	r.rels = map[string]rel{}
 	for _, rl := range p.rels(main) {
 		r.rels[rl.ID] = rl
@@ -90,6 +91,7 @@ func Read(data []byte) (*model.Document, error) {
 		r.doc.Body = []model.Block{p}
 	}
 	r.flushTrailing(r.doc.Body)
+	r.readHeaders(r.sects)
 	if r.sections > 1 {
 		r.warn(fmt.Sprintf("This document has %d sections; WordLite uses the last section's page size and margins for all of them.", r.sections))
 	}
@@ -102,6 +104,8 @@ type reader struct {
 	doc    *model.Document
 	th     *theme
 	rels   map[string]rel
+	pkg    *pkg   // the package, for reading pictures
+	main   string // main part name
 	warned map[string]bool
 
 	fields    []fieldState // open complex fields that span paragraphs
@@ -111,6 +115,7 @@ type reader struct {
 	footnotes int
 	endnotes  int
 	sections  int
+	sects     []*node // every w:sectPr, in order (for headers and footers)
 }
 
 type fieldState struct{ result bool }
@@ -276,10 +281,9 @@ func (r *reader) blocks(container *node, wrap *model.Span, isBody bool) []model.
 
 func (r *reader) section(s *node) {
 	r.sections++
+	r.sects = append(r.sects, s)
 	for _, k := range s.kids {
 		switch k.name {
-		case "w:headerReference", "w:footerReference":
-			r.warn(warnHeaders)
 		case "w:cols":
 			if atoi(k.attr("w:num")) > 1 || len(k.children("w:col")) > 1 {
 				r.warn(warnColumns)
@@ -556,7 +560,6 @@ func (r *reader) describe(k *node, run *model.Run) {
 	o := run.Opaque
 	switch k.name {
 	case "w:drawing", "mc:AlternateContent":
-		r.warn(warnPictures)
 		run.Text = "[picture]"
 		if ext := k.find("wp:extent"); ext != nil {
 			cx, _ := strconv.ParseFloat(ext.attr("cx"), 64)
@@ -580,8 +583,15 @@ func (r *reader) describe(k *node, run *model.Run) {
 		if k.name == "mc:AlternateContent" && k.find("wp:extent") == nil {
 			r.vmlSize(k, run)
 		}
+		if run.Text == "[picture]" {
+			if blip := k.find("a:blip"); blip != nil {
+				o.Picture = r.picture(blip.attr("r:embed"))
+			}
+		}
+		if o.Picture == nil {
+			r.warn(warnPictures)
+		}
 	case "w:pict", "w:object":
-		r.warn(warnPictures)
 		run.Text = "[picture]"
 		if k.name == "w:object" {
 			run.Text = "[object]"
@@ -599,6 +609,14 @@ func (r *reader) describe(k *node, run *model.Run) {
 			run.Text = "[text box]"
 		}
 		r.vmlSize(k, run)
+		if run.Text == "[picture]" {
+			if im := k.find("v:imagedata"); im != nil {
+				o.Picture = r.picture(im.attr("r:id"))
+			}
+		}
+		if o.Picture == nil {
+			r.warn(warnPictures)
+		}
 	case "w:footnoteReference":
 		r.warn(warnNotes)
 		r.footnotes++
@@ -1071,6 +1089,7 @@ func parseStyles(root *node, th *theme) model.StyleSheet {
 			st.Type = model.ParagraphStyle
 		}
 		st.Default = onOffAttr(k.attr("w:default"))
+		st.Custom = onOffAttr(k.attr("w:customStyle"))
 		parseStyleKids(st, k.kids)
 		if pp := k.child("w:pPr"); pp != nil {
 			st.Para, _ = parsePPr(pp.kids, th)
@@ -1211,4 +1230,22 @@ func setLevel(l *model.List, lv *node) {
 		}
 	}
 	l.Levels[i] = lvl
+}
+
+// picture reads the image part relationship id points at, or returns nil.
+func (r *reader) picture(id string) *model.Picture {
+	rl, ok := r.rels[id]
+	if !ok || id == "" || rl.Mode == "External" || r.pkg == nil {
+		return nil
+	}
+	part := resolve(r.main, rl.Target)
+	data, err := r.pkg.read(part)
+	if err != nil || len(data) == 0 {
+		return nil
+	}
+	pic := &model.Picture{Data: data, Ext: model.PictureExt(part), Name: path.Base(part)}
+	if !pic.Decodable() {
+		return nil // EMF, WMF...: a placeholder
+	}
+	return pic
 }

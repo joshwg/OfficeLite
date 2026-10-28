@@ -22,7 +22,9 @@ import (
 )
 
 // modalOpen reports whether a dialog takes the input.
-func (d *window) modalOpen() bool { return d.dlg.open || d.confirm.show || d.lossy.Visible }
+func (d *window) modalOpen() bool {
+	return d.dlg.open || d.confirm.show || d.lossy.Visible || d.ins.modal() || d.extraModal()
+}
 
 // checkLossy runs save at once, or, when saving doc as .doc loses
 // something, after the user agrees.

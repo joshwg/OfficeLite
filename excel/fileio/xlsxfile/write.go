@@ -229,6 +229,9 @@ func (x *writer) writeSheet(sh *model.Sheet, name, part string) error {
 		}
 	}
 
+	if err := x.writeAnnotations(sh, name); err != nil {
+		return err
+	}
 	sw, err := f.NewStreamWriter(name)
 	if err != nil {
 		return err

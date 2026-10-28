@@ -161,7 +161,7 @@ func (e *Engine) atoms(p *model.Paragraph) []Item {
 			out = append(out, Item{Kind: k, Off: off, N: 1, St: st, brk: true, Adv: []float32{0}})
 			off += n
 		case model.RunOpaque:
-			it := Item{Kind: ItemObject, Off: off, N: 1, St: st, Obj: r.Opaque, brk: true, Text: r.Text}
+			it := Item{Kind: ItemObject, Off: off, N: 1, St: st, Obj: r.Opaque, brk: true, Text: e.fieldText(r)}
 			m := e.m.measure(st, "")
 			it.Asc, it.Desc = m.ascent, m.desc
 			if r.Opaque != nil && r.Opaque.Width > 0 {
@@ -169,8 +169,8 @@ func (e *Engine) atoms(p *model.Paragraph) []Item {
 				if r.Opaque.Height > 0 {
 					it.Asc, it.Desc = r.Opaque.Height, 0
 				}
-			} else if r.Text != "" {
-				it.W = e.m.measure(st, r.Text).width
+			} else if it.Text != "" {
+				it.W = e.m.measure(st, it.Text).width
 			}
 			if st.Hidden {
 				it.W = 0

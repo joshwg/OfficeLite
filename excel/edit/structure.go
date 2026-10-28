@@ -21,6 +21,8 @@ const (
 	insertSheet
 	deleteSheet
 	renameSheet
+	shiftCells // see cells.go
+	sortRows   // see sort.go
 )
 
 // structural is an insertion or deletion of rows, columns or sheets, or a
@@ -35,6 +37,9 @@ type structural struct {
 	oldName  string              // renameSheet
 	formulas []cellChange        // formulas elsewhere whose text changed
 	names    []model.DefinedName // the defined names before
+
+	cells *cellsOp  // shiftCells
+	sort  *SortSpec // sortRows
 }
 
 // ErrShiftOffSheet is Excel's refusal to push data past the sheet's end.
@@ -186,6 +191,10 @@ func (b *Book) applyStructural(op *structural) (calc.Result, error) {
 	wb := b.WB
 	op.names = slices.Clone(wb.Names)
 	switch op.kind {
+	case shiftCells:
+		return b.applyShiftCells(op)
+	case sortRows:
+		return b.applySort(op)
 	case insertRows, deleteRows, insertCols, deleteCols:
 		sh := wb.Sheets[op.sheet]
 		rows := op.kind == insertRows || op.kind == deleteRows
@@ -250,7 +259,7 @@ func (b *Book) applyStructural(op *structural) (calc.Result, error) {
 func (b *Book) revertStructural(op *structural) calc.Result {
 	wb := b.WB
 	switch op.kind {
-	case insertRows, deleteRows, insertCols, deleteCols:
+	case insertRows, deleteRows, insertCols, deleteCols, shiftCells, sortRows:
 		*wb.Sheets[op.sheet] = *op.saved
 	case insertSheet:
 		wb.Sheets = slices.Delete(wb.Sheets, op.sheet, op.sheet+1)

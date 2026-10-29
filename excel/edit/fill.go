@@ -25,12 +25,14 @@ func copiedCell(sh *model.Sheet, child func(r, c int) bool, fr, fc, tr, tc int) 
 // FillDown copies the top row of sel into the rest of it (Ctrl+D); a
 // single-row selection copies the row above it.
 func (b *Book) FillDown(sheet int, sel model.Range) calc.Result {
+	defer b.Op("Fill Down")()
 	return b.fill(sheet, sel, true)
 }
 
 // FillRight copies the left column of sel into the rest of it (Ctrl+R);
 // a single-column selection copies the column to its left.
 func (b *Book) FillRight(sheet int, sel model.Range) calc.Result {
+	defer b.Op("Fill Right")()
 	return b.fill(sheet, sel, false)
 }
 
@@ -51,8 +53,16 @@ func (b *Book) fill(sheet int, sel model.Range, down bool) calc.Result {
 			}
 			src.R1, src.R2 = sel.R1-1, sel.R1-1
 		} else {
-			src.R2 = sel.R1
-			dest.R1 = sel.R1 + 1
+			// Under an AutoFilter the first row shown is copied.
+			top := sel.R1
+			for top <= sel.R2 && sh.RowFiltered(top) {
+				top++
+			}
+			if top >= sel.R2 {
+				return calc.Result{}
+			}
+			src.R1, src.R2 = top, top
+			dest.R1 = top + 1
 		}
 	} else {
 		if sel.C1 == sel.C2 {
@@ -68,6 +78,9 @@ func (b *Book) fill(sheet int, sel model.Range, down bool) calc.Result {
 	child := spillChildren(sh)
 	var cells []cellChange
 	for r := dest.R1; r <= dest.R2; r++ {
+		if sh.RowFiltered(r) {
+			continue // as in Excel, rows the AutoFilter hides are left alone
+		}
 		for c := dest.C1; c <= dest.C2; c++ {
 			fr, fc := src.R1, c
 			if !down {
@@ -95,6 +108,7 @@ var ErrFillShape = errors.New("The fill area must extend the selection in one di
 // shifted. A to inside src clears the cells of src outside it. Undoable
 // as one step.
 func (b *Book) AutoFill(sheet int, src, to model.Range) (calc.Result, error) {
+	defer b.Op("AutoFill")()
 	sh := b.WB.Sheets[sheet]
 	child := spillChildren(sh)
 	var cells []cellChange
@@ -198,7 +212,7 @@ func (b *Book) series(sh *model.Sheet, child func(r, c int) bool, line, targets 
 				v := src[(k+t)%k]
 				v.Num = icpt + slope*float64(k+t)
 				if k > 1 {
-					v.Num = cleanFloat(v.Num)
+					v.Num = formula.Round15(v.Num)
 				}
 				st := b.style(v.Style)
 				v.Text = b.nf.Format(v.Num, st.NumFmtID, st.NumFmtCode)
@@ -272,12 +286,6 @@ func linearFit(cs []model.Cell) (slope, icpt float64) {
 	slope = (n*sxy - sx*sy) / (n*sxx - sx*sx)
 	icpt = (sy - slope*sx) / n
 	return slope, icpt
-}
-
-// cleanFloat rounds away binary noise (0.1+0.2) to 15 significant digits.
-func cleanFloat(v float64) float64 {
-	f, _ := strconv.ParseFloat(strconv.FormatFloat(v, 'g', 15, 64), 64)
-	return f
 }
 
 type numSuffix struct{ n, width int }

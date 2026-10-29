@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"officelite/common/opc"
 	"officelite/word/model"
 )
 
@@ -27,18 +28,18 @@ func hfKind(t string) (model.HFKind, bool) {
 	return 0, false
 }
 
-// readHeaders reads the headers and footers the sections refer to. A
-// section without a reference of some type inherits the previous
-// section's, as in Word; WordLite shows the last section's.
+// readHeaders reads the headers and footers each section refers to. A
+// section without a reference of some type is linked to the previous
+// section's (its slot stays nil), as in Word.
 func (r *reader) readHeaders(sects []*node) {
 	if r.pkg == nil || len(sects) == 0 {
 		return
 	}
 	hf := &r.doc.HF
-	last := sects[len(sects)-1]
-	hf.TitlePage = onOff(last.child("w:titlePg")) == model.On
-	for i := len(sects) - 1; i >= 0; i-- {
-		for _, k := range sects[i].kids {
+	read := map[string]*model.HeaderFooter{}
+	for i, sp := range sects {
+		sec := r.sections[i]
+		for _, k := range sp.kids {
 			footer := k.name == "w:footerReference"
 			if !footer && k.name != "w:headerReference" {
 				continue
@@ -47,20 +48,22 @@ func (r *reader) readHeaders(sects []*node) {
 			if !ok {
 				continue
 			}
-			slot := hf.Slot(kind, footer)
-			if *slot != nil {
-				continue
-			}
 			rl, ok := r.rels[k.attr("r:id")]
 			if !ok {
 				continue
 			}
-			*slot = r.readHF(resolve(r.main, rl.Target))
+			part := opc.Resolve(r.main, rl.Target)
+			h := read[part]
+			if h == nil {
+				h = r.readHF(part)
+				read[part] = h
+			}
+			*sec.HF.Slot(kind, footer) = h
 		}
 	}
 	for _, rl := range r.rels {
 		if rl.is(relSettings) {
-			if b, err := r.pkg.read(resolve(r.main, rl.Target)); err == nil {
+			if b, err := r.pkg.read(opc.Resolve(r.main, rl.Target)); err == nil {
 				if sr, err := parseXML(b); err == nil {
 					hf.EvenOdd = onOff(sr.child("w:evenAndOddHeaders")) == model.On
 				}
@@ -80,23 +83,7 @@ func (r *reader) readHF(part string) *model.HeaderFooter {
 	if err != nil {
 		return nil
 	}
-	rels, main := r.rels, r.main
-	markers, before, lastPara, fields := r.markers, r.before, r.lastPara, r.fields
-	r.rels, r.main = map[string]rel{}, part
-	for _, rl := range r.pkg.rels(part) {
-		r.rels[rl.ID] = rl
-	}
-	r.markers, r.before, r.lastPara, r.fields = nil, nil, nil, nil
-	blocks := r.blocks(root, nil, false)
-	if len(blocks) == 0 {
-		p := &model.Paragraph{}
-		r.attach(p)
-		blocks = []model.Block{p}
-	}
-	r.flushTrailing(blocks)
-	r.rels, r.main = rels, main
-	r.markers, r.before, r.lastPara, r.fields = markers, before, lastPara, fields
-	return &model.HeaderFooter{Blocks: blocks, Part: part}
+	return &model.HeaderFooter{Blocks: r.partBlocks(part, root), Part: part}
 }
 
 // hfPart is a header or footer part being written.
@@ -109,78 +96,95 @@ type hfPart struct {
 	relID  string
 	kind   model.HFKind
 	footer bool
+	sec    int  // the section that refers to it
+	shared bool // a reference to a part written for another section
 }
 
 // prepareHeaders writes the header and footer parts and adds the
 // relationships of new ones; it runs before document.xml is written so the
 // section can refer to them.
 func (w *writer) prepareHeaders() {
-	hf := &w.doc.HF
 	used := map[string]bool{}
 	if w.src != nil {
 		for name := range w.src.files {
 			used[strings.ToLower(name)] = true
 		}
 	}
-	for _, footer := range []bool{false, true} {
-		for k := range 3 {
-			h := *hf.Slot(model.HFKind(k), footer)
-			if h == nil {
-				continue
-			}
-			p := hfPart{kind: model.HFKind(k), footer: footer, ctype: ctHeader}
-			base := "header"
-			if footer {
-				p.ctype, base = ctFooter, "footer"
-			}
-			// An unchanged source part keeps its relationship.
-			if w.src != nil && h.Part != "" && w.src.find(h.Part) != nil {
-				for _, rl := range w.rels {
-					if strings.EqualFold(resolve(w.main, rl.Target), h.Part) {
-						p.name, p.relID = h.Part, rl.ID
-						break
-					}
+	done := map[*model.HeaderFooter]hfPart{} // a header two sections share is written once
+	for si, sec := range w.doc.Sections() {
+		for _, footer := range []bool{false, true} {
+			for k := range 3 {
+				h := *sec.HF.Slot(model.HFKind(k), footer)
+				if h == nil {
+					continue
 				}
-			}
-			if p.relID == "" {
-				dir := path.Dir(w.main)
-				if w.main == "" {
-					dir = "word"
+				if p, ok := done[h]; ok {
+					p.sec, p.kind, p.data, p.rels, p.isNew, p.shared = si, model.HFKind(k), nil, nil, false, true
+					w.hfParts = append(w.hfParts, p)
+					continue
 				}
-				for n := 1; ; n++ {
-					name := base + strconv.Itoa(n) + ".xml"
-					full := path.Join(dir, name)
-					if dir == "." {
-						full = name
-					}
-					if !used[strings.ToLower(full)] {
-						p.name, p.isNew = full, true
-						used[strings.ToLower(full)] = true
-						p.relID = w.newRelID()
-						typ := relHeader
-						if footer {
-							typ = relFooter
-						}
-						w.rels = append(w.rels, rel{ID: p.relID, Type: relTypePrefix + typ, Target: name})
-						w.relsDirty = true
-						break
-					}
-				}
+				p := w.hfPart(h, model.HFKind(k), footer, used)
+				p.sec = si
+				done[h] = p
+				w.hfParts = append(w.hfParts, p)
 			}
-			p.data, p.rels = w.hfXML(h, p)
-			if !p.isNew {
-				// Unchanged content keeps the original part byte for byte.
-				if o := w.sourceHF(p.name); o != nil {
-					if od, orels := w.hfXML(o, p); string(od) == string(p.data) && string(orels) == string(p.rels) {
-						if b, err := w.src.read(p.name); err == nil {
-							p.data, p.rels = b, nil
-						}
-					}
-				}
-			}
-			w.hfParts = append(w.hfParts, p)
 		}
 	}
+}
+
+// hfPart writes the part of one header or footer.
+func (w *writer) hfPart(h *model.HeaderFooter, kind model.HFKind, footer bool, used map[string]bool) hfPart {
+	p := hfPart{kind: kind, footer: footer, ctype: ctHeader}
+	base := "header"
+	if footer {
+		p.ctype, base = ctFooter, "footer"
+	}
+	// An unchanged source part keeps its relationship.
+	if w.src != nil && h.Part != "" && w.src.find(h.Part) != nil {
+		for _, rl := range w.rels {
+			if strings.EqualFold(opc.Resolve(w.main, rl.Target), h.Part) {
+				p.name, p.relID = h.Part, rl.ID
+				break
+			}
+		}
+	}
+	if p.relID == "" {
+		dir := path.Dir(w.main)
+		if w.main == "" {
+			dir = "word"
+		}
+		for n := 1; ; n++ {
+			name := base + strconv.Itoa(n) + ".xml"
+			full := path.Join(dir, name)
+			if dir == "." {
+				full = name
+			}
+			if !used[strings.ToLower(full)] {
+				p.name, p.isNew = full, true
+				used[strings.ToLower(full)] = true
+				p.relID = w.newRelID()
+				typ := relHeader
+				if footer {
+					typ = relFooter
+				}
+				w.rels = append(w.rels, rel{ID: p.relID, Type: relTypePrefix + typ, Target: name})
+				w.relsDirty = true
+				break
+			}
+		}
+	}
+	p.data, p.rels = w.hfXML(h, p)
+	if !p.isNew {
+		// Unchanged content keeps the original part byte for byte.
+		if o := w.sourceHF(p.name); o != nil {
+			if od, orels := w.hfXML(o, p); string(od) == string(p.data) && string(orels) == string(p.rels) {
+				if b, err := w.src.read(p.name); err == nil {
+					p.data, p.rels = b, nil
+				}
+			}
+		}
+	}
+	return p
 }
 
 // sourceHF reads a header or footer part of the source package as it was.
@@ -230,12 +234,12 @@ func (w *writer) hfXML(h *model.HeaderFooter, p hfPart) ([]byte, []byte) {
 	return []byte(b.String()), relsData
 }
 
-// hfRefsXML is the section's header and footer references.
-func (w *writer) hfRefsXML() string {
+// hfRefsXML is section sec's header and footer references.
+func (w *writer) hfRefsXML(sec int) string {
 	var b strings.Builder
 	for _, footer := range []bool{false, true} {
 		for _, p := range w.hfParts {
-			if p.footer != footer {
+			if p.footer != footer || p.sec != sec {
 				continue
 			}
 			tag := "w:headerReference"
@@ -250,9 +254,9 @@ func (w *writer) hfRefsXML() string {
 
 // hfGroups are the sectPr property groups for headers and footers: the
 // references (always regenerated) and the different-first-page switch.
-func (w *writer) hfGroups(orig []*node) []propGroup {
+func (w *writer) hfGroups(orig []*node, s *model.Section, i int) []propGroup {
 	title := ""
-	if w.doc.HF.TitlePage {
+	if s.HF.TitlePage {
 		title = "<w:titlePg/>"
 	}
 	origTitle := false
@@ -262,8 +266,8 @@ func (w *writer) hfGroups(orig []*node) []propGroup {
 		}
 	}
 	return []propGroup{
-		{[]string{"w:headerReference", "w:footerReference"}, false, w.hfRefsXML()},
-		{[]string{"w:titlePg"}, origTitle == w.doc.HF.TitlePage, title},
+		{[]string{"w:headerReference", "w:footerReference"}, false, w.hfRefsXML(i)},
+		{[]string{"w:titlePg"}, origTitle == s.HF.TitlePage, title},
 	}
 }
 
@@ -273,10 +277,13 @@ func (w *writer) hfGroups(orig []*node) []propGroup {
 // content types changed.
 func (w *writer) addHFParts(replace map[string][]byte, ct *contentTypes) bool {
 	ctDirty := false
-	for _, p := range w.hfParts {
+	for _, p := range append(w.hfParts, w.noteParts...) {
+		if p.shared {
+			continue
+		}
 		replace[p.name] = p.data
 		if p.rels != nil {
-			replace[relsPath(p.name)] = p.rels
+			replace[opc.RelsPath(p.name)] = p.rels
 		}
 		if p.isNew {
 			ct.setOverride(p.name, p.ctype)
@@ -287,7 +294,7 @@ func (w *writer) addHFParts(replace map[string][]byte, ct *contentTypes) bool {
 		if !rl.is(relSettings) {
 			continue
 		}
-		part := resolve(w.main, rl.Target)
+		part := opc.Resolve(w.main, rl.Target)
 		b, err := w.src.read(part)
 		if err != nil {
 			continue

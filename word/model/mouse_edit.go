@@ -31,6 +31,7 @@ func (e *Editor) CanMoveSelection() bool {
 // keeping its formatting, and selects it there. Dropping inside the
 // selection does nothing; it reports whether anything changed.
 func (e *Editor) MoveText(dst Pos, copy bool) bool {
+	defer e.Op(either(copy, "Copy Text", "Move Text"))()
 	if !e.CanMoveSelection() {
 		return false
 	}
@@ -92,6 +93,7 @@ func ColumnBorderRange(t *Table, g int) (lo, hi float64) {
 // gives up (or takes) the same width; the table's right edge changes only
 // the last column. It reports whether the table changed.
 func (e *Editor) MoveColumnBorder(t *Table, g int, dx float64) bool {
+	defer e.Op("Column Width")()
 	lo, hi := ColumnBorderRange(t, g)
 	dx = min(max(dx, lo), hi)
 	if dx > -0.05 && dx < 0.05 || len(t.Rows) == 0 {
@@ -113,6 +115,7 @@ func (e *Editor) MoveColumnBorder(t *Table, g int, dx float64) bool {
 // SetRowHeight sets row r's height (at least h points, as Word sets it
 // when its border is dragged).
 func (e *Editor) SetRowHeight(t *Table, r int, h float64) bool {
+	defer e.Op("Row Height")()
 	if r < 0 || r >= len(t.Rows) {
 		return false
 	}

@@ -17,15 +17,60 @@ import (
 // shading, table borders, pictures (placeholders for those that can't be
 // decoded) and the headers and footers. Call Layout first.
 func (e *Engine) ExportPDF(d *pdf.Document) {
+	if e.showHidden {
+		// The PDF shows the document as printed: without hidden text.
+		e.SetShowHidden(false)
+		e.Layout()
+		defer func() {
+			e.SetShowHidden(true)
+			e.Layout()
+		}()
+	}
 	x := &pdfExport{e: e, d: d, fonts: map[*TextStyle]*pdf.Font{}, pics: map[*model.Picture]*pdf.Image{}}
 	for _, pg := range e.Pages {
 		p := d.AddPage(pdf.Size{W: pg.Width, H: pg.Height})
 		x.p = p
+		x.floats(pg, true)
 		x.body(pg.Lines, pg.Fills, pg.Rules)
-		for _, b := range []*Band{pg.Header, pg.Footer} {
+		for _, b := range append([]*Band{pg.Header, pg.Footer}, pg.Notes...) {
 			if b != nil {
 				x.body(b.Lines, b.Fills, b.Rules)
 			}
+		}
+		x.floats(pg, false)
+	}
+}
+
+// floats draws the page's floating objects behind the text (behind set)
+// or in front of it.
+func (x *pdfExport) floats(pg *Page, behind bool) {
+	p := x.p
+	for _, b := range pg.Floats {
+		f := b.F
+		if (f.Wrap == model.WrapBehind) != behind {
+			continue
+		}
+		outline, closed := shapeOutline(f, b.R)
+		pts := make([]pdf.Point, len(outline))
+		for i, q := range outline {
+			pts[i] = pdf.Point{X: q.X, Y: q.Y}
+		}
+		if c, ok := floatColor(f.Fill); ok && closed {
+			p.FillPolygon(pts, c)
+		}
+		if f.Picture != nil {
+			im, ok := x.pics[f.Picture]
+			if !ok {
+				im, _ = x.d.AddImageData(f.Picture.Data)
+				x.pics[f.Picture] = im
+			}
+			if im != nil {
+				p.DrawImage(im, b.R.X0, b.R.Y0, b.R.X1-b.R.X0, b.R.Y1-b.R.Y0)
+			}
+		}
+		x.body(b.Lines, b.Fills, b.Rules)
+		if c, ok := floatColor(f.Line); ok {
+			p.StrokePolyline(pts, closed, max(f.LineWidth, 0.25), c)
 		}
 	}
 }
@@ -222,9 +267,9 @@ func (x *pdfExport) object(it *Item, pl *Placed, base float64) {
 		return
 	}
 	st := *it.St
-	if it.Obj != nil && it.Obj.Field == "" {
+	if it.Obj != nil && it.Obj.Field == "" && it.Obj.Note == nil && !it.Obj.NoteMark {
 		st.Color = placeholderText
 		p.FillRect(xpos, base-it.Asc, it.W, it.Asc+it.Desc, placeholderBG)
 	}
-	x.text(&st, it.Text, xpos, base, nil)
+	x.text(&st, it.Text, xpos, base-st.Shift, nil)
 }

@@ -33,8 +33,8 @@ func registerDepreciation(r *f.Registry) {
 // DB(cost, salvage, life, period, [month]): fixed-declining balance at a
 // rate rounded to three decimals; the first year has month months (12,
 // truncated) and the leftover months fall in period life+1.
-func db(_ *f.Env, a []f.Value) f.Value {
-	x, err := nums(a, 5)
+func db(e *f.Env, a []f.Value) f.Value {
+	x, err := nums(e, a, 5)
 	if err != nil {
 		return err
 	}
@@ -82,8 +82,8 @@ func ddbOf(cost, salvage, life, period, factor float64) float64 {
 }
 
 // DDB(cost, salvage, life, period, [factor])
-func ddb(_ *f.Env, a []f.Value) f.Value {
-	x, err := nums(a, 5)
+func ddb(e *f.Env, a []f.Value) f.Value {
+	x, err := nums(e, a, 5)
 	if err != nil {
 		return err
 	}
@@ -129,8 +129,8 @@ func interVDB(cost, salvage, life, life1, periods, factor float64) float64 {
 // [no_switch]): declining-balance depreciation between two (possibly
 // fractional) points in time, switching to straight-line when that is
 // larger unless no_switch.
-func vdb(_ *f.Env, a []f.Value) f.Value {
-	x, err := nums(a, 7)
+func vdb(e *f.Env, a []f.Value) f.Value {
+	x, err := nums(e, a, 7)
 	if err != nil {
 		return err
 	}

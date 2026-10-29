@@ -52,9 +52,9 @@ func (d *window) menus() []gui.Menu {
 	sel := !d.ed.Sel.Empty()
 	return []gui.Menu{
 		menuFile: {Label: "File", Primary: true},
-		menuHome: {Label: "Home", Items: append([]gui.MenuItem{
-			{Label: "Undo", Shortcut: "Ctrl+Z", Disabled: !d.ed.CanUndo(), Tip: "Undo your last action."},
-			{Label: "Redo", Shortcut: "Ctrl+Y", Disabled: !d.ed.CanRedo(), Tip: "Redo your last action."},
+		menuHome: {Label: "Home", Tab: true, Selected: true, Items: append([]gui.MenuItem{
+			{Label: gui.HistoryLabel("Undo", d.ed.UndoLabels()), Shortcut: "Ctrl+Z", Disabled: !d.ed.CanUndo(), Tip: "Undo your last action."},
+			{Label: gui.HistoryLabel("Redo", d.ed.RedoLabels()), Shortcut: "Ctrl+Y", Disabled: !d.ed.CanRedo(), Tip: "Redo your last action."},
 			{Separator: true},
 			{Label: "Cut", Shortcut: "Ctrl+X", Disabled: !sel, Tip: "Move the selection to the Clipboard."},
 			{Label: "Copy", Shortcut: "Ctrl+C", Disabled: !sel, Tip: "Copy the selection to the Clipboard."},
@@ -134,8 +134,10 @@ func (d *window) menuChosen(ev gui.MenuEvent) {
 
 func (d *window) layout(gtx layout.Context) {
 	d.gtx = gtx
+	d.takeDrops() // drop.go
 	d.globalKeys(gtx)
 	d.extraKeys(gtx)
+	defer d.autoSaveFrame() // after this frame's edits (autosave.go)
 	gui.FillRect(gtx.Ops, image.Rectangle{Max: gtx.Constraints.Max}, gui.ChromeBG)
 	d.relayout()
 	if d.back.Visible {
@@ -175,6 +177,7 @@ func (d *window) layout(gtx layout.Context) {
 	if d.lossy.Visible {
 		d.lossyLayout(gtx)
 	}
+	d.lockLayout(gtx) // lock.go
 	d.updateTitle()
 }
 
@@ -246,6 +249,9 @@ func (d *window) globalKeys(gtx layout.Context) {
 			}
 		case key.NameEscape:
 			switch {
+			case d.lk.dlg.Visible:
+				d.lk.dlg.Hide()
+				d.lockAnswer(-1)
 			case d.lossy.Visible:
 				d.lossy.Hide()
 				d.lossyGo = nil
@@ -289,15 +295,20 @@ func (d *window) titleBar(gtx layout.Context) layout.Dimensions {
 	h := gtx.Dp(36)
 	gui.FillRect(gtx.Ops, image.Rect(0, 0, gtx.Constraints.Max.X, h), accent)
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = h, h
-	name := d.doc.Name
+	name := d.docName()
 	if d.modified() {
 		name += " •"
+	}
+	if st := d.autoSaveStatus(gtx); st != "" {
+		name += " – " + st
 	}
 	return layout.Inset{Left: 12, Right: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return gui.Middle(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(d.th.Label(15, appName, colors.White, font.Bold).Layout),
-				layout.Rigid(layout.Spacer{Width: 16}.Layout),
+				layout.Rigid(layout.Spacer{Width: 12}.Layout),
+				layout.Rigid(d.autoSaveSwitch), // autosave.go
+				layout.Rigid(layout.Spacer{Width: 12}.Layout),
 				layout.Flexed(1, d.th.Label(13, name, colors.White, font.Normal).Layout),
 			)
 		})

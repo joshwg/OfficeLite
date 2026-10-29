@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"image/color"
 	"io"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/xuri/excelize/v2"
 
+	"officelite/common/colors"
 	"officelite/excel/formula"
 	"officelite/excel/model"
 )
@@ -38,7 +40,7 @@ func Write(wb *model.Workbook, w io.Writer) error {
 	if err := x.build(); err != nil {
 		return err
 	}
-	if len(x.sheets) == 0 && x.normalFont == nil {
+	if len(x.sheets) == 0 && x.normalFont == nil && len(x.pivots) == 0 && len(x.charts) == 0 && (wb.Theme == nil || len(wb.Theme.XML) == 0) {
 		return f.Write(w)
 	}
 	var buf bytes.Buffer
@@ -56,13 +58,29 @@ type writer struct {
 	sheets     map[string]*sheetPatch // worksheet part -> what patch changes
 	dynamic    bool                   // some cell is a dynamic array (needs metadata.xml)
 	normalFont *model.Font            // replaces the Normal style's font, if not Calibri 11
+	// filterNames are the _xlnm._FilterDatabase names of sheets with an
+	// AutoFilter, added to workbook.xml (see filter.go).
+	filterNames []string
+	pivots      []pendingPivot  // PivotTables (pivotwrite.go)
+	charts      []pendingCharts // charts and chart sheets (chartwrite.go)
+	// dropParts are parts excelize wrote that patch leaves out (chart
+	// sheets' placeholder worksheets).
+	dropParts   []string
+	activeSheet int
 }
 
 // sheetPatch is what the second pass changes in one worksheet: the <cols>
-// element and the cells written as placeholders, in document order.
+// element, the cells written as placeholders, in document order, and the
+// <autoFilter> element.
 type sheetPatch struct {
-	cols  string
-	cells []rawCell
+	cols       string
+	cells      []rawCell
+	autoFilter string
+	// formatPr is attributes added to <sheetFormatPr> (the outline's
+	// depth).
+	formatPr string
+	// drawing is the <drawing> element of a sheet with charts.
+	drawing string
 }
 
 func (x *writer) sheetPatch(part string) *sheetPatch {
@@ -76,6 +94,9 @@ func (x *writer) sheetPatch(part string) *sheetPatch {
 
 type rawCell struct {
 	ref, xml string
+	// row, when set, is a row number whose <row> start tag gets xml
+	// as extra attributes instead (collapsed="1").
+	row int
 }
 
 func (x *writer) build() error {
@@ -113,6 +134,7 @@ func (x *writer) build() error {
 		active = 0
 	}
 	f.SetActiveSheet(active)
+	x.activeSheet = active
 	for i, sh := range sheets {
 		if sh.Hidden && i != active {
 			if err := f.SetSheetVisible(names[i], false); err != nil {
@@ -134,8 +156,18 @@ func (x *writer) build() error {
 	}
 
 	for i, sh := range sheets {
-		if err := x.writeSheet(sh, names[i], fmt.Sprintf("xl/worksheets/sheet%d.xml", i+1)); err != nil {
+		part := fmt.Sprintf("xl/worksheets/sheet%d.xml", i+1)
+		x.collectCharts(i, sh, part)
+		if sh.IsChartSheet() {
+			continue // a placeholder, replaced by patch (chartwrite.go)
+		}
+		if err := x.writeSheet(sh, names[i], part); err != nil {
 			return fmt.Errorf("sheet %q: %w", sh.Name, err)
+		}
+		x.collectPivots(i, sh, part)
+		if af := sh.AutoFilter; af != nil {
+			x.sheetPatch(part).autoFilter = autoFilterXML(af)
+			x.filterNames = append(x.filterNames, filterDatabase(i, names[i], af.Range))
 		}
 	}
 	return nil
@@ -196,6 +228,10 @@ func (x *writer) writeSheet(sh *model.Sheet, name, part string) error {
 		ht, custom := pxToPt(sh.DefaultRowHeight), sh.DefaultRowHeight != model.DefaultRowHeightPx
 		props.DefaultRowHeight, props.CustomHeight = &ht, &custom
 	}
+	if sh.Outline.SummaryAbove || sh.Outline.SummaryLeft {
+		below, right := !sh.Outline.SummaryAbove, !sh.Outline.SummaryLeft
+		props.OutlineSummaryBelow, props.OutlineSummaryRight = &below, &right
+	}
 	if err := f.SetSheetProps(name, props); err != nil {
 		return err
 	}
@@ -232,12 +268,25 @@ func (x *writer) writeSheet(sh *model.Sheet, name, part string) error {
 	if err := x.writeAnnotations(sh, name); err != nil {
 		return err
 	}
+	if err := x.writeValidations(sh, name); err != nil {
+		return err
+	}
 	sw, err := f.NewStreamWriter(name)
 	if err != nil {
 		return err
 	}
 	if cols := colsXML(sh); cols != "" {
 		x.sheetPatch(part).cols = cols
+	}
+	if lr, lc := sh.MaxLevel(true), sh.MaxLevel(false); lr > 0 || lc > 0 {
+		var a strings.Builder
+		if lr > 0 {
+			fmt.Fprintf(&a, ` outlineLevelRow="%d"`, lr)
+		}
+		if lc > 0 {
+			fmt.Fprintf(&a, ` outlineLevelCol="%d"`, lc)
+		}
+		x.sheetPatch(part).formatPr = a.String()
 	}
 
 	// Rows: every row with cells or its own height, in order.
@@ -247,10 +296,31 @@ func (x *writer) writeSheet(sh *model.Sheet, name, part string) error {
 			nRows = max(nRows, r+1)
 		}
 	}
+	for r := range sh.Filtered {
+		if r < model.MaxRows {
+			nRows = max(nRows, r+1)
+		}
+	}
+	for _, m := range []map[int]uint8{sh.Outline.RowLevel} {
+		for r := range m {
+			nRows = max(nRows, min(r+1, model.MaxRows))
+		}
+	}
+	for r := range sh.Outline.RowCollapsed {
+		nRows = max(nRows, min(r+1, model.MaxRows))
+	}
 	var vals []any
 	for r := 0; r < nRows; r++ {
 		vals = vals[:0]
+		mark := -1 // where this row's cell patches start
+		if p := x.sheets[part]; p != nil {
+			mark = len(p.cells)
+		}
 		for c := 0; c < sh.RowLen(r); c++ {
+			if len(sh.Pivots) > 0 && placeholder(sh, r, c) {
+				vals = append(vals, nil)
+				continue
+			}
 			vals = append(vals, x.cellValue(sh, part, r, c))
 		}
 		for len(vals) > 0 && vals[len(vals)-1] == nil {
@@ -265,8 +335,24 @@ func (x *writer) writeSheet(sh *model.Sheet, name, part string) error {
 				opts.Height = min(pxToPt(h), excelize.MaxRowHeight)
 			}
 		}
-		if len(vals) == 0 && !hasHeight {
+		if sh.Filtered[r] {
+			opts.Hidden = true // rows the AutoFilter hides are hidden rows in the file
+		}
+		if h := sh.Outline.RowShowSize[r]; opts.Hidden && h > 0 {
+			opts.Height = min(pxToPt(h), excelize.MaxRowHeight) // its height when shown
+		}
+		opts.OutlineLevel = sh.Level(true, r)
+		collapsed := sh.IsCollapsed(true, r)
+		if len(vals) == 0 && !hasHeight && !opts.Hidden && opts.OutlineLevel == 0 && !collapsed {
 			continue
+		}
+		if collapsed {
+			// excelize can't write collapsed="1": patch adds it.
+			p := x.sheetPatch(part)
+			if mark < 0 {
+				mark = 0
+			}
+			p.cells = slices.Insert(p.cells, mark, rawCell{xml: ` collapsed="1"`, row: r + 1})
 		}
 		if err := sw.SetRow(model.CellName(r, 0), vals, opts); err != nil {
 			return err
@@ -287,8 +373,20 @@ func (x *writer) writeSheet(sh *model.Sheet, name, part string) error {
 // colsXML returns the <cols> element for the column widths, joining runs
 // of equal width.
 func colsXML(sh *model.Sheet) string {
-	cols := make([]int, 0, len(sh.ColWidth))
-	for c := range sh.ColWidth {
+	set := map[int]bool{}
+	for _, m := range []map[int]float32{sh.ColWidth} {
+		for c := range m {
+			set[c] = true
+		}
+	}
+	for c := range sh.Outline.ColLevel {
+		set[c] = true
+	}
+	for c := range sh.Outline.ColCollapsed {
+		set[c] = true
+	}
+	cols := make([]int, 0, len(set))
+	for c := range set {
 		if c >= 0 && c < model.MaxCols {
 			cols = append(cols, c)
 		}
@@ -297,21 +395,55 @@ func colsXML(sh *model.Sheet) string {
 		return ""
 	}
 	slices.Sort(cols)
+	// A column's attributes: its width (-1 for the default, written as no
+	// width at all), the width
+	// it gets back when shown, its outline level and collapsed flag.
+	type colAttrs struct {
+		w, show float32
+		level   int
+		coll    bool
+	}
+	attrsOf := func(c int) colAttrs {
+		w, ok := sh.ColWidth[c]
+		if !ok {
+			w = -1
+		}
+		return colAttrs{w, sh.Outline.ColShowSize[c], sh.Level(false, c), sh.IsCollapsed(false, c)}
+	}
+	defWidth := sh.DefaultColWidth
+	if defWidth <= 0 {
+		defWidth = model.PxToColWidth(float64(model.BaseColWidthToPx(float64(sh.BaseColWidth), model.DefaultDigitWidth)), model.DefaultDigitWidth)
+	}
+	num := func(v float32) string {
+		return strconv.FormatFloat(min(float64(v), excelize.MaxColumnWidth), 'g', -1, 32)
+	}
 	var b strings.Builder
 	b.WriteString("<cols>")
 	for i := 0; i < len(cols); {
-		lo, w := cols[i], sh.ColWidth[cols[i]]
+		lo, a := cols[i], attrsOf(cols[i])
 		j := i + 1
-		for j < len(cols) && cols[j] == cols[j-1]+1 && sh.ColWidth[cols[j]] == w {
+		for j < len(cols) && cols[j] == cols[j-1]+1 && attrsOf(cols[j]) == a {
 			j++
 		}
 		fmt.Fprintf(&b, `<col min="%d" max="%d"`, lo+1, cols[j-1]+1)
-		if w == 0 {
-			b.WriteString(` width="0" hidden="1"`)
-		} else {
-			fmt.Fprintf(&b, ` width="%s"`, strconv.FormatFloat(min(float64(w), excelize.MaxColumnWidth), 'g', -1, 32))
+		switch {
+		case a.w == 0 && a.show > 0:
+			fmt.Fprintf(&b, ` width="%s" hidden="1" customWidth="1"`, num(a.show))
+		case a.w == 0 && a.level > 0:
+			// Shown again by the outline's +, it gets the standard width.
+			fmt.Fprintf(&b, ` width="%s" hidden="1"`, num(defWidth))
+		case a.w == 0:
+			b.WriteString(` width="0" hidden="1" customWidth="1"`)
+		case a.w > 0:
+			fmt.Fprintf(&b, ` width="%s" customWidth="1"`, num(a.w))
 		}
-		b.WriteString(` customWidth="1"/>`)
+		if a.level > 0 {
+			fmt.Fprintf(&b, ` outlineLevel="%d"`, a.level)
+		}
+		if a.coll {
+			b.WriteString(` collapsed="1"`)
+		}
+		b.WriteString(`/>`)
 		i = j
 	}
 	b.WriteString("</cols>")
@@ -323,7 +455,7 @@ func colsXML(sh *model.Sheet) string {
 // for patch and written as a styled placeholder.
 func (x *writer) cellValue(sh *model.Sheet, part string, r, c int) any {
 	cell := sh.Get(r, c)
-	if cell.Kind == model.KindEmpty && cell.Formula == "" && cell.Style == 0 {
+	if cell.IsBlank() && cell.Style == 0 {
 		return nil
 	}
 	sid := x.styleID(cell.Style)
@@ -352,7 +484,7 @@ func (x *writer) cellValue(sh *model.Sheet, part string, r, c int) any {
 		cell.Kind == model.KindNumber && needsExponent(cell.Num) {
 		ref := model.CellName(r, c)
 		p := x.sheetPatch(part)
-		p.cells = append(p.cells, rawCell{ref, rawCellXML(ref, sid, cell, spill)})
+		p.cells = append(p.cells, rawCell{ref: ref, xml: rawCellXML(ref, sid, cell, spill)})
 		x.dynamic = x.dynamic || spill != ""
 		return excelize.Cell{StyleID: sid}
 	}
@@ -583,7 +715,7 @@ func hexColor(c color.NRGBA) string {
 	if c.A == 0 {
 		return ""
 	}
-	return fmt.Sprintf("%02X%02X%02X", c.R, c.G, c.B)
+	return colors.Hex(c)
 }
 
 // excelStyle converts a model style to excelize's form.
@@ -656,20 +788,43 @@ func (x *writer) patch(data []byte, w io.Writer) error {
 	zw.RegisterCompressor(zip.Deflate, func(w io.Writer) (io.WriteCloser, error) {
 		return flate.NewWriter(w, flate.BestSpeed)
 	})
+	type editFn = func([]byte) ([]byte, error)
+	edits := map[string][]editFn{}
+	if x.dynamic {
+		edits["[Content_Types].xml"] = append(edits["[Content_Types].xml"], func(b []byte) ([]byte, error) { return insertBefore(b, "</Types>", metadataOverride) })
+		edits["xl/_rels/workbook.xml.rels"] = append(edits["xl/_rels/workbook.xml.rels"], addMetadataRel)
+	}
+	if x.normalFont != nil {
+		edits["xl/styles.xml"] = append(edits["xl/styles.xml"], x.setNormalFont)
+	}
+	if len(x.filterNames) > 0 {
+		edits["xl/workbook.xml"] = append(edits["xl/workbook.xml"], x.addFilterNames)
+	}
+	newParts, err := x.pivotParts(zr, edits)
+	if err != nil {
+		return err
+	}
+	names := map[string]bool{}
+	for _, zf := range zr.File {
+		names[zf.Name] = true
+	}
+	for _, p := range newParts {
+		names[p.name] = true
+	}
+	newParts = append(newParts, x.chartParts(names, edits)...)
 	done := 0
 	for _, zf := range zr.File {
-		var edit func([]byte) ([]byte, error)
+		if slices.Contains(x.dropParts, zf.Name) {
+			delete(edits, zf.Name)
+			continue
+		}
 		sp, isSheet := x.sheets[zf.Name]
+		fns := edits[zf.Name]
+		delete(edits, zf.Name)
 		switch {
 		case isSheet:
 			done++
-		case zf.Name == "[Content_Types].xml" && x.dynamic:
-			edit = func(b []byte) ([]byte, error) { return insertBefore(b, "</Types>", metadataOverride) }
-		case zf.Name == "xl/_rels/workbook.xml.rels" && x.dynamic:
-			edit = addMetadataRel
-		case zf.Name == "xl/styles.xml" && x.normalFont != nil:
-			edit = x.setNormalFont
-		default:
+		case len(fns) == 0:
 			if err := copyRaw(zw, zf); err != nil {
 				return err
 			}
@@ -690,7 +845,12 @@ func (x *writer) patch(data []byte, w io.Writer) error {
 		} else {
 			var b []byte
 			if b, err = io.ReadAll(rc); err == nil {
-				if b, err = edit(b); err == nil {
+				for _, fn := range fns {
+					if b, err = fn(b); err != nil {
+						break
+					}
+				}
+				if err == nil {
 					_, err = out.Write(b)
 				}
 			}
@@ -702,6 +862,26 @@ func (x *writer) patch(data []byte, w io.Writer) error {
 	}
 	if done != len(x.sheets) {
 		return fmt.Errorf("xlsx writer: %d of %d worksheet parts found", done, len(x.sheets))
+	}
+	// Parts that didn't exist: edits of a missing part start from nothing
+	// (a worksheet's relationships), then the new parts.
+	for _, name := range slices.Sorted(maps.Keys(edits)) {
+		var b []byte
+		for _, fn := range edits[name] {
+			if b, err = fn(b); err != nil {
+				return fmt.Errorf("%s: %w", name, err)
+			}
+		}
+		newParts = append(newParts, part{name, b})
+	}
+	for _, p := range newParts {
+		out, err := zw.CreateHeader(&zip.FileHeader{Name: p.name, Method: zip.Deflate})
+		if err != nil {
+			return err
+		}
+		if _, err := out.Write(p.data); err != nil {
+			return err
+		}
 	}
 	if x.dynamic {
 		out, err := zw.CreateHeader(&zip.FileHeader{Name: metadataPart, Method: zip.Deflate})
@@ -802,6 +982,13 @@ func (x *writer) setNormalFont(b []byte) ([]byte, error) {
 func patchSheet(dst io.Writer, src io.Reader, p *sheetPatch) error {
 	br := bufio.NewReaderSize(src, 64<<10)
 	bw := bufio.NewWriterSize(dst, 64<<10)
+	if p.formatPr != "" {
+		if err := copyUntil(bw, br, "sheetFormatPr"); err != nil {
+			return fmt.Errorf("no sheetFormatPr")
+		}
+		bw.WriteString("<sheetFormatPr")
+		bw.WriteString(p.formatPr)
+	}
 	if p.cols != "" {
 		if err := copyUntil(bw, br, "sheetData>"); err != nil {
 			return fmt.Errorf("no sheetData")
@@ -810,6 +997,14 @@ func patchSheet(dst io.Writer, src io.Reader, p *sheetPatch) error {
 		bw.WriteString("<sheetData>")
 	}
 	for _, rc := range p.cells {
+		if rc.row > 0 {
+			tag := `row r="` + strconv.Itoa(rc.row) + `"`
+			if err := copyUntil(bw, br, tag); err != nil {
+				return fmt.Errorf("row %d not found", rc.row)
+			}
+			bw.WriteString("<" + tag + rc.xml)
+			continue
+		}
 		if err := copyUntil(bw, br, `c r="`+rc.ref+`"`); err != nil {
 			return fmt.Errorf("cell %s not found", rc.ref)
 		}
@@ -821,6 +1016,39 @@ func patchSheet(dst io.Writer, src io.Reader, p *sheetPatch) error {
 			return err
 		}
 		bw.WriteString(rc.xml)
+	}
+	if p.autoFilter != "" {
+		// <autoFilter> follows <sheetData> (and comes before <mergeCells>).
+		if err := copyUntil(bw, br, "/sheetData>"); err != nil {
+			return fmt.Errorf("no sheetData end")
+		}
+		bw.WriteString("</sheetData>")
+		bw.WriteString(p.autoFilter)
+	}
+	if p.drawing != "" {
+		if p.autoFilter == "" {
+			if err := copyUntil(bw, br, "/sheetData>"); err != nil {
+				return fmt.Errorf("no sheetData end")
+			}
+			bw.WriteString("</sheetData>")
+		}
+		// <drawing> comes after the page setup and before the legacy
+		// drawing (notes), table parts and extLst: the tail after
+		// <sheetData> is small.
+		tail, err := io.ReadAll(br)
+		if err != nil {
+			return err
+		}
+		at := len(tail)
+		for _, tag := range []string{"<legacyDrawing", "<legacyDrawingHF", "<drawingHF", "<picture", "<oleObjects", "<controls", "<webPublishItems", "<tableParts", "<extLst", "</worksheet>"} {
+			if i := bytes.Index(tail, []byte(tag)); i >= 0 && i < at {
+				at = i
+			}
+		}
+		bw.Write(tail[:at])
+		bw.WriteString(p.drawing)
+		bw.Write(tail[at:])
+		return bw.Flush()
 	}
 	if _, err := io.Copy(bw, br); err != nil {
 		return err

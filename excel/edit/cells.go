@@ -36,6 +36,7 @@ type cellsOp struct {
 // Insert Cells dialog does. Formulas pointing into the moved cells
 // follow them.
 func (b *Book) InsertCells(sheet int, r model.Range, how Shift) (calc.Result, error) {
+	defer b.Op("Insert Cells")()
 	switch how {
 	case EntireRow:
 		return b.InsertRows(sheet, r.R1, r.R2-r.R1+1)
@@ -49,6 +50,7 @@ func (b *Book) InsertCells(sheet int, r model.Range, how Shift) (calc.Result, er
 // right left (or deletes entire rows or columns). References to deleted
 // cells become #REF!.
 func (b *Book) DeleteCells(sheet int, r model.Range, how Shift) (calc.Result, error) {
+	defer b.Op("Delete Cells")()
 	switch how {
 	case EntireRow:
 		return b.DeleteRows(sheet, r.R1, r.R2-r.R1+1)
@@ -85,6 +87,9 @@ func (b *Book) applyShiftCells(op *structural) (calc.Result, error) {
 	if sh.MergeCrosses(strip) || !c.insert && sh.MergeCrosses(r) {
 		return calc.Result{}, ErrMergedShift
 	}
+	if PivotOverlap(sh, strip) != nil {
+		return calc.Result{}, ErrPivotChange
+	}
 	at, n := r.R1, r.R2-r.R1+1
 	if !c.vertical {
 		at, n = r.C1, r.C2-r.C1+1
@@ -114,7 +119,7 @@ func stripFits(sh *model.Sheet, r model.Range, vertical bool, n int) bool {
 	if vertical {
 		for row := model.MaxRows - n; row < sh.UsedRows(); row++ {
 			for c := r.C1; c <= min(r.C2, sh.RowLen(row)-1); c++ {
-				if !isBlank(sh.Get(row, c)) {
+				if !sh.Get(row, c).IsBlank() {
 					return false
 				}
 			}
@@ -123,15 +128,13 @@ func stripFits(sh *model.Sheet, r model.Range, vertical bool, n int) bool {
 	}
 	for row := r.R1; row <= min(r.R2, sh.UsedRows()-1); row++ {
 		for c := model.MaxCols - n; c < sh.RowLen(row); c++ {
-			if !isBlank(sh.Get(row, c)) {
+			if !sh.Get(row, c).IsBlank() {
 				return false
 			}
 		}
 	}
 	return true
 }
-
-func isBlank(c *model.Cell) bool { return c.Formula == "" && c.Kind == model.KindEmpty }
 
 // annotChange is a change to a cell's note or hyperlink, for undo.
 type annotChange struct {
@@ -179,6 +182,7 @@ func linkPtr(sh *model.Sheet, r, c int) *model.Hyperlink {
 
 // SetNote sets the note of a cell (nil deletes it). Undoable.
 func (b *Book) SetNote(sheet, row, col int, n *model.Note) {
+	defer b.Op("Edit Note")()
 	sh := b.WB.Sheets[sheet]
 	ch := annotChange{sheet: sheet, row: row, col: col, beforeNote: notePtr(sh, row, col), afterNote: n}
 	if ch.beforeNote == nil && n == nil {
@@ -190,6 +194,7 @@ func (b *Book) SetNote(sheet, row, col int, n *model.Note) {
 
 // ClearNotes deletes the notes in r. Undoable as one step.
 func (b *Book) ClearNotes(sheet int, r model.Range) bool {
+	defer b.Op("Clear Notes")()
 	sh := b.WB.Sheets[sheet]
 	var list []annotChange
 	for k, n := range sh.Notes {
@@ -217,10 +222,11 @@ func HyperlinkStyle(st model.Style) model.Style {
 // that text (an empty cell gets the address). The cell takes the
 // Hyperlink style (blue, underlined), as in Excel. Undoable as one step.
 func (b *Book) SetHyperlink(sheet, row, col int, display string, h model.Hyperlink) (calc.Result, error) {
+	defer b.Op("Insert Hyperlink")()
 	sh := b.WB.Sheets[sheet]
 	before := snapshot(sh, spillChildren(sh), row, col)
 	after := before
-	if display == "" && before.Kind == model.KindEmpty && before.Formula == "" {
+	if display == "" && before.IsBlank() {
 		display = h.Address()
 		if h.Target == "" {
 			display = h.Location
@@ -242,6 +248,7 @@ func (b *Book) SetHyperlink(sheet, row, col int, display string, h model.Hyperli
 // ClearHyperlinks removes the links in r, leaving the text (Excel's
 // Clear Hyperlinks). Undoable as one step.
 func (b *Book) ClearHyperlinks(sheet int, r model.Range) bool {
+	defer b.Op("Clear Hyperlinks")()
 	sh := b.WB.Sheets[sheet]
 	var list []annotChange
 	for k, h := range sh.Links {

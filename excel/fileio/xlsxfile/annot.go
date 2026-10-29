@@ -2,7 +2,6 @@ package xlsxfile
 
 import (
 	"encoding/xml"
-	"path"
 	"slices"
 	"strings"
 
@@ -43,7 +42,7 @@ const maxLinkCells = 10000
 // readAnnotations reads the notes and resolves the hyperlinks of the
 // worksheet part (read just before, its links in r.links).
 func (r *reader) readAnnotations(part string, sh *model.Sheet) {
-	rels, _ := r.rels(relsPath(part), path.Dir(part))
+	rels, _ := r.rels(part)
 	byID := map[string]xRel{}
 	for _, rel := range rels {
 		byID[rel.ID] = rel
@@ -95,13 +94,17 @@ func (r *reader) readComments(name string, sh *model.Sheet) {
 		for _, run := range cm.Text.R {
 			b.WriteString(run.T)
 		}
-		n := model.Note{Text: strings.ReplaceAll(b.String(), "\r\n", "\n")}
+		n := model.Note{Text: unescapeOOXML(strings.ReplaceAll(b.String(), "\r\n", "\n"))}
 		if cm.AuthorID >= 0 && cm.AuthorID < len(c.Authors) {
 			n.Author = c.Authors[cm.AuthorID]
 		}
 		sh.SetNote(row, col, &n)
 	}
 }
+
+// noAuthor stands in for an empty note author, which excelize would
+// replace with "Author"; it is blanked again once the notes are added.
+const noAuthor = "\uE000"
 
 // writeAnnotations adds the sheet's notes and hyperlinks. It runs before
 // the sheet's StreamWriter is created, which keeps them.
@@ -110,10 +113,21 @@ func (x *writer) writeAnnotations(sh *model.Sheet, name string) error {
 		n := sh.Notes[k]
 		author := n.Author
 		if author == "" {
-			author = "Author"
+			author = noAuthor
 		}
-		if err := x.f.AddComment(name, excelize.Comment{Author: author, Cell: model.CellName(k[0], k[1]), Text: n.Text}); err != nil {
+		// Control characters are escaped as in cell text (XML can't hold them).
+		if err := x.f.AddComment(name, excelize.Comment{Author: author, Cell: model.CellName(k[0], k[1]), Text: escapeOOXML(n.Text)}); err != nil {
 			return err
+		}
+	}
+	for _, c := range x.f.Comments {
+		if c == nil {
+			continue
+		}
+		for i, a := range c.Authors.Author {
+			if a == noAuthor {
+				c.Authors.Author[i] = ""
+			}
 		}
 	}
 	for _, k := range sortedKeys(sh.Links) {

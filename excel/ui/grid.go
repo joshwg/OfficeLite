@@ -61,9 +61,15 @@ func (a *App) layoutGrid(gtx layout.Context) layout.Dimensions {
 		pointer.CursorRowResize.Add(gtx.Ops)
 	case a.grid.move != nil:
 		pointer.CursorAllScroll.Add(gtx.Ops)
+	case a.ch.drag != nil && a.ch.drag.moved:
+		a.dragCursor().Add(gtx.Ops) // chart.go
 	default:
 		pointer.CursorCrosshair.Add(gtx.Ops)
 		a.dividerCursors(gtx, &st.view)
+		a.filterCursors(gtx, &st.view)
+		a.pivotCursors(gtx, &st.view)
+		a.outlineCursors(gtx, &st.view)
+		a.chartCursors(gtx, &st.view)
 	}
 	area.Pop()
 
@@ -75,9 +81,16 @@ func (a *App) layoutGrid(gtx layout.Context) layout.Dimensions {
 	if a.grid.resize == nil && a.grid.move == nil {
 		a.borderCursor(gtx, &st.view)
 	}
-	a.drawAnnots(gtx, &st.view) // notes, links, fill drag (notes.go)
+	a.drawAnnots(gtx, &st.view)     // notes, links, fill drag (notes.go)
+	a.drawValidation(gtx, &st.view) // list button, input message, circles (validation.go)
 	a.drawMoveDrag(gtx, &st.view)
+	a.drawChartDrag(gtx, &st.view)   // chart.go
+	a.layoutTitleEdit(gtx, &st.view) // a chart title edited in place
 	a.layoutGridMenu(gtx)
+	a.layoutFilterMenu(gtx) // an AutoFilter drop-down (filter.go)
+	a.layoutPivotMenu(gtx)  // a PivotTable drop-down (pivotmenu.go)
+	a.layoutPivotSubmenu(gtx)
+	a.layoutValidList(gtx) // a validation list (validation.go)
 	return d
 }
 
@@ -100,6 +113,10 @@ func (a *App) gridPointer(gtx layout.Context, st *sheetState) {
 		switch e.Kind {
 		case pointer.Press:
 			if e.Buttons.Contain(pointer.ButtonSecondary) {
+				if c := v.ChartAt(e.Position.X, e.Position.Y); c != nil || a.onChartSheet() {
+					a.chartContextMenu(v, c, e.Position) // chartribbon.go
+					continue
+				}
 				a.gridContextMenu(st, e.Position) // ctxmenu.go
 				continue
 			}
@@ -119,6 +136,10 @@ func (a *App) gridPointer(gtx layout.Context, st *sheetState) {
 				a.finishRename(true)
 			}
 			requestFocus(gtx, &a.grid)
+			if a.chartPress(v, e) {
+				a.grid.lastPress = 0
+				continue // a chart, over the cells (chart.go)
+			}
 			if a.beginResize(st, e.Position) {
 				// A double-click on a divider fits the column (row) to its
 				// contents, as in Excel.
@@ -133,6 +154,22 @@ func (a *App) gridPointer(gtx layout.Context, st *sheetState) {
 				}
 				a.grid.lastPress = 0
 				continue
+			}
+			if a.outlinePress(v, e.Position) {
+				a.grid.lastPress = 0
+				continue // an outline button (outline.go)
+			}
+			if a.validPress(v, e.Position) {
+				a.grid.lastPress = 0
+				continue // a validation list's button (validation.go)
+			}
+			if a.filterPress(v, e.Position.X, e.Position.Y) {
+				a.grid.lastPress = 0
+				continue // an AutoFilter button (filter.go)
+			}
+			if a.pivotPress(v, e.Position.X, e.Position.Y) {
+				a.grid.lastPress = 0
+				continue // a PivotTable's button (pivotmenu.go)
 			}
 			if a.fillPress(v, e.Position.Round()) {
 				continue // dragging the fill handle (fill.go)
@@ -150,6 +187,9 @@ func (a *App) gridPointer(gtx layout.Context, st *sheetState) {
 			if double && hit.Area == render.AreaCell && !e.Modifiers.Contain(key.ModShift) {
 				a.grid.lastPress = 0
 				a.pointAt(st, hit, false)
+				if a.pivotDouble(hit.Row, hit.Col) {
+					continue // Show Details on a report's value (pivot.go)
+				}
 				a.beginEdit(editText(v.Sheet, v.Sel.Active), false, false)
 				continue
 			}
@@ -165,6 +205,10 @@ func (a *App) gridPointer(gtx layout.Context, st *sheetState) {
 				v.Sel.Extra = extra
 			}
 		case pointer.Drag:
+			if a.ch.drag != nil {
+				a.chartDragTo(v, e.Position, e.Modifiers) // chart.go
+				continue
+			}
 			if a.grid.move != nil {
 				a.moveTo(v, e.Position)
 				continue
@@ -188,6 +232,15 @@ func (a *App) gridPointer(gtx layout.Context, st *sheetState) {
 				v.EnsureVisible(st.selEnd.Row, st.selEnd.Col)
 			}
 		case pointer.Release, pointer.Cancel:
+			if d := a.ch.drag; d != nil {
+				// As for a selection dragged by its border: a Cancel
+				// just before the Release (Windows) doesn't end it.
+				if e.Kind == pointer.Release {
+					a.chartRelease()
+				} else {
+					d.done = true
+				}
+			}
 			a.grid.dragging = false
 			a.grid.pointing = false
 			if m := a.grid.move; m != nil {
@@ -212,6 +265,9 @@ func (a *App) gridPointer(gtx layout.Context, st *sheetState) {
 			if m := a.grid.move; m != nil && m.done {
 				a.grid.move = nil // cancelled
 				a.notice = ""
+			}
+			if d := a.ch.drag; d != nil && (d.done || !e.Buttons.Contain(pointer.ButtonPrimary)) {
+				a.ch.drag = nil
 			}
 			a.gridHover(v, e.Position.Round()) // notes show on hover (notes.go)
 		}
@@ -370,6 +426,12 @@ func (a *App) gridKeys(gtx layout.Context, st *sheetState) {
 		}
 		switch e := ev.(type) {
 		case key.EditEvent:
+			if !a.ed.active && (a.onChartSheet() || st.view.SelChart != nil) {
+				if st.view.SelChart != nil && st.view.SelElem.Kind == render.ElemTitle && e.Text != "" {
+					a.startTitleEdit(e.Text, true) // typing replaces the selected title
+				}
+				continue // a chart takes no other typing
+			}
 			// Typing replaces the cell's content (Enter mode); characters
 			// typed before the editor took the focus are added to it.
 			if a.ed.active {
@@ -379,6 +441,9 @@ func (a *App) gridKeys(gtx layout.Context, st *sheetState) {
 			}
 			continue
 		case transfer.DataEvent:
+			if a.onChartSheet() {
+				continue
+			}
 			if r := e.Open(); r != nil {
 				data, _ := io.ReadAll(io.LimitReader(r, 64<<20))
 				r.Close()
@@ -393,6 +458,16 @@ func (a *App) gridKeys(gtx layout.Context, st *sheetState) {
 		shift := e.Modifiers.Contain(key.ModShift)
 		ctrl := e.Modifiers.Contain(key.ModShortcut)
 		v := &st.view
+		pageKey := ctrl && (e.Name == key.NamePageUp || e.Name == key.NamePageDown)
+		if !pageKey && (e.Name != "C" && e.Name != "X" && e.Name != "V" || !ctrl) && a.chartKey(e) {
+			continue // arrows, Delete, F2 for a selected chart (chart.go)
+		}
+		if a.onChartSheet() && e.Name != "Z" && e.Name != "Y" && e.Name != "C" && !pageKey {
+			continue // a chart sheet has no cells (chart.go)
+		}
+		if v.SelChart != nil && e.Name != "Z" && e.Name != "Y" && e.Name != "C" && e.Name != "X" && e.Name != "V" && !pageKey {
+			v.SelChart, v.SelElem = nil, render.ChartElem{} // a key for the cells drops the chart selection
+		}
 		switch e.Name {
 		case "C", "X":
 			a.copy(gtx, e.Name == "X")

@@ -31,31 +31,58 @@ func (a *App) selectRange(sheet int, r model.Range) {
 	a.grid.focusPending = true
 }
 
-func (a *App) undo() {
+func (a *App) undo() { a.undoN(1) }
+func (a *App) redo() { a.redoN(1) }
+
+// undoN takes back n steps of the Undo list (undoLabels): an entry being
+// typed is the first, which Undo cancels.
+func (a *App) undoN(n int) {
 	if a.ed.active {
 		a.cancelEdit()
+		n--
+	}
+	if n <= 0 {
 		return
 	}
-	where, res, ok := a.book.Undo()
+	where, res, ok := a.book.UndoN(n)
 	if ok {
 		a.afterUndo(where, res)
 	}
 }
 
-func (a *App) redo() {
+func (a *App) redoN(n int) {
 	if a.ed.active {
 		return
 	}
-	where, res, ok := a.book.Redo()
+	where, res, ok := a.book.RedoN(n)
 	if ok {
 		a.afterUndo(where, res)
 	}
+}
+
+// undoLabels and redoLabels are the Undo and Redo lists, the next step
+// first.
+func (a *App) undoLabels() []string {
+	if a.ed.active {
+		return append([]string{"Typing"}, a.book.UndoLabels()...)
+	}
+	return a.book.UndoLabels()
+}
+
+func (a *App) redoLabels() []string {
+	if a.ed.active {
+		return nil
+	}
+	return a.book.RedoLabels()
 }
 
 func (a *App) afterUndo(where edit.Where, res calc.Result) {
 	a.syncSheets()
 	a.changed(res)
 	a.selectRange(min(where.Sheet, len(a.wb.Sheets)-1), where.Range)
+	if a.wb.Sheets[a.active].Hidden {
+		a.switchSheet(-1)
+	}
 }
 
 // copy puts the selection on the clipboard: as text for other programs,
@@ -64,10 +91,16 @@ func (a *App) copy(gtx layout.Context, cut bool) {
 	if a.ed.active {
 		return // the editor handles its own clipboard keys
 	}
+	if a.copyChart(gtx, cut) {
+		return // a selected chart (chart.go)
+	}
 	if !a.singleRange() {
 		return
 	}
 	st := a.state()
+	if cut && a.pivotProtected(st.view.Sel.Range) {
+		return
+	}
 	a.clip = a.book.Copy(a.active, st.view.Sel.Range, cut)
 	a.clipText = edit.CopyText(st.view.Sheet, st.view.Sel.Range)
 	a.notice = ""
@@ -83,21 +116,28 @@ func (a *App) requestPaste(gtx layout.Context) {
 // the text is what this window copied, otherwise the text parsed as
 // typed input.
 func (a *App) paste(text string) {
+	if !a.ed.active && a.pasteChart(text) {
+		return // a copied chart (chart.go)
+	}
 	if a.ed.active || !a.singleRange() {
 		return
 	}
 	st := a.state()
 	sel := st.view.Sel.Range
+	if a.pivotProtected(sel) {
+		return
+	}
 	var (
 		dest model.Range
 		res  calc.Result
 		err  error
 	)
 	norm := func(s string) string { return strings.TrimRight(strings.ReplaceAll(s, "\r\n", "\n"), "\n") }
+	var keep *edit.Clip
 	if a.clip != nil && a.clip.WB == a.wb && norm(text) == norm(a.clipText) {
 		dest, res, err = a.book.Paste(a.clip, a.active, sel)
-		if err == nil && a.clip.Cut {
-			a.clip = nil // a cut pastes once
+		if !a.clip.Cut {
+			keep = a.clip // a copy pastes again; a cut pastes once
 		}
 	} else {
 		dest, res, err = a.book.PasteText(text, a.active, sel)
@@ -107,12 +147,19 @@ func (a *App) paste(text string) {
 		return
 	}
 	a.changed(res)
+	a.clip = keep
 	a.selectRange(a.active, dest)
 }
 
 // clearSelection empties the selected cells (every range of a multiple
 // selection), keeping formats (Delete).
 func (a *App) clearSelection() {
+	if a.deleteSelectedChart() || a.onChartSheet() {
+		return // chart.go
+	}
+	if a.pivotDelete() {
+		return // pivot.go
+	}
 	var res calc.Result
 	a.eachRange(func(r model.Range) { res = joinResult(res, a.book.Clear(a.active, r)) })
 	a.changed(res)
@@ -174,11 +221,17 @@ func (a *App) structural(insert, cols bool) {
 }
 
 // insertSheet adds a sheet before the active one and activates it.
-func (a *App) insertSheet() {
+func (a *App) insertSheet() { a.addSheet(a.active) }
+
+// newSheet adds a sheet after the active one, as Excel's + button beside
+// the sheet tabs does, and activates it.
+func (a *App) newSheet() { a.addSheet(a.active + 1) }
+
+// addSheet inserts a sheet at index at and activates it.
+func (a *App) addSheet(at int) {
 	if a.ed.active && !a.commitEdit(0, 0) {
 		return
 	}
-	at := a.active
 	if _, err := a.book.InsertSheet(at); err != nil {
 		a.errMsg = err.Error()
 		return

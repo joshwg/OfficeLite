@@ -52,6 +52,7 @@ const (
 	recBOF           = 0x0809
 	biff8Version     = 0x0600
 	bofTypeWorksheet = 0x0010
+	bofTypeChart     = 0x0020
 )
 
 func u16(b []byte, off int) int {

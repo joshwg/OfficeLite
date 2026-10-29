@@ -38,7 +38,8 @@ func DefaultStyles() StyleSheet {
 			{ID: "Hyperlink", Name: "Hyperlink", Type: CharacterStyle, BasedOn: "DefaultParagraphFont",
 				Run: RunProps{Color: "0563C1", Underline: UnderlineSingle}},
 			{ID: "TableNormal", Name: "Normal Table", Type: TableStyle, Default: true, Hidden: true},
-			{ID: "TableGrid", Name: "Table Grid", Type: TableStyle, BasedOn: "TableNormal"},
+			{ID: "TableGrid", Name: "Table Grid", Type: TableStyle, BasedOn: "TableNormal",
+				Para: ParaProps{SpaceAfter: F(0), Line: 1, LineRule: LineAuto}},
 		},
 	}
 }

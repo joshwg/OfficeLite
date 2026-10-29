@@ -21,7 +21,8 @@ const (
 	recHLink        = 0x01B8
 	recHLinkTooltip = 0x0800
 
-	otNote = 0x19 // OBJ type of a note's text box
+	otNote     = 0x19 // OBJ type of a note's text box
+	otDropDown = 0x14 // OBJ type of a drop-down (an AutoFilter button)
 )
 
 var (
@@ -84,7 +85,7 @@ func (a *annotReader) record(r record) bool {
 		if a.texts == nil {
 			a.texts = map[int]string{}
 		}
-		a.texts[a.txoObj] = strings.ReplaceAll(string(a.txoText), "\r", "")
+		a.texts[a.txoObj] = strings.ReplaceAll(string(a.txoText), "\r\n", "\n") // a lone CR is text
 	}
 	switch r.id {
 	case recObj:
@@ -124,6 +125,9 @@ func (a *annotReader) record(r record) bool {
 	return false
 }
 
+// maxLinkCells bounds how many cells one HLINK range fills.
+const maxLinkCells = 10000
+
 // apply stores what was read in sh.
 func (a *annotReader) apply(sh *model.Sheet) {
 	if a.txo {
@@ -139,9 +143,11 @@ func (a *annotReader) apply(sh *model.Sheet) {
 		if tip, ok := a.tooltips[l.rng]; ok {
 			l.h.Tooltip = tip
 		}
-		for r := l.rng.R1; r <= min(l.rng.R2, model.MaxRows-1); r++ {
-			for c := l.rng.C1; c <= min(l.rng.C2, model.MaxCols-1); c++ {
+		n := 0 // bounded as in the .xlsx reader: a damaged range can span the sheet
+		for r := l.rng.R1; r <= min(l.rng.R2, model.MaxRows-1) && n < maxLinkCells; r++ {
+			for c := l.rng.C1; c <= min(l.rng.C2, model.MaxCols-1) && n < maxLinkCells; c++ {
 				sh.SetLink(r, c, &l.h)
+				n++
 			}
 		}
 	}
@@ -250,13 +256,7 @@ func (c *hcursor) moniker() string {
 }
 
 // utf16z is s as UTF-16LE with a terminating null.
-func utf16z(s string) []byte {
-	var b []byte
-	for _, u := range utf16.Encode([]rune(s)) {
-		b = binary.LittleEndian.AppendUint16(b, u)
-	}
-	return append(b, 0, 0)
-}
+func utf16z(s string) []byte { return append(textenc.AppendUTF16LE(nil, s), 0, 0) }
 
 func appendHString(b []byte, s string) []byte {
 	b = binary.LittleEndian.AppendUint32(b, uint32(len(utf16.Encode([]rune(s)))+1))
@@ -419,12 +419,29 @@ func noteKeys(sh *model.Sheet) [][2]int {
 	return keys
 }
 
-// noteDrawings lists, for each sheet with notes, its note count; a
-// sheet's drawing id is its 1-based position in this list.
+// dropDowns are the header columns of sh's AutoFilter that get a
+// drop-down button object.
+func dropDowns(sh *model.Sheet) []int {
+	if !filterFits(sh) {
+		return nil
+	}
+	f := sh.AutoFilter
+	var cols []int
+	for c := f.Range.C1; c <= f.Range.C2; c++ {
+		if fc, ok := f.Column(c); !ok || !fc.HideButton {
+			cols = append(cols, c)
+		}
+	}
+	return cols
+}
+
+// noteDrawings lists, for each sheet with notes or AutoFilter buttons,
+// its shape count; a sheet's drawing id is its 1-based position in this
+// list.
 func (x *writer) noteDrawings() (dg map[int]int, counts []int) {
 	dg = map[int]int{}
 	for si, sh := range x.sheets {
-		if n := len(noteKeys(sh)); n > 0 {
+		if n := len(noteKeys(sh)) + len(dropDowns(sh)); n > 0 {
 			counts = append(counts, n)
 			dg[si] = len(counts)
 		}
@@ -456,26 +473,28 @@ func (x *writer) drawingGroup(b []byte) []byte {
 	return rec(b, recMsoDrawingGroup, body)
 }
 
-// notes writes the drawing objects and NOTE records of sh's notes.
+// notes writes the drawing objects and NOTE records of sh's notes, and
+// the drop-down buttons of its AutoFilter.
 func (x *writer) notes(b []byte, si int, sh *model.Sheet) []byte {
 	keys := noteKeys(sh)
-	if len(keys) == 0 {
+	drops := dropDowns(sh)
+	if len(keys) == 0 && len(drops) == 0 {
 		return b
 	}
 	dgs, _ := x.noteDrawings()
 	dg := dgs[si]
-	k := len(keys)
-	const groupLen, noteLen = 48, 152 // SpContainers with headers
-	spgr := groupLen + k*noteLen
+	k, nd := len(keys), len(drops)
+	const groupLen, noteLen, dropLen = 48, 152, 96 // SpContainers with headers
+	spgr := groupLen + k*noteLen + nd*dropLen
 	base := dg * 0x400
 
 	var first []byte
-	first = officeArt(first, 0x000F, 0xF002, 16+8+spgr)                              // DgContainer
-	first = officeArt(first, dg<<4, 0xF008, 8, le32(uint32(k+1), uint32(base+k))...) // FDG
-	first = officeArt(first, 0x000F, 0xF003, spgr)                                   // SpgrContainer
-	first = officeArt(first, 0x000F, 0xF004, groupLen-8)                             // group shape
-	first = officeArt(first, 0x0001, 0xF009, 16, make([]byte, 16)...)                // FSPGR
-	first = officeArt(first, 0x0002, 0xF00A, 8, le32(uint32(base), 0x05)...)         // FSP: group, patriarch
+	first = officeArt(first, 0x000F, 0xF002, 16+8+spgr)                                    // DgContainer
+	first = officeArt(first, dg<<4, 0xF008, 8, le32(uint32(k+nd+1), uint32(base+k+nd))...) // FDG
+	first = officeArt(first, 0x000F, 0xF003, spgr)                                         // SpgrContainer
+	first = officeArt(first, 0x000F, 0xF004, groupLen-8)                                   // group shape
+	first = officeArt(first, 0x0001, 0xF009, 16, make([]byte, 16)...)                      // FSPGR
+	first = officeArt(first, 0x0002, 0xF00A, 8, le32(uint32(base), 0x05)...)               // FSP: group, patriarch
 	for i, key := range keys {
 		var d []byte
 		if i == 0 {
@@ -532,9 +551,52 @@ func (x *writer) notes(b []byte, si int, sh *model.Sheet) []byte {
 		}
 		b = rec(b, recContinue, le(0, 0, 0, 0, len(units), 0, 0, 0))
 	}
+	for j, col := range drops {
+		var d []byte
+		if k == 0 && j == 0 {
+			d = first
+		}
+		b = x.dropDown(b, d, base+k+j+1, k+j+1, sh.AutoFilter.Range.R1, col, sh)
+	}
 	for i, key := range keys {
 		author := truncUTF16(sh.Notes[key].Author, 54)
 		b = rec(b, recNote, append(appendString(le(key[0], key[1], 0, i+1), author), 0))
 	}
 	return b
+}
+
+// dropDownFOPT is the shape properties of an AutoFilter button as Excel
+// writes them: locked against grouping, fit text, no fill hit test, no
+// line, not printed.
+var dropDownFOPT = []byte{
+	0x7F, 0x00, 0x04, 0x01, 0x04, 0x01,
+	0xBF, 0x00, 0x08, 0x00, 0x08, 0x00,
+	0xBF, 0x01, 0x00, 0x00, 0x01, 0x00,
+	0xFF, 0x01, 0x00, 0x00, 0x08, 0x00,
+	0xBF, 0x03, 0x00, 0x00, 0x0A, 0x00,
+}
+
+// dropDown writes the drop-down button of an AutoFilter header cell: a
+// host-control shape over the cell and its OBJ record (a combo box marked
+// as an AutoFilter's, filtered when the column has criteria). d holds
+// the drawing's start when this is its first shape.
+func (x *writer) dropDown(b, d []byte, spid, objID, row, col int, sh *model.Sheet) []byte {
+	anchor := le(1, col, 0, row, 0, min(col+1, 255), 0, min(row+1, xlsMaxRows-1), 0)
+	d = officeArt(d, 0x000F, 0xF004, 96-8)
+	d = officeArt(d, 0x0C92, 0xF00A, 8, le32(uint32(spid), 0x0A00)...) // FSP: host control, anchored
+	d = officeArt(d, 0x0053, 0xF00B, len(dropDownFOPT), dropDownFOPT...)
+	d = officeArt(d, 0x0000, 0xF010, len(anchor), anchor...)
+	d = officeArt(d, 0x0000, 0xF011, 0)
+	b = rec(b, recMsoDrawing, d)
+
+	style := 2 // simple drop-down
+	if _, ok := sh.AutoFilter.Column(col); ok {
+		style |= 0x0008 // filtered: Excel shows the funnel
+	}
+	obj := le(0x15, 0x12, otDropDown, objID, 0x2101)
+	obj = append(obj, make([]byte, 12)...)
+	obj = append(obj, le(0x0C, 0x14, 0, 0, 0, 0, 0x64, 1, 0x0A, 0, 0x10, 1)...) // ftSbs
+	obj = append(obj, le(0x13, 0x1FEE, 0, 0, 0, 0x0301, 0, style, 20, 130)...)  // ftLbsData: AutoFilter list
+	obj = append(obj, le(0, 0)...)
+	return rec(b, recObj, obj)
 }

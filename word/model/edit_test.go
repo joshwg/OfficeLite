@@ -389,3 +389,91 @@ func TestMarkersAndSpans(t *testing.T) {
 		t.Fatalf("link text %q (%s)", inLink, p.Text())
 	}
 }
+
+// Backspace in an empty paragraph after a nested table, in a cell of the
+// document's first block, used to panic (a body range starting at -1).
+func TestBackspaceAfterNestedTable(t *testing.T) {
+	d := New("t")
+	inner := &Table{Columns: []float64{50}, Rows: []*TableRow{{Cells: []*TableCell{
+		{Blocks: []Block{&Paragraph{Runs: []Run{{Text: "in"}}}}}}}}}
+	empty, mid := &Paragraph{}, &Paragraph{}
+	cell := &TableCell{Blocks: []Block{inner, empty}}
+	d.Body = []Block{&Table{Columns: []float64{100}, Rows: []*TableRow{{Cells: []*TableCell{cell}}}}, &Paragraph{}}
+	e := NewEditor(d)
+	// The cell's last paragraph stays; the caret moves into the table.
+	e.SetCaret(Pos{1, 0}, false)
+	e.Backspace()
+	if len(cell.Blocks) != 2 || e.Sel.Caret != (Pos{0, 2}) {
+		t.Fatalf("last cell paragraph: %d blocks, caret %v", len(cell.Blocks), e.Sel.Caret)
+	}
+	// One that isn't last goes, as one undo step.
+	cell.Blocks = []Block{inner, mid, empty}
+	e.reindex()
+	e.SetCaret(Pos{1, 0}, false)
+	e.Backspace()
+	if len(cell.Blocks) != 2 || cell.Blocks[1] != empty {
+		t.Fatalf("empty paragraph after nested table: %d blocks", len(cell.Blocks))
+	}
+	e.Undo()
+	if c := d.Body[0].(*Table).Rows[0].Cells[0]; len(c.Blocks) != 3 {
+		t.Fatalf("undo: %d blocks", len(c.Blocks))
+	}
+}
+
+// The document's last paragraph after a table is never deleted: Backspace
+// in it moves into the table, Delete at the end of the last cell does
+// nothing.
+func TestLastParagraphAfterTable(t *testing.T) {
+	d, e := tableDoc()
+	d.Body[2] = &Paragraph{}
+	e.reindex()
+	e.SetCaret(Pos{5, 0}, false)
+	e.Backspace()
+	if len(d.Body) != 3 || e.Sel.Caret != (Pos{4, 2}) {
+		t.Fatalf("backspace: %d blocks, caret %v", len(d.Body), e.Sel.Caret)
+	}
+	e.Delete()
+	if len(d.Body) != 3 || texts(d) != "before|a1|b1|a2|b2|" {
+		t.Fatalf("delete at the last cell's end: %d blocks %q", len(d.Body), texts(d))
+	}
+	// Delete at the end of a cell doesn't join the next cell either.
+	e.SetCaret(Pos{1, 2}, false)
+	e.Delete()
+	if texts(d) != "before|a1|b1|a2|b2|" {
+		t.Fatalf("delete at a cell's end: %q", texts(d))
+	}
+	// An empty paragraph between a table and more text still goes.
+	d.Body = append(d.Body, &Paragraph{Runs: []Run{{Text: "end"}}})
+	e.reindex()
+	e.SetCaret(Pos{5, 0}, false)
+	e.Backspace()
+	if len(d.Body) != 3 || texts(d) != "before|a1|b1|a2|b2|end" {
+		t.Fatalf("middle empty paragraph: %d blocks %q", len(d.Body), texts(d))
+	}
+}
+
+// The caret never goes into a cell that continues a vertical merge (its
+// text isn't shown).
+func TestCaretSkipsMergedCells(t *testing.T) {
+	d, e := tableDoc()
+	tb := d.Body[1].(*Table)
+	tb.Rows[0].Cells[0].VMerge = 1
+	tb.Rows[1].Cells[0].VMerge = 2 // "a2" is hidden
+	e.reindex()
+	e.SetCaret(Pos{2, 2}, false) // end of b1
+	e.Move(1, false, false)
+	if e.Sel.Caret != (Pos{4, 0}) {
+		t.Fatalf("right from b1: %v", e.Sel.Caret)
+	}
+	e.Move(-1, false, false)
+	if e.Sel.Caret != (Pos{2, 2}) {
+		t.Fatalf("left from b2: %v", e.Sel.Caret)
+	}
+	e.SetCaret(Pos{3, 1}, false)
+	if e.Sel.Caret != (Pos{4, 0}) {
+		t.Fatalf("set into hidden cell: %v", e.Sel.Caret)
+	}
+	if ms := e.FindAll("a2", FindOptions{}); len(ms) != 0 {
+		t.Fatalf("found hidden text: %v", ms)
+	}
+}

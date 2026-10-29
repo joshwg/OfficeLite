@@ -147,6 +147,10 @@ func TestQuoteSheet(t *testing.T) {
 	for in, want := range map[string]string{
 		"Sheet1": "Sheet1", "My Sheet": "'My Sheet'", "A1": "'A1'", "XFD9": "'XFD9'",
 		"R": "'R'", "C12": "'C12'", "Data.2024": "Data.2024", "Q&A": "'Q&A'", "": "''",
+		"Data_2024": "Data_2024", "Ünïcode": "Ünïcode", "Bob's": "'Bob''s'",
+		"2024": "'2024'", "1st": "'1st'", "Q1": "'Q1'", "xfd9": "'xfd9'",
+		"R1C1": "'R1C1'", "RC": "'RC'", "TRUE": "'TRUE'", "false": "'false'",
+		"Truly": "Truly",
 	} {
 		if got := QuoteSheet(in); got != want {
 			t.Errorf("QuoteSheet(%q) = %q, want %q", in, got, want)

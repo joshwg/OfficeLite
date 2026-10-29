@@ -34,6 +34,8 @@ type Item struct {
 	St     *TextStyle
 	Asc    float64
 	Desc   float64
+	wAsc   float64 // Word's ascent and descent (see measured)
+	wDesc  float64
 	Leader byte          // tab leader
 	Obj    *model.Opaque // ItemObject
 	trail  float64       // width of trailing spaces
@@ -74,9 +76,10 @@ type Para struct {
 	Shading       color.NRGBA
 	Height        float64 // sum of line heights
 
-	width   float64
-	label   string
-	inTable bool
+	width float64
+	label string
+	mark  *TextStyle   // the paragraph mark's style (for ¶)
+	table *model.Table // the table the paragraph is in, or nil
 }
 
 // tabber finds tab stops: custom stops, the hanging indent's implicit stop
@@ -150,7 +153,7 @@ func (e *Engine) atoms(p *model.Paragraph) []Item {
 		case model.RunTab:
 			it := Item{Kind: ItemTab, Off: off, N: 1, St: st, brk: true, Adv: []float32{0}}
 			m := e.m.measure(st, "")
-			it.Asc, it.Desc = m.ascent, m.desc
+			it.Asc, it.Desc, it.wAsc, it.wDesc = m.ascent, m.desc, m.wasc, m.wdesc
 			out = append(out, it)
 			off += n
 		case model.RunBreak, model.RunPageBreak:
@@ -163,11 +166,11 @@ func (e *Engine) atoms(p *model.Paragraph) []Item {
 		case model.RunOpaque:
 			it := Item{Kind: ItemObject, Off: off, N: 1, St: st, Obj: r.Opaque, brk: true, Text: e.fieldText(r)}
 			m := e.m.measure(st, "")
-			it.Asc, it.Desc = m.ascent, m.desc
+			it.Asc, it.Desc, it.wAsc, it.wDesc = m.ascent, m.desc, m.wasc, m.wdesc
 			if r.Opaque != nil && r.Opaque.Width > 0 {
 				it.W = r.Opaque.Width
 				if r.Opaque.Height > 0 {
-					it.Asc, it.Desc = r.Opaque.Height, 0
+					it.Asc, it.Desc, it.wAsc, it.wDesc = r.Opaque.Height, 0, r.Opaque.Height, 0
 				}
 			} else if it.Text != "" {
 				it.W = e.m.measure(st, it.Text).width
@@ -186,7 +189,7 @@ func (e *Engine) atoms(p *model.Paragraph) []Item {
 func (e *Engine) textItem(st *TextStyle, w string, off int) Item {
 	m := e.m.measure(st, w)
 	it := Item{Kind: ItemText, Off: off, N: len(m.adv), Text: w, St: st, Adv: m.adv, W: m.width,
-		trail: m.trailingSpace, Asc: m.ascent, Desc: m.desc, brk: endsBreakable(w)}
+		trail: m.trailingSpace, Asc: m.ascent, Desc: m.desc, wAsc: m.wasc, wDesc: m.wdesc, brk: endsBreakable(w)}
 	for i := len(w) - 1; i >= 0 && w[i] == ' '; i-- {
 		it.spaces++
 	}
@@ -196,8 +199,10 @@ func (e *Engine) textItem(st *TextStyle, w string, off int) Item {
 	}
 	if st.Shift > 0 {
 		it.Asc += st.Shift
+		it.wAsc += st.Shift
 	} else {
 		it.Desc -= st.Shift
+		it.wDesc -= st.Shift
 	}
 	return it
 }
@@ -260,16 +265,17 @@ func splitCase(s string) []caseSeg {
 }
 
 // paraGeometry returns a paragraph's indents, list level and spacing.
-func (e *Engine) paraGeometry(p *model.Paragraph, inTable bool) (pp model.ParaProps, left, right, first float64, lvl *model.ListLevel) {
+func (e *Engine) paraGeometry(p *model.Paragraph, t *model.Table) (pp model.ParaProps, left, right, first float64, lvl *model.ListLevel) {
 	pp = e.Doc.ResolvePara(p)
-	if inTable {
-		// Table styles (Table Grid) set single spacing and no space after,
-		// overriding the document defaults but not paragraph styles.
-		if p.Props.SpaceAfter == nil && !e.styleSets(p.Style, func(q model.ParaProps) bool { return q.SpaceAfter != nil }) {
-			pp.SpaceAfter = model.F(0)
+	if t != nil {
+		// Table styles (Table Grid: single spacing, no space after)
+		// override the document defaults but not paragraph styles.
+		ts := e.tableStylePara(t)
+		if ts.SpaceAfter != nil && p.Props.SpaceAfter == nil && !e.styleSets(p.Style, func(q model.ParaProps) bool { return q.SpaceAfter != nil }) {
+			pp.SpaceAfter = ts.SpaceAfter
 		}
-		if p.Props.LineRule == model.LineUnset && !e.styleSets(p.Style, func(q model.ParaProps) bool { return q.LineRule != model.LineUnset }) {
-			pp.Line, pp.LineRule = 1, model.LineAuto
+		if ts.LineRule != model.LineUnset && p.Props.LineRule == model.LineUnset && !e.styleSets(p.Style, func(q model.ParaProps) bool { return q.LineRule != model.LineUnset }) {
+			pp.Line, pp.LineRule = ts.Line, ts.LineRule
 		}
 	}
 	if pp.IndentLeft != nil {
@@ -296,6 +302,30 @@ func (e *Engine) paraGeometry(p *model.Paragraph, inTable bool) (pp model.ParaPr
 	return
 }
 
+// tableStylePara returns the paragraph properties of a table's style (the
+// default table style if it has none) and the styles it is based on. A
+// document without table styles gets Table Grid's.
+func (e *Engine) tableStylePara(t *model.Table) model.ParaProps {
+	st := e.Doc.Styles.Find(t.Style)
+	if st == nil || st.Type != model.TableStyle {
+		st = e.Doc.Styles.Default(model.TableStyle)
+	}
+	if st == nil {
+		return model.ParaProps{SpaceAfter: model.F(0), Line: 1, LineRule: model.LineAuto}
+	}
+	var chain []*model.Style
+	seen := map[string]bool{}
+	for ; st != nil && !seen[st.ID]; st = e.Doc.Styles.Find(st.BasedOn) {
+		seen[st.ID] = true
+		chain = append(chain, st)
+	}
+	var pp model.ParaProps
+	for i := len(chain) - 1; i >= 0; i-- {
+		pp = pp.Merge(chain[i].Para)
+	}
+	return pp
+}
+
 // styleSets reports whether the paragraph style (not the default style it
 // may be based on) sets a property.
 func (e *Engine) styleSets(id string, has func(model.ParaProps) bool) bool {
@@ -310,9 +340,9 @@ func (e *Engine) styleSets(id string, has func(model.ParaProps) bool) bool {
 }
 
 // layoutPara breaks a paragraph into lines for a text column width wide.
-func (e *Engine) layoutPara(p *model.Paragraph, width float64, label string, inTable bool) *Para {
-	pp, left, right, first, lvl := e.paraGeometry(p, inTable)
-	out := &Para{P: p, Props: pp, Left: left, Right: right, width: width, label: label, inTable: inTable}
+func (e *Engine) layoutPara(p *model.Paragraph, width float64, label string, t *model.Table) *Para {
+	pp, left, right, first, lvl := e.paraGeometry(p, t)
+	out := &Para{P: p, Props: pp, Left: left, Right: right, width: width, label: label, table: t}
 	if pp.SpaceBefore != nil {
 		out.Before = *pp.SpaceBefore
 	}
@@ -326,6 +356,7 @@ func (e *Engine) layoutPara(p *model.Paragraph, width float64, label string, inT
 	}
 	markRun := model.Run{Props: p.Mark}
 	markStyle := e.style(e.Doc.ResolveRun(p, &markRun))
+	out.mark = markStyle
 	mark := e.m.measure(markStyle, "")
 
 	tabs := &tabber{stops: pp.Tabs, hang: -1, every: e.Doc.DefaultTabStop}
@@ -348,6 +379,12 @@ func (e *Engine) layoutPara(p *model.Paragraph, width float64, label string, inT
 			c.Font.Typeface = styleOf(model.RunProps{Font: lvl.Font}).Font.Typeface
 			c.Family = lvl.Font
 			ls = e.intern(&c)
+		}
+		// A Symbol bullet is drawn from Symbol, as Word does; the Unicode
+		// stand-in comes from another font, with a smaller dot and the
+		// taller line of that font's ascent.
+		if m := mapSymbols(label); m != label && (lvl.Font == "" || !e.m.has(ls, lvl.Font, label)) {
+			label = m
 		}
 		lit := e.textItem(ls, label, 0)
 		lit.Kind, lit.N, lit.Adv = ItemLabel, 0, nil
@@ -588,20 +625,28 @@ func (e *Engine) finishLine(l *Line, start float64, pp model.ParaProps, mark *me
 	l.X0 = start + shift
 	l.Width = width
 
-	asc, desc := 0.0, 0.0
+	// The line is as tall as Word's tallest ascent plus deepest descent;
+	// the baseline stays above Gio's deepest descent, which is where it is
+	// on a line of one font.
+	asc, desc, wasc, wdesc := 0.0, 0.0, 0.0, 0.0
 	for k := range items {
 		if it := &items[k]; !it.St.Hidden && it.Kind != ItemBreak && it.Kind != ItemPageBreak {
 			asc, desc = max(asc, it.Asc), max(desc, it.Desc)
+			wasc, wdesc = max(wasc, it.wAsc), max(wdesc, it.wDesc)
 		}
 	}
-	if l.Label != nil {
-		asc, desc = max(asc, l.Label.Asc), max(desc, l.Label.Desc)
+	if lb := l.Label; lb != nil {
+		asc, desc = max(asc, lb.Asc), max(desc, lb.Desc)
+		wasc, wdesc = max(wasc, lb.wAsc), max(wdesc, lb.wDesc)
 	}
 	if asc == 0 && desc == 0 {
-		asc, desc = mark.ascent, mark.desc
+		asc, desc, wasc, wdesc = mark.ascent, mark.desc, mark.wasc, mark.wdesc
 	}
 	l.Asc, l.Desc = asc, desc
-	natural := asc + desc
+	natural := wasc + wdesc
+	if natural <= 0 {
+		natural = asc + desc
+	}
 	h := natural
 	switch pp.LineRule {
 	case model.LineAuto:
@@ -617,7 +662,7 @@ func (e *Engine) finishLine(l *Line, start float64, pp model.ParaProps, mark *me
 	l.Baseline = h - desc
 	if pp.LineRule == model.LineExact && h < natural {
 		// Exact spacing clips: keep the baseline proportionally placed.
-		l.Baseline = h * asc / natural
+		l.Baseline = h * asc / (asc + desc)
 	}
 }
 
@@ -631,5 +676,9 @@ func (e *Engine) intern(st *TextStyle) *TextStyle {
 }
 
 func (e *Engine) style(rp model.RunProps) *TextStyle {
-	return e.intern(styleOf(rp))
+	st := styleOf(rp)
+	if st.Hidden && e.showHidden {
+		st.Hidden, st.Revealed = false, true
+	}
+	return e.intern(st)
 }

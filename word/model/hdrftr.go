@@ -26,8 +26,7 @@ type HeaderFooter struct {
 	Part string
 }
 
-// HeadersFooters are a document's headers and footers (those of its last
-// section; WordLite has one section).
+// HeadersFooters are a section's headers and footers.
 type HeadersFooters struct {
 	Headers, Footers [3]*HeaderFooter // by HFKind; nil = none
 	TitlePage        bool             // different first page (w:titlePg)
@@ -103,8 +102,8 @@ func (d *Document) SubDocument(blocks []Block) *Document {
 	if len(blocks) == 0 {
 		blocks = []Block{&Paragraph{}}
 	}
-	return &Document{Name: d.Name, Styles: d.Styles, Body: blocks, Lists: d.Lists, Page: d.Page,
-		DefaultTabStop: d.DefaultTabStop, SourceFormat: d.SourceFormat}
+	return &Document{Name: d.Name, Styles: d.Styles, Body: blocks, Lists: d.Lists, Section: Section{Page: d.Page},
+		DefaultTabStop: d.DefaultTabStop, SourceFormat: d.SourceFormat, Notes: d.Notes}
 }
 
 // HFStyleID returns the ID of the "header" (or "footer") style, adding
@@ -137,7 +136,13 @@ func HFStyleID(ss *StyleSheet, footer bool) string {
 // NewHeaderFooter creates an empty header (or footer) of a kind, adding
 // its style when needed. It returns the existing one if there is one.
 func (d *Document) NewHeaderFooter(kind HFKind, footer bool) *HeaderFooter {
-	slot := d.HF.Slot(kind, footer)
+	return d.NewHeaderFooterIn(&d.HF, kind, footer)
+}
+
+// NewHeaderFooterIn is NewHeaderFooter for a section's headers and
+// footers.
+func (d *Document) NewHeaderFooterIn(hfs *HeadersFooters, kind HFKind, footer bool) *HeaderFooter {
+	slot := hfs.Slot(kind, footer)
 	if *slot != nil {
 		return *slot
 	}
@@ -184,6 +189,7 @@ func HasPageFields(blocks []Block) bool {
 // InsertSimpleField inserts a field (e.g. `PAGE`) showing result at the caret,
 // replacing the selection, with the caret's formatting.
 func (e *Editor) InsertSimpleField(instr, result string) {
+	defer e.Op("Insert Field")()
 	from, to := e.span()
 	e.edit("insert", from, to, false, func() {
 		r := e.caretRun(e.Sel.Caret)

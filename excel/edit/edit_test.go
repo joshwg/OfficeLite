@@ -336,10 +336,18 @@ func TestSheets(t *testing.T) {
 	if got := b.cell(0, "A1"); got.Formula != "#REF!*2" || got.Text != "#REF!" {
 		t.Errorf("after delete: %q (%q)", got.Formula, got.Text)
 	}
-	b.Undo()
+	if where, _, _ := b.Undo(); where.Sheet != 2 {
+		t.Errorf("undo delete selects sheet %d, want the restored 2", where.Sheet)
+	}
 	if got := b.cell(0, "A1"); got.Formula != "'My Data'!A1*2" || got.Text != "8" {
 		t.Errorf("undo delete: %q (%q)", got.Formula, got.Text)
 	}
+	b.DeleteSheet(1)
+	b.Undo()
+	if where, _, _ := b.Redo(); where.Sheet != 1 || b.WB.Sheets[1].Name != "My Data" {
+		t.Errorf("redo delete selects sheet %d (%v)", where.Sheet, b.WB.Sheets)
+	}
+	b.Undo()
 	b.Undo()
 	b.Undo()
 	if len(b.WB.Sheets) != 2 || b.cell(0, "A1").Formula != "Data!A1*2" {

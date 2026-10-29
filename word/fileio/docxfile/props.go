@@ -63,8 +63,6 @@ func twipsPt(s string) (float64, bool) {
 
 func ptTwips(v float64) string { return strconv.Itoa(int(math.Round(v * 20))) }
 
-func itoa(i int) string { return strconv.Itoa(i) }
-
 func atoi(s string) int {
 	v, _ := strconv.Atoi(strings.TrimSpace(s))
 	return v
@@ -86,14 +84,14 @@ func onOff(n *node) model.Tri {
 }
 
 func hexColor(v string) string {
-	v = strings.ToUpper(strings.TrimSpace(v))
-	if len(v) != 6 || v == "AUTO" {
+	if strings.EqualFold(strings.TrimSpace(v), "auto") {
 		return ""
 	}
-	if _, err := strconv.ParseUint(v, 16, 32); err != nil {
+	c, ok := colors.ParseHex(v)
+	if !ok {
 		return ""
 	}
-	return v
+	return colors.Hex(c)
 }
 
 // shdColor is the visible color of a <w:shd>: the pattern color for solid
@@ -436,6 +434,14 @@ func parsePPr(kids []*node, th *theme) (model.ParaProps, string) {
 			p.PageBreakBefore = onOff(k)
 		case "w:widowControl":
 			p.WidowControl = onOff(k)
+		case "w:contextualSpacing":
+			p.ContextualSpacing = onOff(k)
+		case "w:pBdr":
+			for _, b := range k.kids {
+				if e := borderEdge(b.name); e >= 0 {
+					p.Borders[e] = parseBorder(b)
+				}
+			}
 		case "w:shd":
 			p.Shading = shdColor(k, th)
 		case "w:tabs":
@@ -594,11 +600,11 @@ func pPrXML(style string, p model.ParaProps, mark string, th *theme) string {
 	}
 	var num string
 	if p.List != nil {
-		num = `<w:numPr><w:ilvl w:val="` + itoa(p.List.Level) + `"/><w:numId w:val="` + itoa(p.List.NumID) + `"/></w:numPr>`
+		num = `<w:numPr><w:ilvl w:val="` + strconv.Itoa(p.List.Level) + `"/><w:numId w:val="` + strconv.Itoa(p.List.NumID) + `"/></w:numPr>`
 	}
 	var outline string
 	if p.OutlineLevel > 0 {
-		outline = valXML("outlineLvl", itoa(p.OutlineLevel-1))
+		outline = valXML("outlineLvl", strconv.Itoa(p.OutlineLevel-1))
 	}
 	groups := []propGroup{
 		{[]string{"w:pStyle"}, style == ostyle, valXML("pStyle", style)},
@@ -612,6 +618,7 @@ func pPrXML(style string, p model.ParaProps, mark string, th *theme) string {
 		{[]string{"w:spacing"}, eqF(p.SpaceBefore, o.SpaceBefore) && eqF(p.SpaceAfter, o.SpaceAfter) &&
 			p.LineRule == o.LineRule && (p.LineRule == model.LineUnset || p.Line == o.Line), spacing},
 		{[]string{"w:ind"}, eqF(p.IndentLeft, o.IndentLeft) && eqF(p.IndentRight, o.IndentRight) && eqF(p.IndentFirst, o.IndentFirst), ind},
+		{[]string{"w:contextualSpacing"}, p.ContextualSpacing == o.ContextualSpacing, triXML("contextualSpacing", p.ContextualSpacing)},
 		{[]string{"w:jc"}, p.Align == o.Align, valXML("jc", align)},
 		{[]string{"w:outlineLvl"}, p.OutlineLevel == o.OutlineLevel, outline},
 	}

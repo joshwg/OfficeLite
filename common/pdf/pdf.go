@@ -230,6 +230,45 @@ func (p *Page) Line(x0, y0, x1, y1, lw float64, c color.NRGBA, dash ...float64) 
 	p.op(num(x0), num(p.y(y0)), "m", num(x1), num(p.y(y1)), "l", "S")
 }
 
+// Point is a point in top-down page coordinates.
+type Point struct{ X, Y float64 }
+
+func (p *Page) path(pts []Point) string {
+	var b strings.Builder
+	for i, q := range pts {
+		op := " l "
+		if i == 0 {
+			op = " m "
+		}
+		b.WriteString(num(q.X) + " " + num(p.y(q.Y)) + op)
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// FillPolygon fills the polygon through pts (nonzero winding).
+func (p *Page) FillPolygon(pts []Point, c color.NRGBA) {
+	if len(pts) < 3 || c.A == 0 {
+		return
+	}
+	p.setFill(c)
+	p.op(p.path(pts), "h f")
+}
+
+// StrokePolyline strokes the line through pts (closed: back to the
+// start) with width lw, round-joined, dashed when dash is given.
+func (p *Page) StrokePolyline(pts []Point, closed bool, lw float64, c color.NRGBA, dash ...float64) {
+	if len(pts) < 2 || c.A == 0 || lw <= 0 {
+		return
+	}
+	p.setStroke(c)
+	p.setLine(lw, dash)
+	end := "S"
+	if closed {
+		end = "s"
+	}
+	p.op("1 j", p.path(pts), end, "0 j")
+}
+
 // Save pushes the graphics state (Restore pops it); clips set in
 // between end at Restore.
 func (p *Page) Save() {

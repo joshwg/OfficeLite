@@ -47,6 +47,7 @@ func (e *Editor) CopyFormat() *FormatCopy {
 // from a whole paragraph (or a caret) and the target covers whole
 // paragraphs.
 func (e *Editor) PasteFormat(f *FormatCopy) {
+	defer e.Op("Format Painter")()
 	if f == nil {
 		return
 	}

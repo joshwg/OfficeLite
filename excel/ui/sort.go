@@ -42,8 +42,14 @@ func (a *App) quickSort(desc bool) {
 	if !a.commitForCommand() {
 		return
 	}
-	r := a.sortRegion()
 	col := a.state().view.Sel.Active.Col
+	if a.sortFiltered(col, desc) {
+		return
+	}
+	if a.sortPivot(desc) {
+		return // a report's field (pivot.go)
+	}
+	r := a.sortRegion()
 	if col < r.C1 || col > r.C2 {
 		col = r.C1
 	}
@@ -51,7 +57,24 @@ func (a *App) quickSort(desc bool) {
 }
 
 func (a *App) runSort(spec edit.SortSpec) {
+	if a.pivotProtected(spec.Range) {
+		return
+	}
+	// Sorting the AutoFilter's rows filters them again, in the same undo
+	// step.
+	f := a.wb.Sheets[a.active].AutoFilter
+	refilter := f.Active() && spec.Range.R1 <= f.Range.R2 && spec.Range.R2 >= f.Range.R1 &&
+		spec.Range.C1 <= f.Range.C2 && spec.Range.C2 >= f.Range.C1
+	if refilter {
+		a.book.BeginGroup()
+	}
 	res, err := a.book.Sort(a.active, spec)
+	if refilter {
+		if err == nil {
+			a.book.ReapplyFilter(a.active)
+		}
+		a.book.EndGroup()
+	}
 	if err != nil {
 		a.errMsg = err.Error()
 		return
@@ -150,7 +173,7 @@ func (a *App) layoutSortDialog(gtx layout.Context, k int) {
 			if i > 0 {
 				name = "Then by"
 			}
-			rows = append(rows, a.labeled(name, 80, func(gtx layout.Context) layout.Dimensions {
+			rows = append(rows, gui.Form{Th: a.ui, LabelW: 80}.Field(name, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						if j := d.cols[i].Layout(gtx, th, 200, labels[min(d.col[i], len(labels)-1)], dropItems(labels)); j >= 0 {
@@ -173,10 +196,10 @@ func (a *App) layoutSortDialog(gtx layout.Context, k int) {
 			}))
 		}
 		rows = append(rows,
-			layout.Rigid(a.checkBox(&d.header, "My data has headers")),
-			layout.Rigid(a.checkBox(&d.matchCs, "Case sensitive")),
+			layout.Rigid(a.ui.CheckBox(&d.header, "My data has headers")),
+			layout.Rigid(a.ui.CheckBox(&d.matchCs, "Case sensitive")),
 		)
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, rows...)
 	}
-	a.modal(gtx, &a.ins.block, "Sort", 440, body, a.accentButton(&a.ins.ok, "OK"), a.plainButton(&a.ins.cancel, "Cancel"))
+	a.ui.ModalDialog(gtx, &a.ins.block, "Sort", 440, body, a.accentButton(&a.ins.ok, "OK"), a.plainButton(&a.ins.cancel, "Cancel"))
 }

@@ -21,6 +21,7 @@ const (
 	homeNewStyle
 	homeUpdateStyle
 	homeStylesPane
+	homeShowMarks
 	_
 	homeFind
 	homeReplace
@@ -45,6 +46,7 @@ func (d *window) homeExtraItems() []gui.MenuItem {
 		{Label: "New Style…", Tip: "Create a style from the formatting of the selection."},
 		{Label: "Update " + styleName + " to Match Selection", Tip: "Give the style the formatting of the selection."},
 		{Label: "Styles Pane", Shortcut: "Ctrl+Alt+Shift+S", Checked: d.pane.open, Tip: "Show or hide the Styles pane."},
+		{Label: "Show/Hide ¶", Shortcut: "Ctrl+Shift+8", Checked: d.showMarks, Tip: "Show paragraph marks and other hidden formatting symbols."},
 		{Separator: true},
 		{Label: "Find…", Shortcut: "Ctrl+F", Tip: "Find text in the document."},
 		{Label: "Replace…", Shortcut: "Ctrl+H", Tip: "Find text and replace it with other text."},
@@ -72,6 +74,8 @@ func (d *window) homeExtra(item int) {
 		d.ed.UpdateStyleToMatch(d.ed.ParaStyleID(d.ed.Sel.Caret.Para))
 	case homeStylesPane:
 		d.pane.open = !d.pane.open
+	case homeShowMarks:
+		d.toggleMarks()
 	case homeFind:
 		d.openFind(findOnly)
 	case homeReplace:
@@ -95,6 +99,22 @@ func (d *window) homeExtra(item int) {
 	}
 }
 
+// updateFields updates the table of contents the selection is in (F9,
+// Word's Update Field): its entries and page numbers from the headings.
+func (d *window) updateFields() {
+	if d.hf.on {
+		return
+	}
+	d.relayout()
+	pg := d.doc.Page
+	if d.ed.UpdateTOC(pg.Width-pg.MarginLeft-pg.MarginRight, d.eng.PageNumberOf) {
+		d.edited()
+		d.notice = "Table of contents updated"
+	} else {
+		d.notice = "There is no table of contents to update (other fields show their last result)."
+	}
+}
+
 // extraKeys handles the shortcuts of these commands.
 func (d *window) extraKeys(gtx layout.Context) {
 	for {
@@ -103,12 +123,14 @@ func (d *window) extraKeys(gtx layout.Context) {
 			key.Filter{Name: "H", Required: key.ModShortcut},
 			key.Filter{Name: "G", Required: key.ModShortcut},
 			key.Filter{Name: key.NameF3, Optional: key.ModShift},
+			key.Filter{Name: key.NameF9},
 			key.Filter{Name: "C", Required: key.ModShortcut | key.ModShift},
 			key.Filter{Name: "V", Required: key.ModShortcut | key.ModShift},
 			key.Filter{Name: "V", Required: key.ModShortcut | key.ModAlt},
 			key.Filter{Name: "S", Required: key.ModShortcut | key.ModAlt | key.ModShift},
 			key.Filter{Name: ".", Required: key.ModShortcut | key.ModShift},
 			key.Filter{Name: ",", Required: key.ModShortcut | key.ModShift},
+			key.Filter{Name: "8", Required: key.ModShortcut | key.ModShift},
 		)
 		if !ok {
 			break
@@ -126,6 +148,9 @@ func (d *window) extraKeys(gtx layout.Context) {
 			d.openFind(findReplace)
 		case "G":
 			d.openFind(findGoTo)
+		case key.NameF9:
+			d.updateFields()
+			continue
 		case key.NameF3:
 			if d.find.what.Text() != "" {
 				d.findNext(shift)
@@ -145,6 +170,9 @@ func (d *window) extraKeys(gtx layout.Context) {
 			}
 		case "S":
 			d.pane.open = !d.pane.open
+		case "8":
+			// Ctrl+Shift+8 (Ctrl+* in Word).
+			d.toggleMarks()
 		case ".", ",":
 			// Ctrl+Shift+> and < (the shifted keys).
 			dir := 1
@@ -155,6 +183,15 @@ func (d *window) extraKeys(gtx layout.Context) {
 			d.edited()
 		}
 	}
+}
+
+// toggleMarks turns Show/Hide ¶ on or off: formatting marks are drawn
+// and hidden text is laid out and shown (dotted underline). Exported
+// and printed pages never have either.
+func (d *window) toggleMarks() {
+	d.showMarks = !d.showMarks
+	d.eng.SetShowHidden(d.showMarks)
+	d.laidOut = -1
 }
 
 // handleEscape closes what Esc closes among these features (the Format
@@ -232,8 +269,8 @@ func (p *pasteSpecial) layout(gtx layout.Context, d *window) {
 		d.v.focusPending = true
 	}
 	th := d.th
-	modal(gtx, &p.tag, 440, func(gtx layout.Context) layout.Dimensions {
-		opt := func(i int, ic *widget.Icon, title, desc string) layout.FlexChild {
+	gui.Modal(gtx, &p.tag, 440, func(gtx layout.Context) layout.Dimensions {
+		opt := func(i int, ic *gui.Icon, title, desc string) layout.FlexChild {
 			return layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Bottom: 6}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return th.Option(gtx, &p.opts[i], ic, title, desc, p.choice == i)
@@ -252,7 +289,7 @@ func (p *pasteSpecial) layout(gtx layout.Context, d *window) {
 				return layout.Flex{}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions { return th.Button(gtx, &p.ok, "OK") }),
 					layout.Rigid(layout.Spacer{Width: 8}.Layout),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions { return plainButton(gtx, th, &p.cancel, "Cancel") }),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions { return th.SecondaryButton(gtx, &p.cancel, "Cancel") }),
 				)
 			}),
 		)
@@ -331,5 +368,7 @@ func (d *window) previewHome(what string) {
 		d.newStyle.openFor(d)
 	case "paste":
 		d.pasteSpec.open = true
+	case "marks":
+		d.toggleMarks()
 	}
 }

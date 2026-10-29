@@ -6,12 +6,7 @@ import (
 	"strconv"
 
 	"gioui.org/font"
-	"gioui.org/io/event"
-	"gioui.org/io/pointer"
 	"gioui.org/layout"
-	"gioui.org/op"
-	"gioui.org/op/clip"
-	"gioui.org/unit"
 	"gioui.org/widget"
 
 	"officelite/common/colors"
@@ -23,7 +18,7 @@ import (
 
 // modalOpen reports whether a dialog takes the input.
 func (d *window) modalOpen() bool {
-	return d.dlg.open || d.confirm.show || d.lossy.Visible || d.ins.modal() || d.extraModal()
+	return d.dlg.open || d.confirm.show || d.lossy.Visible || d.lk.dlg.Visible || d.ins.modal() || d.extraModal()
 }
 
 // checkLossy runs save at once, or, when saving doc as .doc loses
@@ -60,49 +55,6 @@ func (d *window) lossyLayout(gtx layout.Context) {
 	d.lossy.Layout(gtx, d.th)
 }
 
-// modal dims the window, swallows clicks outside the panel (tag) and
-// draws body in a white panel width wide, centered.
-func modal(gtx layout.Context, tag event.Tag, width unit.Dp, body layout.Widget) {
-	for {
-		if _, ok := gtx.Event(pointer.Filter{Target: tag, Kinds: pointer.Press | pointer.Scroll,
-			ScrollY: pointer.ScrollRange{Min: -1 << 20, Max: 1 << 20}}); !ok {
-			break
-		}
-	}
-	size := gtx.Constraints.Max
-	gui.FillRect(gtx.Ops, image.Rectangle{Max: size}, colors.RGBA(0, 0, 0, 0x50))
-	area := clip.Rect{Max: size}.Push(gtx.Ops)
-	event.Op(gtx.Ops, tag)
-	area.Pop()
-	g := gtx
-	g.Constraints = layout.Constraints{Min: image.Pt(gtx.Dp(width), 0), Max: image.Pt(min(gtx.Dp(width), size.X), size.Y)}
-	m := op.Record(gtx.Ops)
-	dims := layout.UniformInset(20).Layout(g, body)
-	call := m.Stop()
-	pos := image.Pt((size.X-dims.Size.X)/2, max((size.Y-dims.Size.Y)/3, 0))
-	off := op.Offset(pos).Push(gtx.Ops)
-	gui.FillRect(gtx.Ops, image.Rect(3, 3, dims.Size.X+4, dims.Size.Y+4), colors.RGBA(0, 0, 0, 0x30))
-	gui.FillRect(gtx.Ops, image.Rect(-1, -1, dims.Size.X+1, dims.Size.Y+1), gui.ChromeLine)
-	gui.FillRect(gtx.Ops, image.Rectangle{Max: dims.Size}, colors.White)
-	call.Add(gtx.Ops)
-	off.Pop()
-}
-
-// plainButton is an outlined secondary button.
-func plainButton(gtx layout.Context, th *gui.Theme, btn *widget.Clickable, label string) layout.Dimensions {
-	gtx.Constraints.Min = image.Point{}
-	return gui.Hoverable(gtx, btn, gui.ChromeBG, gui.HoverBG, func(gtx layout.Context) layout.Dimensions {
-		l := th.Label(14, label, gui.ChromeText, font.Normal)
-		d := layout.Inset{Top: 8, Bottom: 8, Left: 22, Right: 22}.Layout(gtx, l.Layout)
-		r := image.Rectangle{Max: d.Size}
-		gui.HLine(gtx.Ops, 0, r.Max.X, 0, 1, gui.ChromeLine)
-		gui.HLine(gtx.Ops, 0, r.Max.X, r.Max.Y-1, 1, gui.ChromeLine)
-		gui.VLine(gtx.Ops, 0, 0, r.Max.Y, 1, gui.ChromeLine)
-		gui.VLine(gtx.Ops, r.Max.X-1, 0, r.Max.Y, 1, gui.ChromeLine)
-		return d
-	})
-}
-
 // confirmState is the "save changes?" prompt shown when a window with
 // unsaved changes is closed.
 type confirmState struct {
@@ -120,6 +72,7 @@ func (c *confirmState) layout(gtx layout.Context, d *window) {
 	for c.dontSave.Clicked(gtx) {
 		c.show = false
 		d.allowClose = true
+		d.ar.saver.Close() // the changes and their recovery copy go (recover.go)
 		d.close()
 	}
 	for c.cancel.Clicked(gtx) {
@@ -127,7 +80,7 @@ func (c *confirmState) layout(gtx layout.Context, d *window) {
 		d.v.focusPending = true
 	}
 	th := d.th
-	modal(gtx, &c.tag, 440, func(gtx layout.Context) layout.Dimensions {
+	gui.Modal(gtx, &c.tag, 440, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(th.Label(18, appName, gui.ChromeText, font.SemiBold).Layout),
 			layout.Rigid(layout.Spacer{Height: 12}.Layout),
@@ -137,9 +90,9 @@ func (c *confirmState) layout(gtx layout.Context, d *window) {
 				return layout.Flex{}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions { return th.Button(gtx, &c.save, "Save") }),
 					layout.Rigid(layout.Spacer{Width: 8}.Layout),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions { return plainButton(gtx, th, &c.dontSave, "Don't Save") }),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions { return th.SecondaryButton(gtx, &c.dontSave, "Don't Save") }),
 					layout.Rigid(layout.Spacer{Width: 8}.Layout),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions { return plainButton(gtx, th, &c.cancel, "Cancel") }),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions { return th.SecondaryButton(gtx, &c.cancel, "Cancel") }),
 				)
 			}),
 		)
@@ -159,7 +112,8 @@ type styleDialog struct {
 	run  model.RunProps  // the style's own properties being edited
 	para model.ParaProps // (a copy)
 
-	styleDD, fontDD, sizeDD, colorDD, beforeDD, afterDD, lineDD gui.DropDown
+	styleDD, fontDD, sizeDD, beforeDD, afterDD, lineDD gui.DropDown
+	colorCP                                            gui.ColorPicker
 
 	bold, italic, under            widget.Clickable
 	alignL, alignC, alignR, alignJ widget.Clickable
@@ -258,15 +212,11 @@ func (s *styleDialog) layout(gtx layout.Context, d *window) {
 	}
 	sizeItems := make([]gui.DropItem, len(fontSizes))
 	for i, v := range fontSizes {
-		sizeItems[i] = gui.DropItem{Label: fmtSize(v)}
-	}
-	colorItems := make([]gui.DropItem, len(palette))
-	for i, c := range palette {
-		colorItems[i] = gui.DropItem{Label: c.name, Swatch: colors.HexOr(c.hex, colors.RGB(0))}
+		sizeItems[i] = gui.DropItem{Label: gui.FormatPt(v)}
 	}
 	spaceItems := make([]gui.DropItem, len(spaceChoices))
 	for i, v := range spaceChoices {
-		spaceItems[i] = gui.DropItem{Label: fmtSize(v) + " pt"}
+		spaceItems[i] = gui.DropItem{Label: gui.FormatPt(v) + " pt"}
 	}
 	lineItems := make([]gui.DropItem, len(lineChoices))
 	for i, v := range lineChoices {
@@ -276,54 +226,21 @@ func (s *styleDialog) layout(gtx layout.Context, d *window) {
 		if p == nil {
 			return "0 pt"
 		}
-		return fmtSize(*p) + " pt"
+		return gui.FormatPt(*p) + " pt"
 	}
 	lineText := "Single"
 	switch para.LineRule {
 	case model.LineAuto:
 		lineText = strconv.FormatFloat(para.Line, 'f', -1, 64)
 	case model.LineExact:
-		lineText = "Exactly " + fmtSize(para.Line) + " pt"
+		lineText = "Exactly " + gui.FormatPt(para.Line) + " pt"
 	case model.LineAtLeast:
-		lineText = "At least " + fmtSize(para.Line) + " pt"
-	}
-	colorName := "Automatic"
-	for _, c := range palette {
-		if c.hex != "" && c.hex == run.Color {
-			colorName = c.name
-		}
-	}
-	if colorName == "Automatic" && run.Color != "" && run.Color != "auto" {
-		colorName = "#" + run.Color
+		lineText = "At least " + gui.FormatPt(para.Line) + " pt"
 	}
 
-	label := func(s string) layout.FlexChild {
-		return layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			gtx.Constraints.Min.X = gtx.Dp(110)
-			return gui.Middle(gtx, th.Label(13, s, gui.MutedText, font.Normal).Layout)
-		})
-	}
-	row := func(children ...layout.FlexChild) layout.FlexChild {
-		return layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Bottom: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				gtx.Constraints.Min.Y = gtx.Dp(28)
-				return layout.Flex{Alignment: layout.Middle}.Layout(gtx, children...)
-			})
-		})
-	}
-	combo := func(dd *gui.DropDown, w unit.Dp, cur string, items []gui.DropItem, apply func(int)) layout.FlexChild {
-		return layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			var dims layout.Dimensions
-			dims = gui.Middle(gtx, func(gtx layout.Context) layout.Dimensions {
-				if i := dd.Layout(gtx, th, w, cur, items); i >= 0 {
-					apply(i)
-				}
-				return layout.Dimensions{Size: image.Pt(gtx.Dp(w), gtx.Dp(24))}
-			})
-			return dims
-		})
-	}
-	tool := func(b *widget.Clickable, ic *widget.Icon, on bool) layout.FlexChild {
+	form := gui.Form{Th: th, LabelW: 110, LabelColor: gui.MutedText, RowH: 28}
+	label, row, combo := form.Label, form.Row, form.Combo
+	tool := func(b *widget.Clickable, ic *gui.Icon, on bool) layout.FlexChild {
 		return layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return gui.ToolButton(gtx, th, b, ic, "", on, color.NRGBA{})
 		})
@@ -335,17 +252,26 @@ func (s *styleDialog) layout(gtx layout.Context, d *window) {
 	}
 	cur := styleName(d.doc.Styles.Find(s.id))
 
-	modal(gtx, &s.tag, 520, func(gtx layout.Context) layout.Dimensions {
+	gui.Modal(gtx, &s.tag, 520, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(th.Label(18, "Modify Style", gui.ChromeText, font.SemiBold).Layout),
 			layout.Rigid(layout.Spacer{Height: 14}.Layout),
 			row(label("Style"), combo(&s.styleDD, 220, cur, paraItems, func(i int) { s.openFor(d, s.ids[i]) })),
 			row(label("Font"), combo(&s.fontDD, 170, run.Font, fontItems, func(i int) { s.run.Font = commonFonts[i] }),
-				gap, combo(&s.sizeDD, 60, fmtSize(run.Size), sizeItems, func(i int) { s.run.Size = fontSizes[i] })),
+				gap, combo(&s.sizeDD, 60, gui.FormatPt(run.Size), sizeItems, func(i int) { s.run.Size = fontSizes[i] })),
 			row(label("Font style"), tool(&s.bold, gui.IconBold, run.Bold.Bool(false)),
 				tool(&s.italic, gui.IconItalic, run.Italic.Bool(false)),
 				tool(&s.under, gui.IconUnderline, run.Underline != model.UnderlineUnset && run.Underline != model.UnderlineNone),
-				gap, combo(&s.colorDD, 140, colorName, colorItems, func(i int) { s.run.Color = palette[i].hex })),
+				gap, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					auto := run.Color == "" || run.Color == "auto"
+					cur := gui.ColorChoice{Color: colors.HexOr(run.Color, colors.RGB(0)), None: auto}
+					return gui.Middle(gtx, func(gtx layout.Context) layout.Dimensions {
+						if c, ok, _ := s.colorCP.Combo(gtx, th, 140, cur, "Automatic"); ok {
+							s.run.Color = choiceHex(c)
+						}
+						return layout.Dimensions{Size: image.Pt(gtx.Dp(140), gtx.Dp(24))}
+					})
+				})),
 			row(label("Alignment"), tool(&s.alignL, gui.IconAlignLeft, align == model.AlignLeft),
 				tool(&s.alignC, gui.IconAlignCenter, align == model.AlignCenter),
 				tool(&s.alignR, gui.IconAlignRight, align == model.AlignRight),
@@ -374,7 +300,7 @@ func (s *styleDialog) layout(gtx layout.Context, d *window) {
 				return layout.Flex{}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions { return th.Button(gtx, &s.ok, "OK") }),
 					layout.Rigid(layout.Spacer{Width: 8}.Layout),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions { return plainButton(gtx, th, &s.cancel, "Cancel") }),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions { return th.SecondaryButton(gtx, &s.cancel, "Cancel") }),
 				)
 			}),
 		)

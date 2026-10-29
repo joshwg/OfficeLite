@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"math"
+	"slices"
 	"strings"
 	"testing"
 
@@ -11,7 +12,7 @@ import (
 )
 
 // testParser is a workbook context with three sheets, a defined name, an
-// add-in function and an external book.
+// add-in functions and an external book.
 func testParser() *parser {
 	p := &parser{wb: &model.Workbook{}}
 	for _, n := range []string{"Data", "My Sheet", "Other"} {
@@ -19,7 +20,8 @@ func testParser() *parser {
 	}
 	p.supbooks = []supbook{
 		{kind: supSelf},
-		{kind: supAddin, names: []string{"EDATE", "_xlfn.XLOOKUP"}},
+		{kind: supAddin, names: []string{"EDATE", "_xlfn.XLOOKUP", "BIN2DEC", "HEX2DEC", "OCT2DEC", "DEC2BIN",
+			"DEC2HEX", "DEC2OCT", "BIN2HEX", "BIN2OCT", "HEX2BIN", "HEX2OCT", "OCT2BIN", "OCT2HEX", "CONVERT"}},
 		{kind: supExternal, path: "book.xls", sheets: []string{"Ext"}, names: []string{"Rate"}, ext: 1},
 	}
 	p.xti = []xti{{0, 0, 0}, {0, 1, 1}, {0, 0, 2}, {1, -2, -2}, {2, 0, 0}, {0, -1, -1}}
@@ -130,8 +132,8 @@ func (f fakeWriter) nameIndex(name string, sheet int) int {
 }
 
 func (f fakeWriter) funcNameRef(name string) (byte, []byte) {
-	if name == "EDATE" {
-		return ptgNameX, cat(u16b(3), u16b(1), u16b(0))
+	if i := slices.Index(f.p.supbooks[1].names, name); i >= 0 && name != "_xlfn.XLOOKUP" {
+		return ptgNameX, cat(u16b(3), u16b(i+1), u16b(0)) // add-in functions
 	}
 	if name == "IFERROR" {
 		return ptgName, cat(u16b(2), u16b(0))
@@ -152,6 +154,8 @@ func TestEncodeDecode(t *testing.T) {
 		"VDB(2400,300,10,0,0.875,1.5,TRUE)", "DB(1000000,100000,6,1,7)+ISPMT(0.1,1,3,8000)",
 		`DSUM(A1:E7,"Profit",G1:H2)`, "DCOUNT(A1:E7,,G1:G3)+DCOUNTA(A:E,2,G:G)", `DGET(A1:E7,"Yield",G1:H2)`,
 		"DPRODUCT(A1:E7,4,G1:H2)+DSTDEVP(A1:E7,4,G1:H2)+DVARP(A1:E7,4,G1:H2)",
+		`BIN2DEC(1010)+HEX2DEC("FF")+OCT2DEC(17)`, `DEC2BIN(9,8)&DEC2HEX(-1)&DEC2OCT(8,3)`,
+		`BIN2HEX(1110)&BIN2OCT(101)&HEX2BIN("F")&HEX2OCT("F")&OCT2BIN(7)&OCT2HEX(17)`, `CONVERT(68,"F","C")`,
 	} {
 		p := testParser()
 		rgce, extra, err := compileFormula(fakeWriter{p}, src, 0, false)

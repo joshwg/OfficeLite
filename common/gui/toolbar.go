@@ -40,7 +40,7 @@ var (
 // ToolButton is a small square toolbar button showing an icon (or a short
 // label when icon is nil), drawn pressed when checked. bar, when its alpha
 // is set, is a color strip under the icon (font color).
-func ToolButton(gtx layout.Context, th *Theme, btn *widget.Clickable, icon *widget.Icon, label string, checked bool, bar color.NRGBA) layout.Dimensions {
+func ToolButton(gtx layout.Context, th *Theme, btn *widget.Clickable, icon *Icon, label string, checked bool, bar color.NRGBA) layout.Dimensions {
 	bg := colors.Transparent
 	if checked {
 		bg = th.AccentTint
@@ -96,4 +96,28 @@ func ToolSeparator(gtx layout.Context) layout.Dimensions {
 	w, h := gtx.Dp(13), gtx.Dp(28)
 	VLine(gtx.Ops, w/2, gtx.Dp(4), h-gtx.Dp(4), 1, ChromeLine)
 	return layout.Dimensions{Size: image.Pt(w, h)}
+}
+
+// GlyphButton is ToolButton showing one character drawn at icon size, for
+// commands whose symbol is a character (Word's ¶).
+func GlyphButton(gtx layout.Context, th *Theme, btn *widget.Clickable, glyph string, checked bool) layout.Dimensions {
+	bg, hover := colors.Transparent, HoverBG
+	if checked {
+		bg, hover = th.AccentTint, colors.Mix(th.AccentTint, th.Accent, 0.15)
+	}
+	d := Hoverable(gtx, btn, bg, hover, func(gtx layout.Context) layout.Dimensions {
+		size := gtx.Dp(28)
+		gtx.Constraints = layout.Exact(image.Pt(size, size))
+		fg := ChromeText
+		if !gtx.Enabled() {
+			fg = colors.Mix(ChromeText, ChromeBG, 0.6)
+		}
+		layout.Center.Layout(gtx, th.Label(17, glyph, fg, font.Normal).Layout)
+		if checked {
+			strokeRect(gtx.Ops, image.Rect(0, 0, size, size), colors.Mix(th.Accent, colors.White, 0.5))
+		}
+		return layout.Dimensions{Size: image.Pt(size, size)}
+	})
+	tipButton(gtx, btn, btn.Hovered(), d.Size)
+	return d
 }

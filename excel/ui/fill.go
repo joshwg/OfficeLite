@@ -26,6 +26,9 @@ func (a *App) fill(down bool) {
 		return
 	}
 	sel := a.state().view.Sel.Range
+	if a.pivotProtected(sel) {
+		return
+	}
 	if down {
 		a.changed(a.book.FillDown(a.active, sel))
 	} else {

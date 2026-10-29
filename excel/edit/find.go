@@ -162,7 +162,7 @@ var ErrNotFound = errors.New("We couldn't find what you were looking for")
 func (b *Book) replaced(f Found, re *regexp.Regexp, o FindOptions) (before, after model.Cell, ok bool) {
 	sh := b.WB.Sheets[f.Sheet]
 	before = snapshot(sh, spillChildren(sh), f.Row, f.Col)
-	if before.Formula == "" && before.Kind == model.KindEmpty {
+	if before.IsBlank() {
 		return before, before, false
 	}
 	s := ContentText(sh, f.Row, f.Col)
@@ -186,6 +186,7 @@ func (b *Book) replaced(f Found, re *regexp.Regexp, o FindOptions) (before, afte
 // Replace replaces the matches in one cell. It reports false when the
 // cell doesn't match.
 func (b *Book) Replace(f Found, o FindOptions) (calc.Result, bool, error) {
+	defer b.Op("Replace")()
 	re, err := o.pattern()
 	if err != nil {
 		return calc.Result{}, false, err
@@ -201,6 +202,7 @@ func (b *Book) Replace(f Found, o FindOptions) (calc.Result, bool, error) {
 // ReplaceAll replaces every match as one undoable change and returns how
 // many cells changed.
 func (b *Book) ReplaceAll(sheet int, o FindOptions) (int, calc.Result, error) {
+	defer b.Op("Replace All")()
 	re, err := o.pattern()
 	if err != nil {
 		return 0, calc.Result{}, err

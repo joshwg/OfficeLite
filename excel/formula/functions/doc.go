@@ -4,6 +4,7 @@
 //	logical/    IF, IFS, SWITCH, IFERROR, AND, ... MAP, REDUCE, BYROW, ...
 //	database/   DSUM, DAVERAGE, DCOUNT, DGET, ... (criteria ranges)
 //	datetime/   DATE, EDATE, NETWORKDAYS, YEARFRAC, ...
+//	engineering/ BIN2DEC, DEC2HEX, ... (number bases), CONVERT
 //	financial/  FV, NPV, PMT
 //	info/       ISBLANK, ISNUMBER, CELL, TYPE, ...
 //	lookup/     XLOOKUP, FILTER, UNIQUE, VLOOKUP, INDEX, MATCH, OFFSET, ...
@@ -60,13 +61,17 @@
 // e.ToArray(v) (deref + wrap scalars), e.Deref(v), e.Scalar(v). A function
 // may return an *Array; the cell spills it.
 //
+// Date arguments: e.Num(v) is f.Num reading date text in the workbook's
+// date system (1900 or 1904); use it wherever a date may be typed as text.
+//
 // Other services: e.Now(), e.Date1904(), e.Rand(), e.CallLambda(fn,
 // args...), e.Ctx (sheet names, formulas, used size), e.Reference (text
 // to a reference, as INDIRECT reads it), f.Compare / f.Equal
 // (Excel ordering: numbers < text < booleans, text case-insensitive),
 // f.ParseCriteria(v).Match(x), f.WildcardMatch, f.ParseNumber,
 // f.ParseDateTime, f.DateSerial, f.SerialToYMD, f.SerialToTime,
-// f.TimeToSerial, f.NumberText (number to text like =1/3&"").
+// f.TimeToSerial, f.FloorDiv, f.Offset1904, f.RoundDigits (Excel's
+// 15-digit ROUND), f.Round15, f.NumberText (number to text like =1/3&"").
 //
 // Spec.Format suggests a number format for the result when the cell is
 // General, e.g. "m/d/yyyy" for DATE so the serial number shows as a date.

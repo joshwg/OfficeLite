@@ -19,12 +19,20 @@ func (e *Engine) line(ref LineRef) *Placed { return &e.Pages[ref.Page].Lines[ref
 // lineFor finds the placed line holding the caret position p: the first
 // line of the paragraph that ends after it, else the last one.
 func (e *Engine) lineFor(p model.Pos) (*Placed, bool) {
+	return e.lineForEOL(p, false)
+}
+
+// lineForEOL is lineFor with the caret's end-of-line affinity: with eol
+// set, a position at a wrapped line's end is on that line, not at the
+// start of the next one.
+func (e *Engine) lineForEOL(p model.Pos, eol bool) (*Placed, bool) {
 	if p.Para < 0 || p.Para >= len(e.paraLines) || len(e.paraLines[p.Para]) == 0 {
 		return nil, false
 	}
 	refs := e.paraLines[p.Para]
 	for _, ref := range refs {
-		if pl := e.line(ref); p.Off < pl.Line.End {
+		pl := e.line(ref)
+		if p.Off < pl.Line.End || eol && p.Off == pl.Line.End && p.Off > pl.Line.Start {
 			return pl, true
 		}
 	}
@@ -55,8 +63,12 @@ func xAt(pl *Placed, off int) float64 {
 }
 
 // CaretAt returns where to draw the caret for p.
-func (e *Engine) CaretAt(p model.Pos) (Caret, bool) {
-	pl, ok := e.lineFor(p)
+func (e *Engine) CaretAt(p model.Pos) (Caret, bool) { return e.CaretAtEOL(p, false) }
+
+// CaretAtEOL is CaretAt with end-of-line affinity (see LineBounds): with
+// eol set, a caret at a wrapped line's end shows at the end of that line.
+func (e *Engine) CaretAtEOL(p model.Pos, eol bool) (Caret, bool) {
+	pl, ok := e.lineForEOL(p, eol)
 	if !ok {
 		return Caret{}, false
 	}
@@ -69,8 +81,32 @@ func (e *Engine) pageOf(pl *Placed) int {
 	return e.order[pl.order].Page
 }
 
-// offAt returns the caret offset nearest to x (relative to pl.X) on a line.
+// offAt returns the caret offset nearest to x (relative to pl.X) on a
+// line (see offAtEOL), never its end on a wrapped line.
 func offAt(pl *Placed, x float64) int {
+	off, eol := offAtEOL(pl, x)
+	if eol {
+		off = max(off-1, pl.Line.Start)
+	}
+	return off
+}
+
+// endsInSpace reports whether a line ends in a space or a break, before
+// which the caret stops at the line's end.
+func endsInSpace(l *Line) bool {
+	if l.HardBreak || l.PageBreak || len(l.Items) == 0 {
+		return true
+	}
+	last := &l.Items[len(l.Items)-1]
+	return last.spaces > 0 || last.Kind == ItemBreak || last.Kind == ItemPageBreak
+}
+
+// offAtEOL returns the caret offset nearest to x (relative to pl.X) on a
+// line. A wrapped line's end is the next line's start, so the caret stays
+// before a trailing space instead; a line wrapped after a hyphen or
+// inside a long word has none, and its end is returned with eol set (the
+// caret shows at the end of this line, see CaretAtEOL).
+func offAtEOL(pl *Placed, x float64) (int, bool) {
 	l := pl.Line
 	best, bestD := l.Start, math.Inf(1)
 	try := func(off int, at float64) {
@@ -79,7 +115,7 @@ func offAt(pl *Placed, x float64) int {
 		}
 	}
 	if len(l.Items) == 0 {
-		return l.Start
+		return l.Start, false
 	}
 	for i := range l.Items {
 		it := &l.Items[i]
@@ -92,12 +128,13 @@ func offAt(pl *Placed, x float64) int {
 			try(it.Off+it.N, at)
 		}
 	}
-	// A caret after the last character of a wrapped line would show at the
-	// start of the next line; stay before the trailing space instead.
 	if best >= l.End && !l.Last {
+		if !endsInSpace(l) {
+			return l.End, true
+		}
 		best = max(l.End-1, l.Start)
 	}
-	return best
+	return best, false
 }
 
 // HitTest returns the caret position nearest to (x, y) on page pg (page
@@ -152,6 +189,16 @@ func (e *Engine) PageAt(y float64) (int, float64) {
 	return 0, y
 }
 
+// PageNumberOf returns the number (as PAGE fields show it) of the page
+// where body paragraph p starts, or 0.
+func (e *Engine) PageNumberOf(p *model.Paragraph) int {
+	i, ok := e.index[p]
+	if !ok || i >= len(e.paraLines) || len(e.paraLines[i]) == 0 {
+		return 0
+	}
+	return e.Pages[e.paraLines[i][0].Page].Number
+}
+
 // HitView hit-tests a point in view coordinates, x relative to the
 // pages' left edge.
 func (e *Engine) HitView(x, y float64) model.Pos {
@@ -159,38 +206,79 @@ func (e *Engine) HitView(x, y float64) model.Pos {
 		return model.Pos{}
 	}
 	p, py := e.PageAt(y)
-	return e.HitTest(p, x, py)
+	return e.HitTest(p, x-e.Pages[p].X, py)
 }
 
 // LineBounds returns the start and end caret positions of p's line (Home
-// and End).
-func (e *Engine) LineBounds(p model.Pos) (model.Pos, model.Pos) {
-	pl, ok := e.lineFor(p)
+// and End); eol is p's end-of-line affinity. On a wrapped line the end is
+// before the trailing space, or, when the line wraps after a hyphen or
+// inside a word, the line's end with endEOL set: the caret must then be
+// drawn with CaretAtEOL to show at the end of this line.
+func (e *Engine) LineBounds(p model.Pos, eol bool) (start, end model.Pos, endEOL bool) {
+	pl, ok := e.lineForEOL(p, eol)
 	if !ok {
-		return p, p
+		return p, p, false
 	}
 	l := pl.Line
-	end := l.End
+	off := l.End
 	if !l.Last {
-		end = max(l.End-1, l.Start)
+		if !endsInSpace(l) {
+			endEOL = true
+		} else {
+			off = max(l.End-1, l.Start)
+		}
 	}
-	return model.Pos{Para: p.Para, Off: l.Start}, model.Pos{Para: p.Para, Off: end}
+	return model.Pos{Para: p.Para, Off: l.Start}, model.Pos{Para: p.Para, Off: off}, endEOL
 }
 
-// Vertical returns the position on the line dir lines above (-1) or below
-// (+1) p nearest to goalX (page coordinates), and false at the document
-// edge.
-func (e *Engine) Vertical(p model.Pos, dir int, goalX float64) (model.Pos, bool) {
-	pl, ok := e.lineFor(p)
+// Vertical returns the position on the nearest line above (dir -1) or
+// below (+1) p's line (eol is p's affinity) closest to goalX (page
+// coordinates), preferring lines whose column holds goalX, so Down in a
+// table cell goes to the cell below; toEOL is the result's affinity (see
+// offAtEOL). ok is false at the document edge.
+func (e *Engine) Vertical(p model.Pos, dir int, goalX float64, eol bool) (to model.Pos, toEOL, ok bool) {
+	pl, ok := e.lineForEOL(p, eol)
 	if !ok {
-		return p, false
+		return p, false, false
 	}
-	i := pl.order + dir
-	if i < 0 || i >= len(e.order) {
-		return p, false
+	page := e.pageOf(pl)
+	var best *Placed
+	bestScore := math.Inf(1)
+	for pg := page; pg >= 0 && pg < len(e.Pages) && best == nil; pg += dir {
+		for i := range e.Pages[pg].Lines {
+			t := &e.Pages[pg].Lines[i]
+			// dy is how far the line is past p's line; lines on later
+			// pages are all past those on this one.
+			dy := 0.0
+			switch {
+			case pg != page && dir > 0:
+				dy = t.Y
+			case pg != page:
+				dy = e.Pages[pg].Height - t.Y - t.Line.Height
+			case dir > 0:
+				dy = t.Y - (pl.Y + pl.Line.Height)
+			default:
+				dy = pl.Y - (t.Y + t.Line.Height)
+			}
+			if dy < -0.01 {
+				continue // not wholly above (below) p's line
+			}
+			dx := 0.0
+			if goalX < t.X {
+				dx = t.X - goalX
+			} else if goalX > t.X+t.W {
+				dx = goalX - t.X - t.W
+			}
+			if s := dx*1000 + dy; s < bestScore {
+				best, bestScore = t, s
+			}
+		}
 	}
-	t := e.line(e.order[i])
-	return model.Pos{Para: t.Para, Off: offAt(t, goalX-t.X)}, true
+	if best == nil {
+		return p, false, false
+	}
+	off, toEOL := offAtEOL(best, goalX-best.X)
+	return model.Pos{Para: best.Para, Off: off}, toEOL, true
 }
 
 // SelectionRects returns the highlighted rectangles of the selection

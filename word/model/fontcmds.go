@@ -30,6 +30,7 @@ func stepSize(s float64, dir int) float64 {
 // GrowFont makes the selected text one size step larger (dir 1) or
 // smaller (-1); text of mixed sizes steps from each run's own size.
 func (e *Editor) GrowFont(dir int) {
+	defer e.Op(either(dir > 0, "Grow Font", "Shrink Font"))()
 	if e.Sel.Empty() {
 		size := e.CaretFormat().Size
 		e.FormatRuns(func(r *Run) { r.Props.Size = stepSize(size, dir) })
@@ -47,6 +48,7 @@ func (e *Editor) GrowFont(dir int) {
 // ToggleVert switches superscript (VertSuper) or subscript (VertSub) on
 // for the selection, or off when it all has it already.
 func (e *Editor) ToggleVert(v VertAlign) {
+	defer e.Op(either(v == VertSub, "Subscript", "Superscript"))()
 	on := !e.AllSelected(func(p RunProps) bool { return p.Vert == v })
 	e.FormatRuns(func(r *Run) {
 		r.Props.Vert = VertBaseline
@@ -59,6 +61,7 @@ func (e *Editor) ToggleVert(v VertAlign) {
 // SetHighlight sets the text highlight color: a Word highlight name
 // ("yellow") or "none".
 func (e *Editor) SetHighlight(name string) {
+	defer e.Op("Text Highlight Color")()
 	e.FormatRuns(func(r *Run) { r.Props.Highlight = name })
 }
 
@@ -76,6 +79,7 @@ const (
 // ChangeCase changes the case of the selected text (the word at the caret
 // with nothing selected), as Word's Change Case button does.
 func (e *Editor) ChangeCase(c TextCase) {
+	defer e.Op("Change Case")()
 	sel := e.Sel
 	if e.Sel.Empty() {
 		a, b := e.WordAt(e.Sel.Caret)

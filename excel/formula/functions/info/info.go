@@ -212,7 +212,7 @@ func cell(e *f.Env, a []f.Value) f.Value {
 	case "address":
 		addr := "$" + model.ColName(r.C1) + "$" + strconv.Itoa(r.R1+1)
 		if r.Sheet != e.Sheet {
-			addr = sheetPrefix(e.Ctx.SheetName(r.Sheet)) + addr
+			addr = f.QuoteSheet(e.Ctx.SheetName(r.Sheet)) + "!" + addr
 		}
 		return f.String(addr)
 	case "col":
@@ -275,18 +275,4 @@ func info(e *f.Env, a []f.Value) f.Value {
 		return f.ErrNA
 	}
 	return f.ErrValue
-}
-
-// sheetPrefix is name followed by '!', quoted when Excel would quote it.
-func sheetPrefix(name string) string {
-	quote := name == "" || (name[0] >= '0' && name[0] <= '9')
-	for _, c := range name {
-		if !(c == '_' || c == '.' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c > 127) {
-			quote = true
-		}
-	}
-	if quote {
-		return "'" + strings.ReplaceAll(name, "'", "''") + "'!"
-	}
-	return name + "!"
 }

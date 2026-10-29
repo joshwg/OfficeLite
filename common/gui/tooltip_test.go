@@ -3,6 +3,7 @@ package gui
 import (
 	"image"
 	"image/color"
+	"runtime"
 	"testing"
 	"time"
 
@@ -124,5 +125,76 @@ func TestMenuTip(t *testing.T) {
 	frame()
 	if !c.tips.lastShow.Equal(now) {
 		t.Fatal("tip not shown")
+	}
+}
+
+// TestTipsDontPinWindows checks that tips keyed by fields of a window's
+// state let the window be collected and drop out of the registry.
+func TestTipsDontPinWindows(t *testing.T) {
+	type window struct {
+		_     [64]byte
+		bold  widget.Clickable
+		cells [4]widget.Clickable
+		dd    DropDown
+	}
+	w := &window{}
+	SetTip(&w.bold, "Bold", "Ctrl+B", "")
+	SetTip(&w.cells[2], "Red", "", "")
+	SetTip(&w.dd, "Font", "", "")
+	SetTip(&w.bold, "Bold", "Ctrl+B", "Make your text bold.") // replaces
+	if tp, ok := tipFor(&w.bold); !ok || tp.Desc != "Make your text bold." {
+		t.Fatalf("tipFor(bold) = %+v, %v", tp, ok)
+	}
+	if _, ok := tipFor(&w.dd.btn); !ok {
+		t.Fatal("a DropDown's tip isn't on its button")
+	}
+	if _, ok := tipFor(&w.dd); ok {
+		t.Fatal("a DropDown and its button share a key")
+	}
+	if _, ok := tipFor(&w.cells[1]); ok {
+		t.Fatal("tip on an untipped cell")
+	}
+	// The keys (weak, so they don't hold w) of the three entries.
+	var keys []tipKey
+	for _, b := range []any{&w.bold, &w.cells[2], &w.dd.btn} {
+		k, _ := tipKeyOf(b)
+		keys = append(keys, k)
+	}
+	left := func() int {
+		tipsMu.RLock()
+		defer tipsMu.RUnlock()
+		n := 0
+		for _, k := range keys {
+			if _, ok := tips[k]; ok {
+				n++
+			}
+		}
+		return n
+	}
+	if n := left(); n != 3 {
+		t.Fatalf("%d of the 3 tips registered", n)
+	}
+	gone := make(chan struct{})
+	runtime.AddCleanup(w, func(c chan struct{}) { close(c) }, gone)
+	w = nil
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		runtime.GC()
+		select {
+		case <-gone:
+		default:
+			if time.Now().After(deadline) {
+				t.Fatal("window still reachable after GC")
+			}
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+		if left() == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d tips kept after the window was collected", left())
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

@@ -269,3 +269,24 @@ func TestSecurities(t *testing.T) {
 }
 
 func abs(x float64) float64 { return math.Abs(x) }
+
+// Date text is read in the workbook's date system, so it mixes with
+// serials from DATE in a 1904 workbook.
+func TestFinancialDate1904(t *testing.T) {
+	r := f.NewRegistry()
+	Register(r)
+	r.Add(f.Spec{Name: "DATE", Min: 3, Max: 3, Fn: func(e *f.Env, a []f.Value) f.Value {
+		var p [3]int
+		for i := range p {
+			p[i], _ = f.Int(a[i])
+		}
+		s, _ := f.DateSerial(p[0], p[1], p[2], e.Date1904())
+		return f.Number(s)
+	}})
+	approx := func(v float64) ftest.Approx { return ftest.Approx{V: v, Tol: 1e-6} }
+	ftest.Run(t, r, func(ctx *f.TestContext) { ctx.Use1904 = true }, []ftest.Case{
+		{"=TBILLPRICE(DATE(2008,3,31),\"6/1/2008\",0.09)", approx(98.45)},
+		{"=TBILLPRICE(\"3/31/2008\",DATE(2008,6,1),0.09)", approx(98.45)},
+		{"=TBILLYIELD(DATE(2008,3,31),\"6/1/2008\",98.45)", approx(0.091417)},
+	})
+}

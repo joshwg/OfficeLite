@@ -6,7 +6,6 @@ package mathtrig
 
 import (
 	"math"
-	"strconv"
 	"strings"
 
 	f "officelite/excel/formula"
@@ -97,17 +96,6 @@ func trunc(x float64) (int, f.Value) {
 	return int(x), nil
 }
 
-// sig15 rounds x to 15 significant digits, the precision Excel works in.
-// Applied before rounding-type operations so that e.g. 1.3/0.2
-// (6.499999999999999) is treated as the 6.5 it displays as.
-func sig15(x float64) float64 {
-	if x == 0 || math.IsNaN(x) || math.IsInf(x, 0) {
-		return x
-	}
-	v, _ := strconv.ParseFloat(strconv.FormatFloat(x, 'g', 15, 64), 64)
-	return v
-}
-
 // --- iterating aggregate arguments --------------------------------------------
 
 // kind selects how an aggregate treats non-numeric values.
@@ -130,6 +118,35 @@ type opts struct {
 	k          kind
 	skipErr    bool // AGGREGATE options 2, 3, 6, 7
 	skipNested bool // SUBTOTAL, AGGREGATE options 0-3
+	skipRows   skip // SUBTOTAL, AGGREGATE: rows left out
+}
+
+// skip says which rows of a reference SUBTOTAL and AGGREGATE leave out.
+type skip int
+
+const (
+	skipNone     skip = iota
+	skipFiltered      // rows the AutoFilter hid (SUBTOTAL 1-11)
+	skipHidden        // also rows hidden by hand (SUBTOTAL 101-111, odd AGGREGATE options)
+)
+
+// rowVisibility is implemented by contexts that know which rows are hidden
+// (the calc engine); others hide none.
+type rowVisibility interface {
+	RowHidden(sheet, row int) bool
+	RowFiltered(sheet, row int) bool
+}
+
+// skipped reports whether o leaves row out.
+func (o opts) skipped(e *f.Env, sheet, row int) bool {
+	rv, ok := e.Ctx.(rowVisibility)
+	switch {
+	case !ok || o.skipRows == skipNone:
+		return false
+	case o.skipRows == skipFiltered:
+		return rv.RowFiltered(sheet, row)
+	}
+	return rv.RowHidden(sheet, row)
 }
 
 // nestedTotal reports whether a formula contains SUBTOTAL or AGGREGATE;
@@ -143,17 +160,20 @@ func nestedTotal(formula string) bool {
 }
 
 // each visits the scalars of an argument like e.Each, optionally skipping
-// cells whose formula is itself a SUBTOTAL/AGGREGATE.
-func each(e *f.Env, v f.Value, skipNested bool, fn func(v f.Value, direct bool) bool) {
+// cells whose formula is itself a SUBTOTAL/AGGREGATE and hidden rows.
+func each(e *f.Env, v f.Value, o opts, fn func(v f.Value, direct bool) bool) {
 	r, ok := v.(f.Ref)
-	if !ok || !skipNested {
+	if !ok || !o.skipNested && o.skipRows == skipNone {
 		e.Each(v, fn)
 		return
 	}
 	r = e.Trim(r)
 	for row := r.R1; row <= r.R2; row++ {
+		if o.skipped(e, r.Sheet, row) {
+			continue
+		}
 		for col := r.C1; col <= r.C2; col++ {
-			if nestedTotal(e.Ctx.CellFormula(r.Sheet, row, col)) {
+			if o.skipNested && nestedTotal(e.Ctx.CellFormula(r.Sheet, row, col)) {
 				continue
 			}
 			if !fn(e.Ctx.CellValue(r.Sheet, row, col), false) {
@@ -211,7 +231,7 @@ func gather(e *f.Env, args []f.Value, o opts) ([]float64, f.Value) {
 		return true
 	}
 	for _, a := range args {
-		each(e, a, o.skipNested, visit)
+		each(e, a, o, visit)
 		if errv != nil {
 			return nil, errv
 		}
@@ -224,7 +244,7 @@ func gather(e *f.Env, args []f.Value, o opts) ([]float64, f.Value) {
 func countA(e *f.Env, args []f.Value, o opts) int {
 	n := 0
 	for _, a := range args {
-		each(e, a, o.skipNested, func(v f.Value, direct bool) bool {
+		each(e, a, o, func(v f.Value, direct bool) bool {
 			switch v.(type) {
 			case f.Blank:
 			case f.Error:

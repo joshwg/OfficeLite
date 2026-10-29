@@ -33,6 +33,7 @@ var ErrSortMerged = errors.New("To do this, all the merged cells need to be the 
 // the moved formulas shift with them; blanks sort last in either order.
 // Undoable as one step.
 func (b *Book) Sort(sheet int, spec SortSpec) (calc.Result, error) {
+	defer b.Op("Sort")()
 	if len(spec.Keys) == 0 {
 		return calc.Result{}, nil
 	}
@@ -94,6 +95,7 @@ func (b *Book) applySort(op *structural) (calc.Result, error) {
 			sh.Set(to, c, cell)
 		}
 	}
+	sh.PermuteValidationRows(data, perm)
 	// Spill areas of moved formulas move with them.
 	for a := range old.Spills {
 		if !data.Contains(a[0], a[1]) {
@@ -169,7 +171,7 @@ func compareSort(a, b *model.Cell, desc, matchCase bool) int {
 func CurrentRegion(sh *model.Sheet, row, col int) model.Range {
 	r := model.Range{R1: row, C1: col, R2: row, C2: col}
 	filled := func(rr, cc int) bool {
-		return rr >= 0 && cc >= 0 && !isBlank(sh.Get(rr, cc))
+		return rr >= 0 && cc >= 0 && !sh.Get(rr, cc).IsBlank()
 	}
 	lineFilled := func(r1, c1, r2, c2 int) bool {
 		for rr := r1; rr <= r2; rr++ {
@@ -215,12 +217,12 @@ func (b *Book) GuessHeader(sheet int, r model.Range) bool {
 	for c := r.C1; c <= min(r.C2, sh.UsedCols()-1); c++ {
 		h, d := sh.Get(r.R1, c), sh.Get(r.R1+1, c)
 		if h.Kind != model.KindText {
-			if isBlank(h) {
+			if h.IsBlank() {
 				continue
 			}
 			return false
 		}
-		if d.Kind != model.KindText && !isBlank(d) {
+		if d.Kind != model.KindText && !d.IsBlank() {
 			differs = true
 		}
 		if b.style(h.Style).Font != b.style(d.Style).Font {

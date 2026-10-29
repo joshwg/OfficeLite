@@ -6,6 +6,7 @@ import (
 	"officelite/excel/formula"
 	"officelite/excel/formula/functions/database"
 	"officelite/excel/formula/functions/datetime"
+	"officelite/excel/formula/functions/engineering"
 	"officelite/excel/formula/functions/financial"
 	"officelite/excel/formula/functions/info"
 	"officelite/excel/formula/functions/logical"
@@ -32,6 +33,7 @@ func Categories() []Category {
 	}{
 		{"Database", database.Register, nil},
 		{"Date & Time", datetime.Register, nil},
+		{"Engineering", engineering.Register, nil},
 		{"Financial", financial.Register, nil},
 		{"Information", info.Register, nil},
 		{"Logical", logical.Register, []string{"LAMBDA", "LET"}},

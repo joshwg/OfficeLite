@@ -24,3 +24,26 @@ func TestColumnWidths(t *testing.T) {
 		t.Errorf("default width at mdw 10 = %v, want 88", got)
 	}
 }
+
+// ColName must not panic on the columns a damaged file can hold, and
+// ParseColName must not overflow on long letter runs.
+func TestColNameLimits(t *testing.T) {
+	for col, want := range map[int]string{0: "A", 27: "AB", 16383: "XFD", -1: "", 475253: "ZZZZ", 475254: "AAAAA"} {
+		if got := ColName(col); got != want {
+			t.Errorf("ColName(%d) = %q, want %q", col, got, want)
+		}
+	}
+	ColName(int(^uint(0) >> 1))
+	if got := ParseColName("XFD"); got != 16383 {
+		t.Errorf("ParseColName(XFD) = %d", got)
+	}
+	if got := ParseColName("ZZZZZZZZZZZZZZZZZZZZ"); got != -1 {
+		t.Errorf("ParseColName(20 Zs) = %d", got)
+	}
+	sh := NewSheet("S")
+	sh.ActiveRow, sh.ActiveCol, sh.TopRow, sh.LeftCol, sh.FreezeRows, sh.FreezeCols = -3, 1<<40, MaxRows, 5, -1, MaxCols
+	sh.ClampView()
+	if sh.ActiveRow != 0 || sh.ActiveCol != MaxCols-1 || sh.TopRow != MaxRows-1 || sh.LeftCol != 5 || sh.FreezeRows != 0 || sh.FreezeCols != MaxCols-1 {
+		t.Errorf("ClampView = %+v", sh)
+	}
+}

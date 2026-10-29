@@ -163,11 +163,11 @@ func TestListNumbering(t *testing.T) {
 		t.Errorf("label at %v, text at %v", l.Label, l.Items[0].X)
 	}
 	for n, want := range map[int]string{1: "i", 4: "iv", 9: "ix", 14: "xiv", 1994: "mcmxciv"} {
-		if got := FormatNumber(n, "lowerRoman"); got != want {
+		if got := model.FormatNumber(n, "lowerRoman"); got != want {
 			t.Errorf("roman %d = %q", n, got)
 		}
 	}
-	if got := FormatNumber(28, "upperLetter"); got != "BB" {
+	if got := model.FormatNumber(28, "upperLetter"); got != "BB" {
 		t.Errorf("letter 28 = %q", got)
 	}
 }
@@ -282,11 +282,11 @@ func TestCaretAndHit(t *testing.T) {
 	}
 	p := model.Pos{Para: 0, Off: 3}
 	c, _ := e.CaretAt(p)
-	down, ok := e.Vertical(p, 1, c.X)
+	down, _, ok := e.Vertical(p, 1, c.X, false)
 	if !ok || down.Para != 0 || down.Off <= 3 {
 		t.Errorf("down: %v", down)
 	}
-	a, b := e.LineBounds(p)
+	a, b, _ := e.LineBounds(p, false)
 	if a.Off != 0 || b.Off <= 3 {
 		t.Errorf("line bounds %v %v", a, b)
 	}
@@ -329,5 +329,154 @@ func TestIncremental(t *testing.T) {
 	t.Logf("incremental layout after a keystroke: %v (worst)", worst)
 	if worst > full/3 && worst > 20*time.Millisecond {
 		t.Errorf("incremental layout too slow: %v vs full %v", worst, full)
+	}
+}
+
+// Lists that share an abstract definition count together unless one
+// overrides its start; a list may start at 0.
+func TestListCounters(t *testing.T) {
+	lvl := func(start int, restart bool) []model.ListLevel {
+		return []model.ListLevel{{Format: "decimal", Text: "%1.", Start: start, Restart: restart, Indent: 36, Hang: 18}}
+	}
+	item := func(num int) *model.Paragraph {
+		p := para("item")
+		p.Props.List = &model.ListRef{NumID: num}
+		return p
+	}
+	d := docOf(item(1), item(1), item(2), item(3), item(3), item(4))
+	d.Lists = map[int]*model.List{
+		1: {Abstract: "0", Levels: lvl(1, false)},
+		2: {Abstract: "0", Levels: lvl(1, false)}, // continues list 1
+		3: {Abstract: "0", Levels: lvl(1, true)},  // restarts at 1
+		4: {Levels: lvl(0, false)},                // starts at 0
+	}
+	e := layoutDoc(d)
+	var got []string
+	for _, b := range d.Body {
+		got = append(got, e.labels[b.(*model.Paragraph)])
+	}
+	if strings.Join(got, " ") != "1. 2. 3. 1. 2. 0." {
+		t.Errorf("labels %q", got)
+	}
+	if model.FormatNumber(0, "lowerRoman") != "0" || model.FormatNumber(5000, "upperRoman") != "5000" || model.FormatNumber(-2, "lowerLetter") != "-2" {
+		t.Errorf("out-of-range numbers")
+	}
+}
+
+// A row (here a vertically merged cell) taller than the rest of the page
+// is split between pages: no line runs past the page bottom.
+func TestTableRowSplitsAcrossPages(t *testing.T) {
+	long := strings.Repeat(lorem+" ", 40)
+	for _, merged := range []bool{false, true} {
+		big := &model.TableCell{Blocks: []model.Block{para(long)}}
+		rows := []*model.TableRow{{Cells: []*model.TableCell{{Blocks: []model.Block{para("a")}}, big}}}
+		if merged {
+			big.VMerge = 1
+			rows = append(rows, &model.TableRow{Cells: []*model.TableCell{{Blocks: []model.Block{para("b")}},
+				{VMerge: 2, Blocks: []model.Block{para("")}}}})
+		}
+		tbl := &model.Table{Columns: []float64{100, 300}, Borders: true, Rows: rows}
+		var blocks []model.Block
+		for range 10 {
+			blocks = append(blocks, para("x"))
+		}
+		blocks = append(blocks, tbl, para("after"))
+		e := layoutDoc(docOf(blocks...))
+		if len(e.Pages) < 2 {
+			t.Fatalf("merged=%v: %d pages", merged, len(e.Pages))
+		}
+		for _, pg := range e.Pages {
+			for _, pl := range pg.Lines {
+				if pl.Y+pl.Line.Height > e.textBottom()+0.01 {
+					t.Fatalf("merged=%v: line of paragraph %d on page %d ends at %v, below %v", merged, pl.Para, pg.Index, pl.Y+pl.Line.Height, e.textBottom())
+				}
+			}
+			for _, r := range pg.Rules {
+				if r.Y1 > e.textBottom()+1 {
+					t.Fatalf("merged=%v: border at %v on page %d", merged, r.Y1, pg.Index)
+				}
+			}
+		}
+		// The big cell starts on the first page, right after the "x"s.
+		if ref := e.paraLines[11][0]; ref.Page != 0 {
+			t.Errorf("merged=%v: cell starts on page %d", merged, ref.Page)
+		}
+		// Every line of the cell is placed once.
+		n := len(e.cache[big.Blocks[0].(*model.Paragraph)].Lines)
+		if got := len(e.paraLines[11]); got != n {
+			t.Errorf("merged=%v: %d of %d lines placed", merged, got, n)
+		}
+	}
+	// A row that can't split moves to the next page whole.
+	cell := &model.TableCell{Blocks: []model.Block{para(strings.Repeat(lorem+" ", 3))}}
+	tbl := &model.Table{Columns: []float64{400}, Rows: []*model.TableRow{{CantSplit: true, Cells: []*model.TableCell{cell}}}}
+	var blocks []model.Block
+	for range 44 {
+		blocks = append(blocks, para("x"))
+	}
+	e := layoutDoc(docOf(append(blocks, tbl, para("y"))...))
+	refs := e.paraLines[44]
+	if refs[0].Page != refs[len(refs)-1].Page {
+		t.Errorf("can't-split row on pages %d..%d", refs[0].Page, refs[len(refs)-1].Page)
+	}
+}
+
+// Up and Down in a table go to the cell above or below, not the next cell
+// in the row.
+func TestVerticalInTable(t *testing.T) {
+	cell := func(s string) *model.TableCell { return &model.TableCell{Blocks: []model.Block{para(s)}} }
+	tbl := &model.Table{Columns: []float64{150, 150}, Rows: []*model.TableRow{
+		{Cells: []*model.TableCell{cell("A"), cell("B")}},
+		{Cells: []*model.TableCell{cell("C"), cell("D")}},
+	}}
+	e := layoutDoc(docOf(para("top"), tbl, para("end")))
+	for _, tc := range []struct {
+		from, dir, want int
+	}{{1, 1, 3}, {2, 1, 4}, {3, -1, 1}, {4, -1, 2}, {3, 1, 5}, {1, -1, 0}} {
+		p := model.Pos{Para: tc.from}
+		c, _ := e.CaretAt(p)
+		got, _, ok := e.Vertical(p, tc.dir, c.X, false)
+		if !ok || got.Para != tc.want {
+			t.Errorf("from %d dir %d: %v, want paragraph %d", tc.from, tc.dir, got, tc.want)
+		}
+	}
+	if _, _, ok := e.Vertical(model.Pos{Para: 5}, 1, 80, false); ok {
+		t.Error("down from the last line")
+	}
+}
+
+// End on a line wrapped after a hyphen (or inside a long word) goes to the
+// line's very end, shown at the end of that line.
+func TestEndOfHyphenatedLine(t *testing.T) {
+	text := strings.Repeat("abcdefghij-", 30)
+	d := docOf(para(text))
+	e := layoutDoc(d)
+	l := e.cache[d.Body[0].(*model.Paragraph)].Lines[0]
+	if l.Last || []rune(text)[l.End-1] != '-' {
+		t.Fatalf("first line ends at %d", l.End)
+	}
+	_, end, eol := e.LineBounds(model.Pos{Off: 2}, false)
+	if end.Off != l.End || !eol {
+		t.Fatalf("End: %v eol %v, want %d", end, eol, l.End)
+	}
+	c, _ := e.CaretAtEOL(end, true)
+	first, _ := e.CaretAt(model.Pos{Off: 0})
+	if c.Y != first.Y || c.X < first.X+l.Width-1 {
+		t.Errorf("caret at %+v, line starts at %+v width %v", c, first, l.Width)
+	}
+	// End again stays; Home from there goes to this line's start.
+	if a, b, _ := e.LineBounds(end, true); a.Off != 0 || b != end {
+		t.Errorf("again: %v %v", a, b)
+	}
+	// Without affinity the same offset is the next line's start.
+	if a, _, _ := e.LineBounds(end, false); a.Off != l.End {
+		t.Errorf("next line start %v", a)
+	}
+	// A line ending in a space still stops before it.
+	d = docOf(para(lorem))
+	e = layoutDoc(d)
+	l = e.cache[d.Body[0].(*model.Paragraph)].Lines[0]
+	if _, end, eol := e.LineBounds(model.Pos{}, false); end.Off != l.End-1 || eol {
+		t.Errorf("space-wrapped End %v eol %v (line end %d)", end, eol, l.End)
 	}
 }

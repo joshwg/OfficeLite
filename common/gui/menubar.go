@@ -26,16 +26,24 @@ type MenuItem struct {
 }
 
 // Menu is a menu-bar entry. A menu without items acts as a button; Primary
-// draws it in the accent color, like Excel's File tab.
+// draws it in the accent color, like Excel's File tab. A Tab menu is a
+// ribbon tab, as in Office: a click on its header only reports MenuTab
+// (its items open no drop-down from the bar), and Selected marks the
+// ribbon showing.
 type Menu struct {
-	Label   string
-	Items   []MenuItem
-	Primary bool
+	Label    string
+	Items    []MenuItem
+	Primary  bool
+	Tab      bool
+	Selected bool
 }
 
-// MenuEvent reports a chosen item, or Item -1 for a click on a menu
-// without items.
+// MenuEvent reports a chosen item, Item -1 for a click on a menu without
+// items, or MenuTab for a click on a Tab menu's header.
 type MenuEvent struct{ Menu, Item int }
+
+// MenuTab is the Item of a MenuEvent for a click on a Tab menu's header.
+const MenuTab = -2
 
 // MenuBar is a row of menus with at most one drop-down open.
 type MenuBar struct {
@@ -63,6 +71,14 @@ func (m *MenuBar) OpenMenu(i, n int) {
 
 // Close closes the open drop-down.
 func (m *MenuBar) Close() { m.open = 0 }
+
+// HeaderRect is menu i's header, in the bar's coordinates, as last drawn.
+func (m *MenuBar) HeaderRect(i int) image.Rectangle {
+	if i < 0 || i >= len(m.rects) {
+		return image.Rectangle{}
+	}
+	return m.rects[i]
+}
 
 // Layout draws the bar across the full width and calls choose for each
 // selection made since the last frame.
@@ -96,6 +112,9 @@ func (m *MenuBar) update(gtx layout.Context, menus []Menu, choose func(MenuEvent
 	for i := range menus {
 		for m.heads[i].Clicked(gtx) {
 			switch {
+			case menus[i].Tab:
+				m.open = 0
+				choose(MenuEvent{i, MenuTab})
 			case len(menus[i].Items) == 0:
 				m.open = 0
 				choose(MenuEvent{i, -1})
@@ -134,9 +153,12 @@ func (m *MenuBar) update(gtx layout.Context, menus []Menu, choose func(MenuEvent
 		}
 		switch {
 		case e.Kind == pointer.Move:
-			if hit >= 0 && len(menus[hit].Items) > 0 {
+			if hit >= 0 && len(menus[hit].Items) > 0 && !menus[hit].Tab {
 				m.open = hit + 1
 			}
+		case hit >= 0 && menus[hit].Tab:
+			m.open = 0
+			choose(MenuEvent{hit, MenuTab})
 		case hit < 0 || hit == m.open-1:
 			m.open = 0
 		case len(menus[hit].Items) == 0:
@@ -157,10 +179,20 @@ func (m *MenuBar) header(gtx layout.Context, th *Theme, i int, mn Menu) layout.D
 	if m.open == i+1 {
 		bg = hover
 	}
+	weight := font.Normal
+	if mn.Selected {
+		fg, weight = th.Accent, font.SemiBold
+	}
 	return Hoverable(gtx, &m.heads[i], bg, hover, func(gtx layout.Context) layout.Dimensions {
-		return layout.Inset{Left: 14, Right: 14}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return Middle(gtx, th.Label(13, mn.Label, fg, font.Normal).Layout)
+		d := layout.Inset{Left: 14, Right: 14}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return Middle(gtx, th.Label(13, mn.Label, fg, weight).Layout)
 		})
+		if mn.Selected {
+			// The active tab's underline.
+			t := gtx.Dp(3)
+			FillRect(gtx.Ops, image.Rect(gtx.Dp(10), d.Size.Y-t-gtx.Dp(1), d.Size.X-gtx.Dp(10), d.Size.Y-gtx.Dp(1)), th.Accent)
+		}
+		return d
 	})
 }
 

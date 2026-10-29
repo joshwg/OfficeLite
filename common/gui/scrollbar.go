@@ -59,6 +59,9 @@ type Scrollbar struct {
 	// dragged, as Excel shows "Row: 120" and Word the page.
 	Label func(pos float64) string
 	Theme *Theme
+	// OpenEnded lets the forward arrow scroll past the end, as Excel's
+	// arrows go beyond the data; the caller then grows total to match.
+	OpenEnded bool
 
 	hover     scrollPart
 	held      scrollPart // arrow or track part being held
@@ -114,7 +117,8 @@ func (s *Scrollbar) Layout(gtx layout.Context, pos, visible, total float64) floa
 		return partThumb
 	}
 	// act applies one step of the held part; paging stops once the thumb
-	// reaches the pointer.
+	// reaches the pointer. past records an open-ended step beyond the end.
+	past := false
 	act := func(p scrollPart) {
 		t0 := float32(btn) + thumbAt(pos)
 		switch p {
@@ -122,6 +126,10 @@ func (s *Scrollbar) Layout(gtx layout.Context, pos, visible, total float64) floa
 			pos -= step
 		case partFwd:
 			pos += step
+			if s.OpenEnded && pos > maxPos {
+				past = true
+				return
+			}
 		case partPageBack:
 			if s.heldAt < t0 {
 				pos -= visible
@@ -201,7 +209,9 @@ func (s *Scrollbar) Layout(gtx layout.Context, pos, visible, total float64) floa
 		}
 		gtx.Execute(op.InvalidateCmd{At: s.next})
 	}
-	pos = min(max(pos, 0), maxPos)
+	if !past {
+		pos = min(max(pos, 0), maxPos)
+	}
 
 	area := clip.Rect{Max: size}.Push(gtx.Ops)
 	event.Op(gtx.Ops, s)

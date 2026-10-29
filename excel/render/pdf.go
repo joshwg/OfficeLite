@@ -9,6 +9,7 @@ import (
 	"officelite/common/colors"
 	"officelite/common/pdf"
 	"officelite/excel/model"
+	"officelite/excel/numfmt"
 )
 
 // PDFOptions control ExportPDF.
@@ -47,6 +48,11 @@ func ExportPDF(d *pdf.Document, wb *model.Workbook, o PDFOptions) error {
 		o.Paper = pdf.Letter
 	}
 	x := &sheetExport{d: d, wb: wb, o: o, fonts: map[model.Font]*pdf.Font{}}
+	defer func() {
+		if x.nf != nil {
+			x.nf.Close()
+		}
+	}()
 	start := d.Pages()
 	for _, i := range o.Sheets {
 		if i >= 0 && i < len(wb.Sheets) {
@@ -71,7 +77,8 @@ type sheetExport struct {
 	mdw  float64
 	used model.Range
 	p    *pdf.Page
-	band model.Range // the cells on the current page
+	band model.Range       // the cells on the current page
+	nf   *numfmt.Formatter // charts' number formats (chartpdf.go)
 }
 
 func (x *sheetExport) font(f model.Font) *pdf.Font {
@@ -127,6 +134,12 @@ func (x *sheetExport) usedRange() (model.Range, bool) {
 			add(m.R2, m.C2)
 		}
 	}
+	// Charts print where they are, as in Excel.
+	for _, c := range sh.Charts {
+		cells := x.chartCells(c)
+		add(cells.R1, cells.C1)
+		add(cells.R2, cells.C2)
+	}
 	return r, r.R2 >= 0
 }
 
@@ -157,11 +170,10 @@ func bands(ax *Axis, first, last int, avail, s float64) [][2]int {
 
 func (x *sheetExport) sheet(sh *model.Sheet) {
 	x.sh = sh
-	used, ok := x.usedRange()
-	if !ok {
+	if sh.IsChartSheet() {
+		x.chartSheet(sh)
 		return
 	}
-	x.used = used
 	x.mdw = x.o.DigitWidth
 	def := x.defaultFont()
 	if x.mdw <= 0 {
@@ -172,6 +184,11 @@ func (x *sheetExport) sheet(sh *model.Sheet) {
 		x.mdw = max(math.Round(x.mdw), 1)
 	}
 	x.geo = NewGeometry(sh, x.mdw)
+	used, ok := x.usedRange()
+	if !ok {
+		return
+	}
+	x.used = used
 	availW := x.o.Paper.W - 2*marginLR
 	availH := x.o.Paper.H - 2*marginTB
 	s := 1.0
@@ -315,6 +332,8 @@ func (x *sheetExport) page(band model.Range, s float64) {
 			}
 		}
 	}
+	// 6. Charts, over the cells.
+	x.pageCharts()
 	p.Restore()
 }
 
@@ -496,8 +515,12 @@ func (x *sheetExport) overflow(at *Pos, rc rect, align model.HAlign, need float6
 	return span
 }
 
-// edge draws one side of a cell border, centered on the gridline.
+// edge draws one side of a cell border, centered on the gridline. A
+// transparent color draws nothing, as on screen.
 func (x *sheetExport) edge(side int, rc rect, e model.Edge) {
+	if e.Color.A == 0 {
+		return
+	}
 	lw := 0.5
 	var dash []float64
 	switch e.Style {
@@ -523,9 +546,6 @@ func (x *sheetExport) edge(side int, rc rect, e model.Edge) {
 		lw, dash = 1, []float64{4.5, 1.5, 1.5, 1.5, 1.5, 1.5}
 	}
 	c := e.Color
-	if c.A == 0 {
-		c = colors.RGB(0)
-	}
 	var x0, y0, x1, y1 float64
 	switch side {
 	case model.Left:

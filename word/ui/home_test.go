@@ -6,6 +6,7 @@ import (
 	"gioui.org/io/key"
 	"gioui.org/io/pointer"
 
+	"officelite/common/gui"
 	"officelite/word/model"
 )
 
@@ -216,5 +217,37 @@ func TestStylesPaneAndDialogs(t *testing.T) {
 	h.press("G", key.ModCtrl)
 	if d.find.mode != findGoTo {
 		t.Error("Ctrl+G")
+	}
+}
+
+func TestShowHideMarks(t *testing.T) {
+	h := newHarness(t)
+	d := h.d
+	h.typeText("one two")
+	h.press("8", key.ModCtrl|key.ModShift)
+	if !d.showMarks || !d.eng.ShowHidden() {
+		t.Fatal("Ctrl+Shift+8 didn't show the marks")
+	}
+	if !d.menus()[menuHome].Items[homeShowMarks].Checked {
+		t.Error("Home menu item not checked")
+	}
+	h.press("8", key.ModCtrl|key.ModShift)
+	if d.showMarks || d.eng.ShowHidden() {
+		t.Fatal("Ctrl+Shift+8 didn't hide the marks")
+	}
+	// The ribbon's ¶ button.
+	d.tb.marks.Click()
+	h.frame()
+	if !d.showMarks {
+		t.Fatal("¶ button didn't show the marks")
+	}
+	// The Home menu item turns them off again; the document isn't changed.
+	d.menuChosen(gui.MenuEvent{Menu: menuHome, Item: homeShowMarks})
+	h.frame()
+	if d.showMarks || d.eng.ShowHidden() {
+		t.Error("Home menu item didn't hide the marks")
+	}
+	if got := h.para(0).Text(); got != "one two" {
+		t.Errorf("text %q", got)
 	}
 }

@@ -29,7 +29,7 @@ type harness struct {
 func newHarness(t *testing.T) *harness {
 	fonts := gui.NewFontLibrary(gui.DefaultFontDirs()...)
 	a := &App{ui: gui.NewTheme(fonts, accent, accentDark), fonts: fonts, recent: recent.Open(""), zoom: 1,
-		states: map[int]*sheetState{}, calls: make(chan func(), 8)}
+		states: map[int]*sheetState{}, calls: gui.NewCallQueue(nil)}
 	a.th = a.ui.Theme
 	a.shaper = a.th.Shaper
 	a.setWorkbook(emptyWorkbook())
@@ -43,7 +43,7 @@ func (h *harness) frame() {
 	h.ops.Reset()
 	gtx := layout.Context{Ops: &h.ops, Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1},
 		Constraints: layout.Exact(image.Pt(1000, 700)), Source: h.r.Source()}
-	h.a.runCalls()
+	h.a.calls.Run()
 	h.a.layout(gtx)
 	h.r.Frame(gtx.Ops)
 }
@@ -285,4 +285,137 @@ func TestFormulaBarAndDoubleClick(t *testing.T) {
 		t.Fatalf("double-click: editing %v, text %q", a.ed.active, a.ed.cell.Text())
 	}
 	h.press(key.NameEscape, 0)
+}
+
+// Any change ends cut or copy mode, as in Excel; a copy survives its own
+// paste, a cut doesn't.
+func TestClipEndsOnChange(t *testing.T) {
+	h := newHarness(t)
+	a := h.a
+	h.typeText("1")
+	h.press(key.NameReturn, 0)
+	cell := func(ref string) model.Range {
+		r, c := refPos(ref)
+		return model.Range{R1: r, C1: c, R2: r, C2: c}
+	}
+	for _, tc := range []struct {
+		name string
+		edit func()
+	}{
+		{"insert row", func() { a.selectRange(0, cell("A5")); a.structural(true, false) }},
+		{"insert sheet", func() { a.insertSheet(); a.active = 0 }},
+		{"undo", a.undo},
+		{"delete", func() { a.selectRange(0, cell("C3")); a.clearSelection() }},
+		{"fill", func() { a.selectRange(0, cell("C4")); a.fillDown() }},
+	} {
+		a.selectRange(0, cell("A1"))
+		a.copy(a.gtx, true)
+		tc.edit()
+		if a.clip != nil {
+			t.Errorf("%s: still in cut mode", tc.name)
+		}
+	}
+	a.selectRange(0, cell("A1"))
+	a.copy(a.gtx, false)
+	a.selectRange(0, cell("B1"))
+	a.paste(a.clipText)
+	if a.clip == nil {
+		t.Error("a copy ended with its paste")
+	}
+	a.selectRange(0, cell("B2"))
+	a.pasteSpecial(1) // values
+	if a.clip == nil || h.cell("B2").Text != "1" {
+		t.Errorf("paste values: clip %v, B2 %q", a.clip != nil, h.cell("B2").Text)
+	}
+	a.copy(a.gtx, true)
+	a.selectRange(0, cell("D1"))
+	a.paste(a.clipText)
+	if a.clip != nil || h.cell("D1").Text != "1" {
+		t.Errorf("cut paste: clip %v, D1 %q", a.clip != nil, h.cell("D1").Text)
+	}
+}
+
+// The window's shortcuts wait while a modal dialog is open; a tab being
+// renamed takes its name first.
+func TestShortcutsWaitForDialogs(t *testing.T) {
+	h := newHarness(t)
+	a := h.a
+	for _, open := range []func(){
+		func() { a.showGoTo() },
+		func() { a.openFormatCells(tabNumber) },
+		func() { a.dialog.Show(appName, "Message", "OK") },
+		func() { a.createPivotDialog() },
+	} {
+		open()
+		h.frame()
+		h.press(key.NameF11, key.ModShift)
+		h.press("-", key.ModShortcut|key.ModAlt)
+		if len(a.wb.Sheets) != 1 || a.zoom != 1 {
+			t.Fatalf("shortcuts behind a dialog: %d sheets, zoom %v", len(a.wb.Sheets), a.zoom)
+		}
+		h.press(key.NameEscape, 0)
+		if a.modalOpen() {
+			t.Fatal("Esc left the dialog open")
+		}
+	}
+	a.startRename(0)
+	h.frame()
+	h.frame()
+	a.rename.ed.SetText("Data")
+	h.press(key.NameF11, key.ModShift)
+	if a.rename.active || len(a.wb.Sheets) != 2 || a.wb.Sheets[1].Name != "Data" {
+		t.Errorf("rename then Shift+F11: renaming %v, sheets %d, %q", a.rename.active, len(a.wb.Sheets), a.wb.Sheets[len(a.wb.Sheets)-1].Name)
+	}
+}
+
+// Undoing Delete Sheet goes back to the sheet put back; redoing it to
+// its neighbour.
+func TestUndoDeleteSheetSelects(t *testing.T) {
+	h := newHarness(t)
+	a := h.a
+	a.newSheet()
+	a.newSheet() // Sheet1 Sheet2 Sheet3, the last active
+	a.active = 1
+	a.deleteSheet()
+	if len(a.wb.Sheets) != 2 || a.active != 1 {
+		t.Fatalf("after delete: %d sheets, active %d", len(a.wb.Sheets), a.active)
+	}
+	a.active = 0
+	a.undo()
+	if a.active != 1 || a.wb.Sheets[1].Name != "Sheet2" {
+		t.Errorf("undo: active %d (%s)", a.active, a.wb.Sheets[a.active].Name)
+	}
+	a.redo()
+	if a.active != 1 || a.wb.Sheets[1].Name != "Sheet3" {
+		t.Errorf("redo: active %d (%s)", a.active, a.wb.Sheets[a.active].Name)
+	}
+}
+
+// The mouse wheel doesn't scroll the grid behind a modal dialog.
+func TestWheelBehindDialog(t *testing.T) {
+	h := newHarness(t)
+	a := h.a
+	wheel := func() {
+		h.r.Queue(pointer.Event{Kind: pointer.Scroll, Source: pointer.Mouse, Position: f32.Pt(300, 600), Scroll: f32.Pt(0, 200)})
+		h.frame()
+		h.frame()
+	}
+	wheel()
+	if a.state().view.TopRow == 0 {
+		t.Fatal("the wheel didn't scroll the grid")
+	}
+	a.state().view.TopRow = 0
+	for _, open := range []func(){
+		func() { a.openFormatCells(tabNumber) },
+		func() { a.showGoTo() },
+		func() { a.dialog.Show(appName, "Message", "OK") },
+	} {
+		open()
+		h.frame()
+		wheel()
+		if top := a.state().view.TopRow; top != 0 {
+			t.Errorf("scrolled behind a dialog to row %d", top)
+		}
+		h.press(key.NameEscape, 0)
+	}
 }

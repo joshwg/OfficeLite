@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"image"
+	"strings"
 	"testing"
 
 	"gioui.org/f32"
@@ -199,5 +200,53 @@ func TestTypingSpeed(t *testing.T) {
 	t.Logf("keystroke frame: avg %v, worst %v (last relayout %v, %d paragraph)", avg, worst, d.eng.LastDuration, d.eng.LastRelaid)
 	if avg > 50*time.Millisecond {
 		t.Errorf("typing too slow: %v per keystroke", avg)
+	}
+}
+
+// Down in a table goes to the cell below; End on a line wrapped after a
+// hyphen goes to its end and shows the caret there.
+func TestTableDownAndHyphenEnd(t *testing.T) {
+	h := newHarness(t)
+	d := h.d
+	d.ed.InsertTable(2, 2)
+	h.frame()
+	for _, s := range []string{"A", "B", "C", "D"} {
+		h.typeText(s)
+		h.press(key.NameTab, 0)
+	}
+	// Tab in the last cell added a row: A B / C D / _ _.
+	start, _, _ := d.ed.CellBounds(d.ed.Locs()[0].Cell)
+	d.ed.SetCaret(start, false)
+	h.frame()
+	h.press(key.NameDownArrow, 0)
+	if got := d.ed.Para(d.ed.Sel.Caret.Para).Text(); got != "C" {
+		t.Fatalf("down from A reached %q (%v)", got, d.ed.Sel.Caret)
+	}
+	h.press(key.NameUpArrow, 0)
+	if got := d.ed.Para(d.ed.Sel.Caret.Para).Text(); got != "A" {
+		t.Fatalf("up from C reached %q", got)
+	}
+
+	last := d.ed.NumParas() - 1
+	d.ed.SetCaret(model.Pos{Para: last}, false)
+	h.typeText(strings.Repeat("abcdefghij-", 30))
+	d.ed.SetCaret(model.Pos{Para: last, Off: 1}, false)
+	h.frame()
+	c0, _ := d.caret()
+	h.press(key.NameEnd, 0)
+	d.relayout()
+	_, end, eol := d.eng.LineBounds(model.Pos{Para: last, Off: 1}, false)
+	if d.ed.Sel.Caret != end || !eol || !d.caretEOL() {
+		t.Fatalf("End: caret %v eol %v, want %v", d.ed.Sel.Caret, d.caretEOL(), end)
+	}
+	if c, _ := d.caret(); c.Y != c0.Y || c.X <= c0.X {
+		t.Errorf("caret at end shows at %+v, line at %+v", c, c0)
+	}
+	h.typeText("X")
+	if rs := []rune(d.ed.Para(last).Text()); rs[end.Off] != 'X' || rs[end.Off-1] != '-' {
+		t.Errorf("typed at %q", string(rs[end.Off-3:end.Off+2]))
+	}
+	if d.caretEOL() {
+		t.Error("affinity kept after typing")
 	}
 }

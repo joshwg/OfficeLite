@@ -40,28 +40,32 @@ type ParaLoc struct {
 	Index  int        // index in *Blocks
 	Top    int        // index of the enclosing block in Document.Body
 	Cell   *TableCell // innermost cell, nil for body paragraphs
+	// Hidden is set in a cell that continues a vertical merge (or one
+	// inside such a cell): its text isn't shown, so the caret never goes
+	// there.
+	Hidden bool
 }
 
 // Locate lists every paragraph in document order with its location; the
 // list index is Pos.Para.
 func (d *Document) Locate() []ParaLoc {
 	var out []ParaLoc
-	var walkIn func(blocks *[]Block, top int, cell *TableCell)
-	walkIn = func(blocks *[]Block, top int, cell *TableCell) {
+	var walkIn func(blocks *[]Block, top int, cell *TableCell, hidden bool)
+	walkIn = func(blocks *[]Block, top int, cell *TableCell, hidden bool) {
 		for i, b := range *blocks {
 			if cell == nil {
 				top = i
 			}
 			switch b := b.(type) {
 			case *Paragraph:
-				out = append(out, ParaLoc{P: b, Blocks: blocks, Index: i, Top: top, Cell: cell})
+				out = append(out, ParaLoc{P: b, Blocks: blocks, Index: i, Top: top, Cell: cell, Hidden: hidden})
 			case *Table:
 				for _, row := range b.Rows {
 					for _, c := range row.Cells {
 						if len(c.Blocks) == 0 {
 							c.Blocks = []Block{&Paragraph{}}
 						}
-						walkIn(&c.Blocks, top, c)
+						walkIn(&c.Blocks, top, c, hidden || c.VMerge == 2)
 					}
 				}
 			}
@@ -70,7 +74,7 @@ func (d *Document) Locate() []ParaLoc {
 	if len(d.Body) == 0 {
 		d.Body = []Block{&Paragraph{}}
 	}
-	walkIn(&d.Body, 0, nil)
+	walkIn(&d.Body, 0, nil, false)
 	return out
 }
 
@@ -225,6 +229,10 @@ func copyPara(p *Paragraph) *Paragraph {
 	q := *p
 	q.Runs = slices.Clone(p.Runs)
 	q.Props = copyParaProps(p.Props)
+	if p.Sect != nil {
+		s := *p.Sect // edits replace its parts, never change them
+		q.Sect = &s
+	}
 	return &q
 }
 
@@ -264,12 +272,16 @@ func copyLists(m map[int]*List) map[int]*List {
 // before[...] before the edit (and swap back and forth on undo/redo).
 type step struct {
 	kind     string
+	label    string // the name in the Undo list; see Op and Label
+	typed    string // a typing step's text, for its label
 	start    int
 	before   []Block
 	afterLen int
 	sel      Selection // selection to restore
 	styles   *StyleSheet
 	lists    map[int]*List
+	hf       *HeadersFooters // the headers and footers, for steps that change them
+	sect     *Section        // the last section, for steps that change it
 }
 
 // Editor edits a document: selection, text and structure changes,
@@ -287,7 +299,8 @@ type Editor struct {
 	locs  []ParaLoc
 	undo  []*step
 	redo  []*step
-	typed *step // the typing step that further typing extends
+	typed *step  // the typing step that further typing extends
+	label string // names the steps made now; see Op
 	dirty map[*Paragraph]bool
 	all   bool
 }
@@ -330,11 +343,31 @@ func (e *Editor) TakeDirty() (paras []*Paragraph, all bool) {
 func (e *Editor) CanUndo() bool { return len(e.undo) > 0 }
 func (e *Editor) CanRedo() bool { return len(e.redo) > 0 }
 
-// clamp keeps p inside the document.
+// clamp keeps p inside the document and out of hidden paragraphs (see
+// ParaLoc.Hidden): such a position moves to the next shown paragraph,
+// or the end of the previous one.
 func (e *Editor) clamp(p Pos) Pos {
 	p.Para = min(max(p.Para, 0), len(e.locs)-1)
+	if e.locs[p.Para].Hidden {
+		if i := e.shown(p.Para, 1); i >= 0 {
+			p = Pos{i, 0}
+		} else if i := e.shown(p.Para, -1); i >= 0 {
+			p = Pos{i, e.locs[i].P.Len()}
+		}
+	}
 	p.Off = min(max(p.Off, 0), e.locs[p.Para].P.Len())
 	return p
+}
+
+// shown returns the first paragraph from i in direction dir (±1) that
+// isn't hidden, or -1.
+func (e *Editor) shown(i, dir int) int {
+	for ; i >= 0 && i < len(e.locs); i += dir {
+		if !e.locs[i].Hidden {
+			return i
+		}
+	}
+	return -1
 }
 
 // edit runs f as one undoable step touching body blocks [from, to] (none
@@ -352,7 +385,7 @@ func (e *Editor) edit(kind string, from, to int, docLevel bool, f func()) {
 		e.finish(e.typed.start, e.typed.afterLen)
 		return
 	}
-	s := &step{kind: kind, start: from, before: CopyBlocks((*body)[from : to+1]), sel: sel}
+	s := &step{kind: kind, label: e.label, start: from, before: CopyBlocks((*body)[from : to+1]), sel: sel}
 	if docLevel {
 		st := CopyStyles(e.Doc.Styles)
 		s.styles, s.lists = &st, copyLists(e.Doc.Lists)
@@ -388,6 +421,79 @@ func (e *Editor) Undo() bool { return e.swap(&e.undo, &e.redo) }
 // Redo repeats the last undone step.
 func (e *Editor) Redo() bool { return e.swap(&e.redo, &e.undo) }
 
+// UndoN reverts the last n steps (fewer if there aren't as many), as
+// choosing an entry of Word's Undo list does; RedoN repeats n undone
+// steps. They report whether anything changed.
+func (e *Editor) UndoN(n int) bool { return e.swapN(&e.undo, &e.redo, n) }
+func (e *Editor) RedoN(n int) bool { return e.swapN(&e.redo, &e.undo, n) }
+
+func (e *Editor) swapN(from, to *[]*step, n int) bool {
+	did := false
+	for ; n > 0 && e.swap(from, to); n-- {
+		did = true
+	}
+	return did
+}
+
+// UndoLabels and RedoLabels name the steps Undo and Redo would revert or
+// repeat, the next one first, for the Undo and Redo lists.
+func (e *Editor) UndoLabels() []string { return stepLabels(e.undo) }
+func (e *Editor) RedoLabels() []string { return stepLabels(e.redo) }
+
+func stepLabels(steps []*step) []string {
+	out := make([]string, len(steps))
+	for i, s := range steps {
+		out[len(steps)-1-i] = s.Label()
+	}
+	return out
+}
+
+// Op names the steps made until the returned function runs, for the
+// Undo list ("Bold"): a caller that knows the command better than the
+// method it calls names it first, and the outermost name wins.
+//
+//	defer e.Op("Bold")()
+func (e *Editor) Op(label string) func() {
+	if e.label != "" {
+		return func() {}
+	}
+	e.label = label
+	return func() { e.label = "" }
+}
+
+// either is yes when c is set, else no.
+func either(c bool, yes, no string) string {
+	if c {
+		return yes
+	}
+	return no
+}
+
+// kindLabels name steps no command named, by kind.
+var kindLabels = map[string]string{
+	"typing": "Typing", "delete": "Delete", "enter": "Typing", "format": "Formatting", "insert": "Insert",
+	"link": "Hyperlink", "paste": "Paste", "replace": "Replace", "style": "Style",
+	"table": "Table", "move": "Move Text", "copy": "Copy Text",
+}
+
+// Label is the step's name in the Undo list: typed text shows as Word
+// shows it ("Typing 'hello'").
+func (s *step) Label() string {
+	switch {
+	case s.label != "":
+		return s.label
+	case s.typed != "":
+		t := strings.Join(strings.Fields(s.typed), " ")
+		if r := []rune(t); len(r) > 20 {
+			t = string(r[:20]) + "…"
+		}
+		return "Typing '" + t + "'"
+	case kindLabels[s.kind] != "":
+		return kindLabels[s.kind]
+	}
+	return "Edit"
+}
+
 func (e *Editor) swap(from, to *[]*step) bool {
 	if len(*from) == 0 {
 		return false
@@ -402,6 +508,16 @@ func (e *Editor) swap(from, to *[]*step) bool {
 		st, ls := e.Doc.Styles, e.Doc.Lists
 		e.Doc.Styles, e.Doc.Lists = *s.styles, s.lists
 		s.styles, s.lists = &st, ls
+		e.all = true
+	}
+	if s.hf != nil {
+		hf := e.Doc.HF
+		e.Doc.HF, *s.hf = *s.hf, hf
+		e.all = true
+	}
+	if s.sect != nil {
+		sect := e.Doc.Section
+		e.Doc.Section, *s.sect = *s.sect, sect
 		e.all = true
 	}
 	sel := e.Sel
@@ -457,8 +573,8 @@ func (e *Editor) Next(p Pos) Pos {
 		}
 		return Pos{p.Para, off}
 	}
-	if p.Para+1 < len(e.locs) {
-		return Pos{p.Para + 1, 0}
+	if i := e.shown(p.Para+1, 1); i >= 0 {
+		return Pos{i, 0}
 	}
 	return p
 }
@@ -473,8 +589,8 @@ func (e *Editor) Prev(p Pos) Pos {
 		}
 		return Pos{p.Para, off}
 	}
-	if p.Para > 0 {
-		return Pos{p.Para - 1, e.locs[p.Para-1].P.Len()}
+	if i := e.shown(p.Para-1, -1); i >= 0 {
+		return Pos{i, e.locs[i].P.Len()}
 	}
 	return p
 }
@@ -698,6 +814,9 @@ func (e *Editor) InsertText(s string) {
 		}
 		e.Sel = Selection{p, p}
 	})
+	if n := len(e.undo); n > 0 {
+		e.undo[n-1].typed += s // what the step's label shows
+	}
 	if kind == "typing" {
 		// Pending formatting now lives in the typed run.
 		e.Pending = nil
@@ -781,6 +900,7 @@ func (e *Editor) splitPara(p Pos) Pos {
 		}
 	}
 	q.Props.PageBreakBefore = Unset
+	q.Sect, para.Sect = para.Sect, nil // the section break is the mark, which q takes
 	i := splitRuns(para, p.Off)
 	q.Runs = slices.Clone(para.Runs[i:])
 	para.Runs = para.Runs[:i]
@@ -826,6 +946,10 @@ func (e *Editor) Backspace() {
 			q := Pos{p.Para, k}
 			e.Sel = Selection{q, q}
 		})
+		if s := e.typed; s != nil {
+			_, n := utf8.DecodeLastRuneInString(s.typed)
+			s.typed = s.typed[:len(s.typed)-n] // a typo taken back
+		}
 		return
 	}
 	if e.inList(loc.P) {
@@ -852,15 +976,19 @@ func (e *Editor) Delete() {
 		e.edit("delete", loc.Top, loc.Top, false, func() { deleteRunes(loc.P, k, k+1) })
 		return
 	}
-	if p.Para+1 < len(e.locs) {
+	// Only a following paragraph in the same container joins: at the end
+	// of a cell, or before or after a table, Delete does nothing.
+	if p.Para+1 < len(e.locs) && e.locs[p.Para+1].Blocks == loc.Blocks {
 		e.joinPrev(p.Para + 1)
 		e.Sel = Selection{p, p}
 	}
 }
 
 // joinPrev merges paragraph i into the one before it in the same
-// container. After a table an empty paragraph is removed instead; at the
-// start of a cell nothing happens.
+// container. After a table an empty paragraph is removed instead, unless
+// it is the last block of its container (a document or cell always ends
+// in a paragraph), when the caret just moves into the table; at the start
+// of a cell nothing happens.
 func (e *Editor) joinPrev(i int) {
 	if i <= 0 {
 		return
@@ -871,11 +999,15 @@ func (e *Editor) joinPrev(i int) {
 	}
 	prevLoc := e.locs[i-1]
 	if _, ok := (*loc.Blocks)[loc.Index-1].(*Paragraph); !ok {
-		if loc.P.Len() > 0 || len(*loc.Blocks) == 1 {
-			e.SetCaret(Pos{i - 1, prevLoc.P.Len()}, false)
+		if loc.P.Len() > 0 || loc.Index == len(*loc.Blocks)-1 {
+			e.SetCaret(e.Prev(Pos{Para: i}), false)
 			return
 		}
-		e.edit("delete", loc.Top-1, loc.Top, false, func() {
+		from := loc.Top - 1 // the table and the paragraph
+		if loc.Cell != nil {
+			from = loc.Top // the body table holding both
+		}
+		e.edit("delete", from, loc.Top, false, func() {
 			*loc.Blocks = slices.Delete(*loc.Blocks, loc.Index, loc.Index+1)
 			e.reindex()
 			q := Pos{i - 1, e.locs[i-1].P.Len()}
@@ -900,6 +1032,9 @@ func (e *Editor) join(a, b ParaLoc) {
 	}
 	a.P.Runs = append(a.P.Runs, b.P.Runs...)
 	a.P.Before = append(a.P.Before, b.P.Before...)
+	// b's mark survives: a section break at a's end goes (the sections
+	// merge, the following one's properties winning) and b's stays.
+	a.P.Sect = b.P.Sect
 	normalize(a.P)
 	*b.Blocks = slices.Delete(*b.Blocks, b.Index, b.Index+1)
 }
@@ -1007,6 +1142,7 @@ func (f *Fragment) Text() string {
 
 // Paste inserts a fragment at the selection, keeping its formatting.
 func (e *Editor) Paste(f *Fragment) {
+	defer e.Op("Paste")()
 	if f == nil || len(f.Paras) == 0 {
 		return
 	}
@@ -1042,6 +1178,7 @@ func (e *Editor) pasteAt(p Pos, f *Fragment) Pos {
 // PasteText inserts plain text with the caret's formatting; lines become
 // paragraphs.
 func (e *Editor) PasteText(s string) {
+	defer e.Op("Paste")()
 	s = strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n")
 	if s == "" {
 		return
@@ -1173,16 +1310,19 @@ func (e *Editor) FormatRuns(f func(r *Run)) {
 // ToggleBold, ToggleItalic, ToggleUnderline and ToggleStrike switch the
 // property off when the whole selection has it, otherwise on (Ctrl+B/I/U).
 func (e *Editor) ToggleBold() {
+	defer e.Op("Bold")()
 	on := !e.AllSelected(func(p RunProps) bool { return p.Bold.Bool(false) })
 	e.FormatRuns(func(r *Run) { r.Props.Bold = TriOf(on) })
 }
 
 func (e *Editor) ToggleItalic() {
+	defer e.Op("Italic")()
 	on := !e.AllSelected(func(p RunProps) bool { return p.Italic.Bool(false) })
 	e.FormatRuns(func(r *Run) { r.Props.Italic = TriOf(on) })
 }
 
 func (e *Editor) ToggleUnderline() {
+	defer e.Op("Underline")()
 	on := !e.AllSelected(func(p RunProps) bool { return hasUnderline(p.Underline) })
 	e.FormatRuns(func(r *Run) {
 		r.Props.Underline = UnderlineNone
@@ -1195,26 +1335,43 @@ func (e *Editor) ToggleUnderline() {
 func hasUnderline(u Underline) bool { return u != UnderlineUnset && u != UnderlineNone }
 
 func (e *Editor) ToggleStrike() {
+	defer e.Op("Strikethrough")()
 	on := !e.AllSelected(func(p RunProps) bool { return p.Strike.Bool(false) })
 	e.FormatRuns(func(r *Run) { r.Props.Strike = TriOf(on) })
 }
 
 // SetFont, SetSize and SetColor set character properties of the selection.
-func (e *Editor) SetFont(name string) { e.FormatRuns(func(r *Run) { r.Props.Font = name }) }
-func (e *Editor) SetSize(pt float64)  { e.FormatRuns(func(r *Run) { r.Props.Size = pt }) }
-func (e *Editor) SetColor(hex string) { e.FormatRuns(func(r *Run) { r.Props.Color = hex }) }
+func (e *Editor) SetFont(name string) {
+	defer e.Op("Font")()
+	e.FormatRuns(func(r *Run) { r.Props.Font = name })
+}
+
+func (e *Editor) SetSize(pt float64) {
+	defer e.Op("Font Size")()
+	e.FormatRuns(func(r *Run) { r.Props.Size = pt })
+}
+
+func (e *Editor) SetColor(hex string) {
+	defer e.Op("Font Color")()
+	e.FormatRuns(func(r *Run) { r.Props.Color = hex })
+}
 
 // SetCharStyle applies a character style ("" removes it).
-func (e *Editor) SetCharStyle(id string) { e.FormatRuns(func(r *Run) { r.Style = id }) }
+func (e *Editor) SetCharStyle(id string) {
+	defer e.Op("Style")()
+	e.FormatRuns(func(r *Run) { r.Style = id })
+}
 
 // ClearCharFormatting removes direct character formatting and character
 // styles (Ctrl+Space).
 func (e *Editor) ClearCharFormatting() {
+	defer e.Op("Clear Formatting")()
 	e.FormatRuns(func(r *Run) { r.Props, r.Style = RunProps{}, "" })
 }
 
 // FormatParas applies f to every selected paragraph.
 func (e *Editor) FormatParas(f func(p *Paragraph)) {
+	defer e.Op("Paragraph Formatting")()
 	e.formatParas(false, f)
 }
 
@@ -1230,6 +1387,7 @@ func (e *Editor) formatParas(docLevel bool, f func(p *Paragraph)) {
 // SetParaStyle applies a paragraph style to the selected paragraphs,
 // replacing their direct paragraph formatting (list membership stays).
 func (e *Editor) SetParaStyle(id string) {
+	defer e.Op("Style")()
 	if id == normalID(e.Doc) {
 		id = ""
 	}
@@ -1242,6 +1400,7 @@ func (e *Editor) SetParaStyle(id string) {
 
 // ApplyStyle applies a paragraph or character style by ID.
 func (e *Editor) ApplyStyle(id string) {
+	defer e.Op("Style")()
 	st := e.Doc.Styles.Find(id)
 	if st != nil && st.Type == CharacterStyle {
 		if st.Default {
@@ -1256,6 +1415,7 @@ func (e *Editor) ApplyStyle(id string) {
 // ClearAllFormatting resets the selection to Normal with no direct
 // formatting (Home > Clear All Formatting).
 func (e *Editor) ClearAllFormatting() {
+	defer e.Op("Clear Formatting")()
 	from, to := e.span()
 	e.edit("format", from, to, false, func() {
 		e.eachSelectedRun(func(_ *Paragraph, r *Run) { r.Props, r.Style = RunProps{}, "" })
@@ -1268,15 +1428,20 @@ func (e *Editor) ClearAllFormatting() {
 }
 
 // SetAlign aligns the selected paragraphs.
-func (e *Editor) SetAlign(a Align) { e.FormatParas(func(p *Paragraph) { p.Props.Align = a }) }
+func (e *Editor) SetAlign(a Align) {
+	defer e.Op("Paragraph Formatting")()
+	e.FormatParas(func(p *Paragraph) { p.Props.Align = a })
+}
 
 // SetLineSpacing sets "multiple" line spacing (1, 1.15, 1.5, 2...).
 func (e *Editor) SetLineSpacing(mult float64) {
+	defer e.Op("Line Spacing")()
 	e.FormatParas(func(p *Paragraph) { p.Props.Line, p.Props.LineRule = mult, LineAuto })
 }
 
 // SetSpacing sets space before and/or after (nil leaves it).
 func (e *Editor) SetSpacing(before, after *float64) {
+	defer e.Op("Paragraph Spacing")()
 	e.FormatParas(func(p *Paragraph) {
 		if before != nil {
 			p.Props.SpaceBefore = F(*before)
@@ -1290,6 +1455,7 @@ func (e *Editor) SetSpacing(before, after *float64) {
 // Indent moves the selected paragraphs one step right (dir 1) or left
 // (-1): list paragraphs change level, others move by half an inch.
 func (e *Editor) Indent(dir int) {
+	defer e.Op(either(dir > 0, "Increase Indent", "Decrease Indent"))()
 	e.FormatParas(func(p *Paragraph) {
 		if e.inList(p) {
 			l := *e.Doc.ResolvePara(p).List
@@ -1327,6 +1493,7 @@ func (e *Editor) ListKind(p *Paragraph) string {
 // list, or takes them out if they all are in one already. A list just
 // above the selection of the same kind is continued.
 func (e *Editor) ToggleList(bullet bool) {
+	defer e.Op(either(bullet, "Bullets", "Numbering"))()
 	isKind := func(p *Paragraph) bool {
 		k := e.ListKind(p)
 		return k != "" && (k == "bullet") == bullet
@@ -1387,6 +1554,7 @@ func (e *Editor) newList(bullet bool) int {
 
 // ModifyStyle changes a style's definition (undoable).
 func (e *Editor) ModifyStyle(id string, f func(st *Style)) {
+	defer e.Op("Modify Style")()
 	st := e.Doc.Styles.Find(id)
 	if st == nil {
 		return

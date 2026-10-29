@@ -12,13 +12,13 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
-	"path"
 	"strconv"
 	"strings"
 
 	"github.com/xuri/excelize/v2"
 
 	"officelite/common/colors"
+	"officelite/common/opc"
 	"officelite/excel/formula"
 	"officelite/excel/model"
 	"officelite/excel/numfmt"
@@ -37,6 +37,9 @@ type reader struct {
 	formats []cellFormat // indexed by cellXfs index
 	nf      *numfmt.Formatter
 	links   []xLink // <hyperlink> elements of the sheet being read
+	// numFmtCodes are the custom number formats by id.
+	numFmtCodes map[int]string
+	types       map[string]string // [Content_Types].xml: part or ".ext" -> type (chart.go)
 }
 
 // Read parses an .xlsx package.
@@ -51,7 +54,7 @@ func Read(data []byte) (*model.Workbook, error) {
 	}
 
 	wbPath := "xl/workbook.xml"
-	if rels, err := r.rels("_rels/.rels", ""); err == nil {
+	if rels, err := r.rels(""); err == nil {
 		for _, rel := range rels {
 			if strings.HasSuffix(rel.Type, "/officeDocument") {
 				wbPath = rel.Target
@@ -62,7 +65,7 @@ func Read(data []byte) (*model.Workbook, error) {
 	if err := r.unmarshal(wbPath, &book); err != nil {
 		return nil, fmt.Errorf("workbook: %w", err)
 	}
-	rels, err := r.rels(relsPath(wbPath), path.Dir(wbPath))
+	rels, err := r.rels(wbPath)
 	if err != nil {
 		return nil, fmt.Errorf("workbook relationships: %w", err)
 	}
@@ -72,6 +75,9 @@ func Read(data []byte) (*model.Workbook, error) {
 		byID[rel.ID] = rel
 		if strings.HasSuffix(rel.Type, "/styles") {
 			stylesPath = rel.Target
+		}
+		if strings.HasSuffix(rel.Type, "/theme") {
+			r.wb.Theme = r.readTheme(rel.Target)
 		}
 		if strings.HasSuffix(rel.Type, "/sharedStrings") {
 			if r.sst, err = r.readSST(rel.Target); err != nil {
@@ -86,22 +92,34 @@ func Read(data []byte) (*model.Workbook, error) {
 	r.loadNumFmts(stylesPath)
 	r.loadStyles(data)
 
-	// localSheetId in defined names counts all sheets, including chart
-	// sheets that are not loaded.
+	// localSheetId in defined names counts all sheets, including dialog
+	// and macro sheets that are not loaded.
 	sheetIndex := map[int]int{}
 	for i, s := range book.Sheets {
 		rel, ok := byID[s.rid()]
-		if !ok || !strings.HasSuffix(rel.Type, "/worksheet") {
-			continue // chart sheets, dialog sheets
+		if !ok {
+			continue
 		}
-		sheetIndex[i] = len(r.wb.Sheets)
 		sh := model.NewSheet(s.Name)
 		sh.Hidden = s.State == "hidden" || s.State == "veryHidden"
-		r.links = r.links[:0]
-		if err := r.readSheet(rel.Target, sh); err != nil {
-			return nil, fmt.Errorf("sheet %q: %w", s.Name, err)
+		switch {
+		case strings.HasSuffix(rel.Type, "/chartsheet"):
+			if !r.readChartSheet(rel.Target, sh) {
+				r.wb.Warnings = append(r.wb.Warnings, s.Name+": the chart sheet's chart couldn't be read")
+				continue
+			}
+		case strings.HasSuffix(rel.Type, "/worksheet"):
+			r.links = r.links[:0]
+			if err := r.readSheet(rel.Target, sh); err != nil {
+				return nil, fmt.Errorf("sheet %q: %w", s.Name, err)
+			}
+			r.readAnnotations(rel.Target, sh)
+			r.readPivots(rel.Target, sh)
+			r.readSheetCharts(rel.Target, sh)
+		default:
+			continue // dialog sheets, macro sheets
 		}
-		r.readAnnotations(rel.Target, sh)
+		sheetIndex[i] = len(r.wb.Sheets)
 		r.wb.Sheets = append(r.wb.Sheets, sh)
 	}
 	for _, dn := range book.Names {
@@ -125,10 +143,6 @@ func Read(data []byte) (*model.Workbook, error) {
 
 func normPath(p string) string {
 	return strings.ToLower(strings.TrimPrefix(strings.ReplaceAll(p, `\`, "/"), "/"))
-}
-
-func relsPath(p string) string {
-	return path.Join(path.Dir(p), "_rels", path.Base(p)+".rels")
 }
 
 func (r *reader) open(name string) (io.ReadCloser, error) {
@@ -155,22 +169,18 @@ type xRel struct {
 	Mode   string `xml:"TargetMode,attr"`
 }
 
-// rels reads a relationships part, resolving targets against baseDir.
-func (r *reader) rels(name, baseDir string) ([]xRel, error) {
+// rels reads the relationships of part ("" = the package), with internal
+// targets resolved to part names.
+func (r *reader) rels(part string) ([]xRel, error) {
 	var v struct {
 		Rels []xRel `xml:"Relationship"`
 	}
-	if err := r.unmarshal(name, &v); err != nil {
+	if err := r.unmarshal(opc.RelsPath(part), &v); err != nil {
 		return nil, err
 	}
 	for i, rel := range v.Rels {
-		if rel.Mode == "External" {
-			continue
-		}
-		if strings.HasPrefix(rel.Target, "/") {
-			v.Rels[i].Target = rel.Target[1:]
-		} else {
-			v.Rels[i].Target = path.Join(baseDir, rel.Target)
+		if rel.Mode != "External" {
+			v.Rels[i].Target = opc.Resolve(part, rel.Target)
 		}
 	}
 	return v.Rels, nil
@@ -347,6 +357,7 @@ func (r *reader) loadNumFmts(path string) {
 	for _, nf := range ss.NumFmts {
 		codes[nf.ID] = nf.Code
 	}
+	r.numFmtCodes = codes
 	for i, xf := range ss.Xfs {
 		if i >= len(r.formats) {
 			r.formats = append(r.formats, cellFormat{})
@@ -430,6 +441,9 @@ func (r *reader) readSheet(name string, sh *model.Sheet) error {
 		fArray     string // ref of an array / dynamic-array formula
 		shared     = map[string]sharedFormula{}
 		dropped    int
+		hiddenHt   = map[int]float32{} // stored heights of hidden rows
+		af         autoFilterReader
+		dv         validationReader
 	)
 	for {
 		tok, err := dec.RawToken()
@@ -441,9 +455,15 @@ func (r *reader) readSheet(name string, sh *model.Sheet) error {
 		}
 		switch t := tok.(type) {
 		case xml.StartElement:
+			if dv.start(t) {
+				continue // data validation (validation.go)
+			}
 			switch t.Name.Local {
 			case "sheetFormatPr":
 				r.sheetFormat(t, sh)
+			case "outlinePr":
+				sh.Outline.SummaryAbove = attr(t, "summaryBelow") == "0" || attr(t, "summaryBelow") == "false"
+				sh.Outline.SummaryLeft = attr(t, "summaryRight") == "0" || attr(t, "summaryRight") == "false"
 			case "col":
 				r.colInfo(t, sh)
 			case "sheetView":
@@ -472,11 +492,16 @@ func (r *reader) readSheet(name string, sh *model.Sheet) error {
 				}
 				col = -1
 				if row < model.MaxRows {
+					ht := attr(t, "ht")
 					if xmlBool(attr(t, "hidden")) {
 						sh.RowHeight[row] = 0
-					} else if ht := attr(t, "ht"); ht != "" {
+						if ht != "" {
+							hiddenHt[row] = model.PointsToPx(parseFloat(ht))
+						}
+					} else if ht != "" {
 						sh.RowHeight[row] = model.PointsToPx(parseFloat(ht))
 					}
+					outlineAttrs(t, sh, true, row, row)
 				}
 			case "c":
 				if rr, cc, ok := parseCellRef(attr(t, "r")); ok {
@@ -512,8 +537,14 @@ func (r *reader) readSheet(name string, sh *model.Sheet) error {
 				if m, ok := parseRange(attr(t, "ref")); ok {
 					sh.Merges = append(sh.Merges, m)
 				}
+			case "autoFilter", "filterColumn", "filters", "filter", "dateGroupItem", "customFilters",
+				"customFilter", "top10", "dynamicFilter", "colorFilter", "iconFilter":
+				af.start(t, sh)
 			}
 		case xml.CharData:
+			if dv.chars(t) {
+				continue
+			}
 			switch {
 			case inV:
 				val.Write(t)
@@ -523,6 +554,9 @@ func (r *reader) readSheet(name string, sh *model.Sheet) error {
 				val.Write(t)
 			}
 		case xml.EndElement:
+			if dv.end(t, sh) {
+				continue
+			}
 			switch t.Name.Local {
 			case "v":
 				inV = false
@@ -532,6 +566,8 @@ func (r *reader) readSheet(name string, sh *model.Sheet) error {
 				inIsT = false
 			case "rPh":
 				inRPh--
+			case "filterColumn":
+				af.endColumn()
 			case "c":
 				f := form.String()
 				if hasFormula && fShared != "" {
@@ -542,7 +578,7 @@ func (r *reader) readSheet(name string, sh *model.Sheet) error {
 					}
 				}
 				c := r.makeCell(cellT, cellS, val.String(), f)
-				if c.Kind == model.KindEmpty && c.Style == 0 && c.Formula == "" {
+				if c.IsBlank() && c.Style == 0 {
 					continue
 				}
 				if fArray != "" && f != "" {
@@ -561,7 +597,41 @@ func (r *reader) readSheet(name string, sh *model.Sheet) error {
 		}
 	}
 	r.wb.WarnDropped(sh.Name, dropped)
+	if af.dropped {
+		r.wb.Warnings = append(r.wb.Warnings, sh.Name+": filters by color or icon are not supported; the rows they hide stay hidden")
+	}
+	if sh.AutoFilter.Active() {
+		sh.AdoptFilteredRows(hiddenHt)
+	}
+	// Hidden rows of the outline get their stored height back when shown.
+	for row, h := range hiddenHt {
+		if sh.Level(true, row) > 0 && sh.RowHeight[row] == 0 && h > 0 {
+			if sh.Outline.RowShowSize == nil {
+				sh.Outline.RowShowSize = map[int]float32{}
+			}
+			sh.Outline.RowShowSize[row] = h
+		}
+	}
+	sh.ClampView()
 	return nil
+}
+
+// outlineAttrs reads the outline level and collapsed flag of a <row> or
+// <col> element covering rows (columns) lo..hi.
+func outlineAttrs(t xml.StartElement, sh *model.Sheet, rows bool, lo, hi int) {
+	lvl, _ := strconv.Atoi(attr(t, "outlineLevel"))
+	coll := xmlBool(attr(t, "collapsed"))
+	if lvl <= 0 && !coll {
+		return
+	}
+	for i := lo; i <= hi; i++ {
+		if lvl > 0 {
+			sh.SetLevel(rows, i, lvl)
+		}
+		if coll {
+			sh.SetCollapsedFlag(rows, i, true)
+		}
+	}
 }
 
 func (r *reader) makeCell(t string, s int, v, f string) model.Cell {
@@ -622,9 +692,19 @@ func (r *reader) colInfo(t xml.StartElement, sh *model.Sheet) {
 		return
 	}
 	hi = min(hi, model.MaxCols)
+	outlineAttrs(t, sh, false, lo-1, hi-1)
 	var w float32 = -1
 	if xmlBool(attr(t, "hidden")) {
 		w = 0
+		// A column the outline hid keeps its width for when it's shown.
+		if v := parseFloat(attr(t, "width")); v > 0 && sh.Level(false, lo-1) > 0 && xmlBool(attr(t, "customWidth")) {
+			if sh.Outline.ColShowSize == nil {
+				sh.Outline.ColShowSize = map[int]float32{}
+			}
+			for c := lo - 1; c < hi; c++ {
+				sh.Outline.ColShowSize[c] = float32(v)
+			}
+		}
 	} else if v := attr(t, "width"); v != "" {
 		w = float32(parseFloat(v))
 	}
@@ -651,11 +731,18 @@ func parseCellRef(s string) (row, col int, ok bool) {
 		return 0, 0, false
 	}
 	n, err := strconv.Atoi(s[i:])
-	if err != nil || n < 1 {
+	if err != nil || n < 1 || n > excelRows {
 		return 0, 0, false
 	}
-	return n - 1, model.ParseColName(s[:i]), true
+	col = model.ParseColName(s[:i])
+	if col < 0 || col >= excelCols {
+		return 0, 0, false // past XFD1048576
+	}
+	return n - 1, col, true
 }
+
+// Excel's sheet size: references beyond it are malformed.
+const excelRows, excelCols = 1048576, 16384
 
 func parseRange(s string) (model.Range, bool) {
 	a, b, _ := strings.Cut(s, ":")
@@ -664,5 +751,6 @@ func parseRange(s string) (model.Range, bool) {
 	if !ok1 || !ok2 {
 		return model.Range{}, false
 	}
-	return model.Range{R1: r1, C1: c1, R2: r2, C2: c2}, true
+	// A range may be written corner to corner either way round.
+	return model.Range{R1: min(r1, r2), C1: min(c1, c2), R2: max(r1, r2), C2: max(c1, c2)}, true
 }

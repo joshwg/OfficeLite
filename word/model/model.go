@@ -167,10 +167,17 @@ type ParaProps struct {
 	KeepLines       Tri
 	PageBreakBefore Tri
 	WidowControl    Tri
-	Shading         string // RRGGBB background
-	Tabs            []TabStop
-	List            *ListRef
-	OutlineLevel    int // 0 = body text, 1..9 = heading levels (from styles)
+	// ContextualSpacing drops the space before and after between
+	// paragraphs of the same style (Word's "Don't add space between
+	// paragraphs of the same style").
+	ContextualSpacing Tri
+	// Borders are the paragraph's borders (top, left, bottom, right; see
+	// TableCell.Borders); nil leaves an edge to the style.
+	Borders      [4]*Border
+	Shading      string // RRGGBB background
+	Tabs         []TabStop
+	List         *ListRef
+	OutlineLevel int // 0 = body text, 1..9 = heading levels (from styles)
 	// DocxXML is the original <w:pPr> content (as RunProps.DocxXML).
 	DocxXML string
 }
@@ -197,6 +204,12 @@ func (p ParaProps) Merge(over ParaProps) ParaProps {
 	mergeTri(&p.KeepLines, over.KeepLines)
 	mergeTri(&p.PageBreakBefore, over.PageBreakBefore)
 	mergeTri(&p.WidowControl, over.WidowControl)
+	mergeTri(&p.ContextualSpacing, over.ContextualSpacing)
+	for i, b := range over.Borders {
+		if b != nil {
+			p.Borders[i] = b
+		}
+	}
 	if over.Shading != "" {
 		p.Shading = over.Shading
 	}
@@ -350,7 +363,31 @@ type Opaque struct {
 	// Picture is the image the content shows (an inline picture), drawn
 	// at Width × Height; nil for other content.
 	Picture *Picture
+	// Note is the footnote or endnote this run references (Text is its
+	// mark); NoteMark is set on the mark that starts a note's own text.
+	Note     *Note
+	NoteMark bool
+	// Float is the floating object (text box, shape, picture) anchored at
+	// this run; the run itself takes no room in the line (see float.go).
+	Float *Floating
+	// FieldChar marks the parts of a field whose result spans paragraphs
+	// (a table of contents): the result is ordinary runs between a
+	// FieldBegin (or FieldStart) run and a FieldEnd run. Field is set on
+	// FieldInstr and FieldStart runs.
+	FieldChar FieldChar
 }
+
+// FieldChar is a part of a field kept around a result in ordinary runs.
+type FieldChar int8
+
+const (
+	FieldNone  FieldChar = iota
+	FieldBegin           // the begin character
+	FieldInstr           // the instruction
+	FieldSep             // the separator between the instruction and the result
+	FieldEnd             // the end character
+	FieldStart           // begin, instruction and separator in one run
+)
 
 // Paragraph is a block of runs ending in a paragraph mark.
 type Paragraph struct {
@@ -364,6 +401,10 @@ type Paragraph struct {
 	// Before holds block-level content the model doesn't cover that comes
 	// just before this paragraph, kept for saving in the same format.
 	Before []*Opaque
+	// Sect is set on a body paragraph whose mark is a section break: it
+	// holds the properties of the section the paragraph ends (see
+	// section.go).
+	Sect *Section
 }
 
 func (*Paragraph) isBlock() {}
@@ -408,6 +449,9 @@ type TableRow struct {
 	Cells  []*TableCell
 	Height float64 // points; 0 = auto
 	Header bool    // repeats at the top of each page
+	// CantSplit keeps the row on one page (Word's "Allow row to break
+	// across pages" turned off).
+	CantSplit bool
 	// DocxXML is the original <w:trPr> content (and <w:tblPrEx>), for .docx.
 	DocxXML string
 }
@@ -420,25 +464,51 @@ type TableCell struct {
 	Shading string
 	VAlign  int8 // 0 top, 1 center, 2 bottom
 	Width   float64
+	// Borders are the cell's own borders (top, left, bottom, right), which
+	// replace the table's on those edges; nil keeps the table's.
+	Borders [4]*Border
 	DocxXML string // original <w:tcPr> content, for .docx
 }
+
+// Border is a table cell or paragraph border.
+type Border struct {
+	Width float64 // points; 0 = no border
+	Color string  // RRGGBB; "" = automatic (black)
+	Space float64 // paragraph borders: distance from the text, points
+}
+
+// Cell border edges, indexes into TableCell.Borders.
+const (
+	EdgeTop = iota
+	EdgeLeft
+	EdgeBottom
+	EdgeRight
+)
 
 // ListLevel describes one level of a list definition.
 type ListLevel struct {
 	Format string // "bullet", "decimal", "lowerLetter", "upperLetter", "lowerRoman", "upperRoman", "none"
 	Text   string // level text with %1..%9 placeholders, or the bullet character
-	Start  int
-	Indent float64 // left indent, points
-	Hang   float64 // hanging indent, points
-	Font   string  // bullet font (e.g. "Symbol")
+	Start  int    // the first number (0 is a valid start)
+	// Restart is set when this list overrides the start (w:startOverride):
+	// its first paragraph at this level restarts the count at Start
+	// instead of continuing the other lists of its Abstract.
+	Restart bool
+	Indent  float64 // left indent, points
+	Hang    float64 // hanging indent, points
+	Font    string  // bullet font (e.g. "Symbol")
 }
 
 // List is a numbering definition referenced by ListRef.NumID.
 type List struct {
 	Levels []ListLevel
+	// Abstract names the definition the list instantiates (the .docx
+	// w:abstractNum, the .doc list id); lists sharing one count together,
+	// as in Word. "" means the list counts on its own.
+	Abstract string
 }
 
-// PageSetup is the page size and margins (single section).
+// PageSetup is a section's page size and margins.
 type PageSetup struct {
 	Width, Height                                    float64
 	MarginTop, MarginBottom, MarginLeft, MarginRight float64
@@ -453,11 +523,14 @@ func LetterPage() PageSetup {
 
 // Document is a Word document.
 type Document struct {
-	Name     string
-	Styles   StyleSheet
-	Body     []Block
-	Lists    map[int]*List
-	Page     PageSetup
+	Name   string
+	Styles StyleSheet
+	Body   []Block
+	Lists  map[int]*List
+	// Section holds the last section's properties: its page setup (Page)
+	// and headers and footers (HF); earlier sections are kept on the
+	// paragraphs that end them (see section.go).
+	Section
 	Warnings []string // things not shown or not kept
 	// Source holds the original file's bytes and format so a writer for the
 	// same format can carry over parts WordLite doesn't model (headers,
@@ -467,13 +540,13 @@ type Document struct {
 	// DefaultTabStop is the interval of the default tab stops, points
 	// (0 = 36, half an inch).
 	DefaultTabStop float64
-	// HF holds the headers and footers (see hdrftr.go).
-	HF HeadersFooters
+	// Notes holds the footnote and endnote settings (see notes.go).
+	Notes NoteSettings
 }
 
 // New returns an empty document with Word's default styles.
 func New(name string) *Document {
-	d := &Document{Name: name, Page: LetterPage(), Lists: map[int]*List{}}
+	d := &Document{Name: name, Section: Section{Page: LetterPage()}, Lists: map[int]*List{}}
 	d.Styles = DefaultStyles()
 	d.Body = []Block{&Paragraph{}}
 	return d

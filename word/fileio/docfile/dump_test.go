@@ -72,7 +72,7 @@ func paraStr(p model.ParaProps) string {
 		}
 		return fmt.Sprint(*v)
 	}
-	s := fmt.Sprintf("{al=%d sb=%s sa=%s line=%v/%d ind=%s/%s/%s keep=%d/%d pbb=%d wid=%d shd=%q out=%d", p.Align, f(p.SpaceBefore), f(p.SpaceAfter), p.Line, p.LineRule, f(p.IndentLeft), f(p.IndentRight), f(p.IndentFirst), p.KeepNext, p.KeepLines, p.PageBreakBefore, p.WidowControl, p.Shading, p.OutlineLevel)
+	s := fmt.Sprintf("{al=%d sb=%s sa=%s line=%v/%d ind=%s/%s/%s keep=%d/%d pbb=%d wid=%d ctx=%d shd=%q out=%d", p.Align, f(p.SpaceBefore), f(p.SpaceAfter), p.Line, p.LineRule, f(p.IndentLeft), f(p.IndentRight), f(p.IndentFirst), p.KeepNext, p.KeepLines, p.PageBreakBefore, p.WidowControl, p.ContextualSpacing, p.Shading, p.OutlineLevel)
 	if len(p.Tabs) > 0 {
 		s += fmt.Sprintf(" tabs=%+v", p.Tabs)
 	}

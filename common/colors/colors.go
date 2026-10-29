@@ -19,9 +19,9 @@ var (
 func RGBA(r, g, b, a uint8) color.NRGBA { return color.NRGBA{R: r, G: g, B: b, A: a} }
 
 // ParseHex parses "RRGGBB", "#RRGGBB" or "AARRGGBB" (alpha ignored, as
-// Office does for cell and text colors).
+// Office does for cell and text colors), around any spaces.
 func ParseHex(s string) (color.NRGBA, bool) {
-	s = strings.TrimPrefix(s, "#")
+	s = strings.TrimPrefix(strings.TrimSpace(s), "#")
 	if len(s) == 8 {
 		s = s[2:]
 	}
@@ -33,6 +33,18 @@ func ParseHex(s string) (color.NRGBA, bool) {
 		return color.NRGBA{}, false
 	}
 	return RGB(uint32(v)), true
+}
+
+// Hex is c as "RRGGBB" (upper case, alpha dropped), as Office writes
+// colors.
+func Hex(c color.NRGBA) string {
+	const digits = "0123456789ABCDEF"
+	b := [6]byte{
+		digits[c.R>>4], digits[c.R&15],
+		digits[c.G>>4], digits[c.G&15],
+		digits[c.B>>4], digits[c.B&15],
+	}
+	return string(b[:])
 }
 
 // HexOr is ParseHex with a fallback for unparseable input.

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"unicode/utf16"
 
+	"officelite/common/textenc"
 	"officelite/excel/formula"
 	"officelite/excel/model"
 )
@@ -456,6 +457,16 @@ type encoder struct {
 // its trailing data. root is the class of the result: 'V' for cells, 'R'
 // for defined names.
 func compileFormula(ctx fmlaContext, src string, sheet int, name bool) (rgce, extra []byte, err error) {
+	root := byte('V')
+	if name {
+		root = 'R'
+	}
+	return compileFormulaRoot(ctx, src, sheet, name, root)
+}
+
+// compileFormulaRoot is compileFormula with the result's class given:
+// data validation lists are references ('R') without being names.
+func compileFormulaRoot(ctx fmlaContext, src string, sheet int, name bool, root byte) (rgce, extra []byte, err error) {
 	n, err := parseXFormula(src, name)
 	if err != nil {
 		return nil, nil, err
@@ -467,10 +478,6 @@ func compileFormula(ctx fmlaContext, src string, sheet int, name bool) (rgce, ex
 	}
 	if usesEta(src) {
 		return nil, nil, errors.New("functions used as values (GROUPBY(...,SUM)) cannot be saved in .xls")
-	}
-	root := byte('V')
-	if name {
-		root = 'R'
 	}
 	if err := e.emit(n, root); err != nil {
 		return nil, nil, err
@@ -808,11 +815,7 @@ func appendChars(b []byte, s string) []byte {
 		}
 		return b
 	}
-	b = append(b, 1)
-	for _, u := range utf16.Encode([]rune(s)) {
-		b = binary.LittleEndian.AppendUint16(b, u)
-	}
-	return b
+	return textenc.AppendUTF16LE(append(b, 1), s)
 }
 
 func strLen(s string) int { return len(utf16.Encode([]rune(s))) }

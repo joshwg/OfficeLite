@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image/color"
 	"math"
+	"strconv"
 	"strings"
 )
 
@@ -80,6 +81,10 @@ type Cell struct {
 	// the neighbouring cells instead of being reduced to one value.
 	Dynamic bool
 }
+
+// IsBlank reports whether the cell holds neither a value nor a formula
+// (it may still have a style).
+func (c *Cell) IsBlank() bool { return c.Kind == KindEmpty && c.Formula == "" }
 
 // HAlign is horizontal alignment. HAlignGeneral means "by value type".
 type HAlign uint8
@@ -207,6 +212,25 @@ type Sheet struct {
 	// Notes (Excel's comments) and hyperlinks by cell; see annot.go.
 	Notes map[[2]int]Note
 	Links map[[2]int]Hyperlink
+
+	// AutoFilter is the sheet's AutoFilter, if any, and Filtered the rows
+	// it hides (apart from rows hidden by their height); see filter.go.
+	AutoFilter *AutoFilter
+	Filtered   map[int]bool
+
+	// Validations are the data validation rules; see validation.go.
+	Validations []Validation
+
+	// Outline is the grouped rows and columns; see outline.go.
+	Outline Outline
+
+	// Pivots are the sheet's PivotTable reports; see pivot.go.
+	Pivots []*PivotTable
+
+	// Charts are the charts on the sheet's drawing; ChartSheet is the
+	// chart of a chart sheet, which has no cells. See chart.go.
+	Charts     []*Chart
+	ChartSheet *Chart
 }
 
 func NewSheet(name string) *Sheet {
@@ -219,6 +243,18 @@ func NewSheet(name string) *Sheet {
 		ShowGridLines:    true,
 		Spills:           map[[2]int]Range{},
 	}
+}
+
+// ClampView brings a file's saved view (active cell, top-left cell, frozen
+// panes) within the sheet's limits; a damaged file can hold any value.
+func (s *Sheet) ClampView() {
+	clamp := func(v *int, n int) { *v = max(0, min(*v, n-1)) }
+	clamp(&s.ActiveRow, MaxRows)
+	clamp(&s.ActiveCol, MaxCols)
+	clamp(&s.TopRow, MaxRows)
+	clamp(&s.LeftCol, MaxCols)
+	clamp(&s.FreezeRows, MaxRows)
+	clamp(&s.FreezeCols, MaxCols)
 }
 
 // Set stores a cell. Out-of-limit coordinates are ignored and reported false.
@@ -286,7 +322,12 @@ func (s *Sheet) ColWidthPx(col int, mdw float64) float32 {
 	return s.DefaultColWidthPx(mdw)
 }
 
+// RowHeightPx is the height of row in pixels: 0 when it is hidden, by
+// its height or by the AutoFilter.
 func (s *Sheet) RowHeightPx(row int) float32 {
+	if s.Filtered[row] {
+		return 0
+	}
 	if h, ok := s.RowHeight[row]; ok {
 		return h
 	}
@@ -310,6 +351,9 @@ type Workbook struct {
 	Warnings []string
 	Date1904 bool // dates count from 1904-01-01 (old Mac workbooks)
 	Names    []DefinedName
+	// Theme is the workbook's theme (charts use its colours and fonts);
+	// nil for Office's default.
+	Theme *Theme
 }
 
 // DefinedName is a workbook or sheet-level name such as TaxRate =
@@ -349,7 +393,10 @@ func DefaultStyle() Style {
 
 // ColName converts a zero-based column index to letters: 0 -> A, 27 -> AB.
 func ColName(col int) string {
-	var b [4]byte
+	if col < 0 {
+		return ""
+	}
+	var b [14]byte // enough for any int: a damaged file's column must not panic
 	i := len(b)
 	for col++; col > 0; col = (col - 1) / 26 {
 		i--
@@ -360,7 +407,7 @@ func ColName(col int) string {
 
 // CellName returns the A1-style reference for zero-based row, col.
 func CellName(row, col int) string {
-	return ColName(col) + itoa(row+1)
+	return ColName(col) + strconv.Itoa(row+1)
 }
 
 // ParseColName is the inverse of ColName; it returns -1 for invalid input.
@@ -372,20 +419,10 @@ func ParseColName(s string) int {
 		if c < 'A' || c > 'Z' {
 			return -1
 		}
+		if n > MaxCols*26*26 {
+			return -1 // far past any column (and safe from overflow)
+		}
 		n = n*26 + int(c-'A'+1)
 	}
 	return n - 1
-}
-
-func itoa(n int) string {
-	var b [12]byte
-	i := len(b)
-	for {
-		i--
-		b[i] = byte('0' + n%10)
-		n /= 10
-		if n == 0 {
-			return string(b[i:])
-		}
-	}
 }

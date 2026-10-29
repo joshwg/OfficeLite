@@ -21,6 +21,7 @@ var (
 	placeholderLine = colors.RGB(0xBFBFBF)
 	placeholderText = colors.RGB(0x7F7F7F)
 	ruleColor       = colors.RGB(0x000000)
+	fieldShade      = colors.RGB(0xD9D9D9)
 )
 
 // DrawOptions control DrawPage.
@@ -33,6 +34,8 @@ type DrawOptions struct {
 	// HFDim dims the headers and footers (the page view while the body is
 	// edited); BodyDim dims the body instead (while they are edited).
 	HFDim, BodyDim bool
+	// ShowMarks draws formatting marks (Show/Hide ¶; see marks.go).
+	ShowMarks bool
 }
 
 // DrawPage draws a page with its top-left corner at the current origin.
@@ -50,6 +53,7 @@ func (e *Engine) DrawPage(ops *op.Ops, pg *Page, o DrawOptions) {
 		y1 = pg.Height
 	}
 	visible := func(pl *Placed) bool { return pl.Y+pl.Line.Height >= y0 && pl.Y <= y1 }
+	e.drawFloats(ops, pg, true, s, o.ShowMarks)
 	for _, f := range pg.Fills {
 		gui.FillRect(ops, rect(f.R), f.C)
 	}
@@ -71,6 +75,14 @@ func (e *Engine) DrawPage(ops *op.Ops, pg *Page, o DrawOptions) {
 			}
 		}
 	}
+	// Word shades a field's result while the caret is in it.
+	for _, f := range e.fields {
+		if c := o.Sel.Caret; !c.Less(f.From) && c.Less(f.To) {
+			for _, r := range e.SelectionRects(pg, f.From, f.To) {
+				gui.FillRect(ops, rect(r), fieldShade)
+			}
+		}
+	}
 	if !o.Sel.Empty() {
 		a, b := o.Sel.Ordered()
 		for _, r := range e.SelectionRects(pg, a, b) {
@@ -82,6 +94,9 @@ func (e *Engine) DrawPage(ops *op.Ops, pg *Page, o DrawOptions) {
 			e.drawLine(ops, pl, s)
 		}
 	}
+	if o.ShowMarks {
+		e.drawMarks(ops, e.Marks(pg.Lines, pg.TableRows), y0, y1, s)
+	}
 	for _, r := range pg.Rules {
 		rr := rect(r)
 		if rr.Dx() < rr.Dy() {
@@ -91,6 +106,13 @@ func (e *Engine) DrawPage(ops *op.Ops, pg *Page, o DrawOptions) {
 		}
 		gui.FillRect(ops, rr, ruleColor)
 	}
+	for _, b := range pg.Notes {
+		e.DrawBand(ops, b, s)
+		if o.ShowMarks {
+			e.drawMarks(ops, e.Marks(b.Lines, nil), 0, 0, s)
+		}
+	}
+	e.drawFloats(ops, pg, false, s, o.ShowMarks)
 	e.drawPictureFrame(ops, pg, o.Sel, s)
 	e.drawBands(ops, pg, o)
 }
@@ -212,12 +234,12 @@ func (e *Engine) drawObject(ops *op.Ops, it *Item, x, base, s float64) {
 		return
 	}
 	st := *it.St
-	if it.Obj != nil && it.Obj.Field == "" {
+	if it.Obj != nil && it.Obj.Field == "" && it.Obj.Note == nil && !it.Obj.NoteMark {
 		st.Color = placeholderText
 		r := image.Rect(px(x), px(base-it.Asc), px(x+it.W), px(base+it.Desc))
 		gui.FillRect(ops, r, placeholderBG)
 	}
-	e.drawText(ops, &st, it.Text, x*s, base*s, s, nil)
+	e.drawText(ops, &st, it.Text, x*s, (base-st.Shift)*s, s, nil)
 }
 
 // drawText shapes and paints s with its left end at x and baseline at y

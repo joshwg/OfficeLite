@@ -2,24 +2,23 @@ package docxfile
 
 import (
 	"fmt"
+	"math"
 	"path"
 	"regexp"
 	"strconv"
 	"strings"
 
+	"officelite/common/opc"
 	"officelite/word/model"
 )
 
 // Warnings shown to the user for content WordLite reads but doesn't show.
 const (
-	warnNotes     = "Footnotes and endnotes aren't shown; only their reference marks are (they are kept when saving as .docx)."
-	warnComments  = "Comments aren't shown (they are kept when saving as .docx)."
-	warnTracked   = "Tracked changes aren't shown: insertions appear as normal text and deletions are hidden."
-	warnColumns   = "Text columns aren't shown; the text is laid out in one column."
-	warnPictures  = "Shapes, charts, equations and pictures in formats WordLite can't draw (such as EMF) are shown as placeholders."
-	warnFields    = "Fields (page numbers, tables of contents...) show their last result and aren't updated."
-	warnMacros    = "This document contains macros. WordLite never runs them, and they are removed when the document is saved."
-	warnTextBoxes = "Text boxes are shown as placeholders."
+	warnComments = "Comments aren't shown (they are kept when saving as .docx)."
+	warnTracked  = "Tracked changes aren't shown: insertions appear as normal text and deletions are hidden."
+	warnPictures = "Charts, SmartArt, equations and pictures in formats WordLite can't draw (such as EMF) are shown as placeholders."
+	warnFields   = "Fields (page numbers, tables of contents...) show their last result and aren't updated."
+	warnMacros   = "This document contains macros. WordLite never runs them, and they are removed when the document is saved."
 )
 
 // Read decodes a .docx (or .docm/.dotx) document.
@@ -37,12 +36,12 @@ func Read(data []byte) (*model.Document, error) {
 	if err != nil {
 		return nil, fmt.Errorf("document.xml: %w", err)
 	}
-	r := &reader{doc: &model.Document{Page: model.LetterPage(), Lists: map[int]*model.List{}}, warned: map[string]bool{}}
+	r := &reader{doc: &model.Document{Section: model.Section{Page: model.LetterPage()}, Lists: map[int]*model.List{}}, warned: map[string]bool{}}
 	r.pkg, r.main = p, main
 	r.rels = map[string]rel{}
 	for _, rl := range p.rels(main) {
 		r.rels[rl.ID] = rl
-		part := resolve(main, rl.Target)
+		part := opc.Resolve(main, rl.Target)
 		switch {
 		case rl.is(relTheme):
 			if b, err := p.read(part); err == nil {
@@ -53,7 +52,7 @@ func Read(data []byte) (*model.Document, error) {
 		}
 	}
 	for _, rl := range r.rels {
-		part := resolve(main, rl.Target)
+		part := opc.Resolve(main, rl.Target)
 		switch {
 		case rl.is(relStyles):
 			if b, err := p.read(part); err == nil {
@@ -73,7 +72,7 @@ func Read(data []byte) (*model.Document, error) {
 	}
 	for _, rl := range r.rels {
 		if rl.is(relNumbering) {
-			if b, err := p.read(resolve(main, rl.Target)); err == nil {
+			if b, err := p.read(opc.Resolve(main, rl.Target)); err == nil {
 				if nr, err := parseXML(b); err == nil {
 					r.doc.Lists = parseNumbering(nr, &r.doc.Styles)
 				}
@@ -84,6 +83,7 @@ func Read(data []byte) (*model.Document, error) {
 	if body == nil {
 		return nil, fmt.Errorf("document.xml has no body")
 	}
+	r.loadNotes()
 	r.doc.Body = r.blocks(body, nil, true)
 	if len(r.doc.Body) == 0 {
 		p := &model.Paragraph{}
@@ -91,10 +91,14 @@ func Read(data []byte) (*model.Document, error) {
 		r.doc.Body = []model.Block{p}
 	}
 	r.flushTrailing(r.doc.Body)
-	r.readHeaders(r.sects)
-	if r.sections > 1 {
-		r.warn(fmt.Sprintf("This document has %d sections; WordLite uses the last section's page size and margins for all of them.", r.sections))
+	if len(r.sects) == 0 || r.sections[len(r.sections)-1] != &r.doc.Section {
+		// No body-level w:sectPr: the last section has Word's defaults.
+		r.doc.Section = model.Section{Page: model.LetterPage()}
+		r.sects = append(r.sects, &node{})
+		r.sections = append(r.sections, &r.doc.Section)
 	}
+	r.readHeaders(r.sects)
+	r.doc.NumberNotes()
 	r.doc.Source = data
 	r.doc.SourceFormat = "docx"
 	return r.doc, nil
@@ -108,14 +112,13 @@ type reader struct {
 	main   string // main part name
 	warned map[string]bool
 
-	fields    []fieldState // open complex fields that span paragraphs
-	markers   []model.Run  // range markers waiting for the next paragraph
-	before    []*model.Opaque
-	lastPara  *model.Paragraph
-	footnotes int
-	endnotes  int
-	sections  int
-	sects     []*node // every w:sectPr, in order (for headers and footers)
+	fields   []fieldState // open complex fields that span paragraphs
+	markers  []model.Run  // range markers waiting for the next paragraph
+	before   []*model.Opaque
+	lastPara *model.Paragraph
+	sects    []*node          // every w:sectPr, in order (for headers and footers)
+	sections []*model.Section // their sections
+	np       noteParts        // footnotes and endnotes (sections.go)
 }
 
 type fieldState struct{ result bool }
@@ -260,8 +263,8 @@ func (r *reader) blocks(container *node, wrap *model.Span, isBody bool) []model.
 			out = append(out, inner...)
 		case "w:sectPr":
 			if isBody {
-				r.section(k)
-				r.doc.Page = parsePage(k.kids)
+				r.doc.Section = *r.section(k)
+				r.sections[len(r.sections)-1] = &r.doc.Section
 			} else {
 				r.before = append(r.before, opaque(k.raw()))
 			}
@@ -279,17 +282,12 @@ func (r *reader) blocks(container *node, wrap *model.Span, isBody bool) []model.
 	return out
 }
 
-func (r *reader) section(s *node) {
-	r.sections++
+// section reads a w:sectPr into a new section.
+func (r *reader) section(s *node) *model.Section {
+	sec := parseSection(s)
 	r.sects = append(r.sects, s)
-	for _, k := range s.kids {
-		switch k.name {
-		case "w:cols":
-			if atoi(k.attr("w:num")) > 1 || len(k.children("w:col")) > 1 {
-				r.warn(warnColumns)
-			}
-		}
-	}
+	r.sections = append(r.sections, sec)
+	return sec
 }
 
 func parsePage(kids []*node) model.PageSetup {
@@ -339,7 +337,8 @@ func (r *reader) para(pn *node) *model.Paragraph {
 			}
 		}
 		if s := k.child("w:sectPr"); s != nil {
-			r.section(s)
+			p.Sect = r.section(s)
+			p.Props.DocxXML = rawKids(k, "w:rPr", "w:sectPr")
 		}
 		if k.child("w:pPrChange") != nil {
 			r.warn(warnTracked)
@@ -543,6 +542,16 @@ func (r *reader) runToken(rn *node, span *model.Span) token {
 		}
 	}
 	flush()
+	// A custom note mark is the text following its reference.
+	for i := 0; i < len(tok.runs); i++ {
+		if o := tok.runs[i].Opaque; o != nil && o.Note != nil && o.Note.Mark == customMark {
+			o.Note.Mark = "*"
+			if i+1 < len(tok.runs) && tok.runs[i+1].Kind == model.RunText {
+				o.Note.Mark = tok.runs[i+1].Text
+				tok.runs = append(tok.runs[:i+1], tok.runs[i+2:]...)
+			}
+		}
+	}
 	return tok
 }
 
@@ -558,6 +567,12 @@ var reStylePt = regexp.MustCompile(`(?i)(width|height)\s*:\s*([0-9.]+)\s*(pt|in|
 // describe sets the placeholder text and size of an opaque inline element.
 func (r *reader) describe(k *node, run *model.Run) {
 	o := run.Opaque
+	if k.name == "w:drawing" || k.name == "mc:AlternateContent" || k.name == "w:pict" {
+		if f := r.floatOf(k); f != nil {
+			run.Text, o.Float = "", f
+			return
+		}
+	}
 	switch k.name {
 	case "w:drawing", "mc:AlternateContent":
 		run.Text = "[picture]"
@@ -617,14 +632,13 @@ func (r *reader) describe(k *node, run *model.Run) {
 		if o.Picture == nil {
 			r.warn(warnPictures)
 		}
-	case "w:footnoteReference":
-		r.warn(warnNotes)
-		r.footnotes++
-		run.Text = strconv.Itoa(r.footnotes)
-	case "w:endnoteReference":
-		r.warn(warnNotes)
-		r.endnotes++
-		run.Text = roman(r.endnotes)
+	case "w:footnoteReference", "w:endnoteReference":
+		o.Note = r.note(k, k.name == "w:endnoteReference")
+		if onOffAttr(k.attr("w:customMarkFollows")) {
+			o.Note.Mark = customMark // the mark is the text that follows (runToken)
+		}
+	case "w:footnoteRef", "w:endnoteRef":
+		o.NoteMark = true
 	case "w:commentReference":
 		r.warn(warnComments)
 	case "w:sym":
@@ -642,6 +656,9 @@ func (r *reader) describe(k *node, run *model.Run) {
 		r.warn(warnTracked)
 	}
 }
+
+// customMark stands for a custom note mark until its text is read.
+const customMark = "\x00custom"
 
 func (r *reader) vmlSize(k *node, run *model.Run) {
 	if run.Opaque.Width > 0 {
@@ -672,19 +689,6 @@ func (r *reader) vmlSize(k *node, run *model.Run) {
 			run.Opaque.Height = v
 		}
 	}
-}
-
-func roman(n int) string {
-	vals := []int{1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1}
-	syms := []string{"m", "cm", "d", "cd", "c", "xc", "l", "xl", "x", "ix", "v", "iv", "i"}
-	var b strings.Builder
-	for i, v := range vals {
-		for n >= v {
-			b.WriteString(syms[i])
-			n -= v
-		}
-	}
-	return b.String()
 }
 
 // fieldRuns turns a paragraph's tokens into runs. A complex field whose
@@ -734,6 +738,8 @@ func (r *reader) fieldRuns(toks []token) []model.Run {
 		if len(t.runs) > 0 {
 			run.Style, run.Props = t.runs[0].Style, t.runs[0].Props
 		}
+		run.Opaque.FieldChar = [...]model.FieldChar{fldBegin: model.FieldBegin, fldSeparate: model.FieldSep,
+			fldEnd: model.FieldEnd, fldInstr: model.FieldInstr}[t.fld]
 		if t.fld == fldInstr {
 			run.Opaque.Field = strings.TrimSpace(t.instr)
 		}
@@ -818,8 +824,9 @@ func fieldUnit(toks []token) model.Run {
 func (r *reader) table(tn *node) *model.Table {
 	t := &model.Table{Before: r.before}
 	r.before = nil
+	var tp tblProps
 	if pr := tn.child("w:tblPr"); pr != nil {
-		tp := parseTblPr(pr.kids, &r.doc.Styles)
+		tp = parseTblPr(pr.kids, &r.doc.Styles)
 		t.Style, t.Align, t.Indent, t.Borders = tp.style, tp.align, tp.indent, tp.borders
 		t.DocxXML = rawKids(pr)
 	}
@@ -830,7 +837,40 @@ func (r *reader) table(tn *node) *model.Table {
 		}
 	}
 	r.rows(tn.kids, t)
+	if !tp.fixedWidth {
+		cellGrid(t)
+	}
 	return t
+}
+
+// cellGrid makes the grid of a table without a set width agree with its
+// cells' widths, as Word does when it opens a file: the grid is a saved
+// cache of the layout, and the cells' preferred widths win (a table whose
+// grid fills the page but whose one cell is 5.5" wide is 5.5" wide). It
+// applies only when every column has a cell of its own with a width.
+func cellGrid(t *model.Table) {
+	cols := make([]float64, len(t.Columns))
+	for _, row := range t.Rows {
+		g := 0
+		for _, c := range row.Cells {
+			if s := max(c.Span, 1); s > 1 || g >= len(cols) {
+				g += s
+				continue
+			}
+			cols[g] = max(cols[g], c.Width)
+			g++
+		}
+	}
+	differs := false
+	for i, w := range cols {
+		if w <= 0 {
+			return
+		}
+		differs = differs || math.Abs(w-t.Columns[i]) > 0.5
+	}
+	if differs {
+		t.Columns = cols
+	}
 }
 
 func (r *reader) rows(kids []*node, t *model.Table) {
@@ -861,6 +901,7 @@ func (r *reader) row(rn *node) *model.TableRow {
 	}
 	if pr := rn.child("w:trPr"); pr != nil {
 		row.Height, row.Header = parseTrPr(pr.kids)
+		row.CantSplit = onOff(pr.child("w:cantSplit")) == model.On
 		extra = append(extra, rawKids(pr)...)
 		if pr.child("w:ins") != nil || pr.child("w:del") != nil {
 			r.warn(warnTracked)
@@ -880,6 +921,7 @@ func (r *reader) cells(kids []*node, row *model.TableRow) {
 			if pr := k.child("w:tcPr"); pr != nil {
 				tc := parseTcPr(pr.kids, r.th)
 				c.Width, c.Span, c.VMerge, c.Shading, c.VAlign = tc.width, tc.span, tc.vmerge, tc.shading, tc.valign
+				c.Borders = tc.borders
 				c.DocxXML = rawKids(pr)
 			}
 			c.Blocks = r.blocks(k, nil, false)
@@ -905,10 +947,11 @@ func (r *reader) cells(kids []*node, row *model.TableRow) {
 }
 
 type tblProps struct {
-	style   string
-	align   model.Align
-	indent  float64
-	borders bool
+	style      string
+	align      model.Align
+	indent     float64
+	borders    bool
+	fixedWidth bool // a preferred width other than auto
 }
 
 // parseTblPr reads a <w:tblPr>; borders come from the table or, if it has
@@ -933,6 +976,8 @@ func parseTblPr(kids []*node, ss *model.StyleSheet) tblProps {
 			if t := k.attr("w:type"); t == "" || t == "dxa" {
 				tp.indent, _ = twipsPt(k.attr("w:w"))
 			}
+		case "w:tblW":
+			tp.fixedWidth = k.attr("w:type") != "auto" && k.attr("w:type") != "nil" && atoi(k.attr("w:w")) > 0
 		case "w:tblBorders":
 			explicit = true
 			tp.borders = hasBorders(k)
@@ -977,6 +1022,39 @@ func styleBorders(id string, ss *model.StyleSheet) bool {
 	return false
 }
 
+// borderEdge returns the model.Edge* of a border element, or -1.
+func borderEdge(name string) int {
+	switch name {
+	case "w:top":
+		return model.EdgeTop
+	case "w:left", "w:start":
+		return model.EdgeLeft
+	case "w:bottom":
+		return model.EdgeBottom
+	case "w:right", "w:end":
+		return model.EdgeRight
+	}
+	return -1
+}
+
+// parseBorder reads a border element (w:top, w:left...): its width is in
+// eighths of a point, its space (from the text) in points.
+func parseBorder(k *node) *model.Border {
+	b := &model.Border{}
+	if v := k.attr("w:val"); v == "" || v == "nil" || v == "none" {
+		return b
+	}
+	b.Width = 0.5
+	if sz := atoi(k.attr("w:sz")); sz > 0 {
+		b.Width = float64(sz) / 8
+	}
+	b.Space = float64(atoi(k.attr("w:space")))
+	if c := k.attr("w:color"); c != "auto" && len(c) == 6 {
+		b.Color = strings.ToUpper(c)
+	}
+	return b
+}
+
 func parseTrPr(kids []*node) (height float64, header bool) {
 	for _, k := range kids {
 		switch k.name {
@@ -995,6 +1073,7 @@ type tcProps struct {
 	vmerge  int8
 	shading string
 	valign  int8
+	borders [4]*model.Border
 }
 
 func parseTcPr(kids []*node, th *theme) tcProps {
@@ -1017,6 +1096,12 @@ func parseTcPr(kids []*node, th *theme) tcProps {
 			}
 		case "w:shd":
 			tc.shading = shdColor(k, th)
+		case "w:tcBorders":
+			for _, b := range k.kids {
+				if e := borderEdge(b.name); e >= 0 {
+					tc.borders[e] = parseBorder(b)
+				}
+			}
 		case "w:vAlign":
 			switch k.attr("w:val") {
 			case "center":
@@ -1171,6 +1256,7 @@ func parseNumbering(root *node, ss *model.StyleSheet) map[int]*model.List {
 		}
 		l := &model.List{}
 		if a := abstractFor(n, 0); a != nil {
+			l.Abstract = a.attr("w:abstractNumId")
 			for _, lv := range a.children("w:lvl") {
 				setLevel(l, lv)
 			}
@@ -1188,7 +1274,7 @@ func parseNumbering(root *node, ss *model.StyleSheet) map[int]*model.List {
 					for len(l.Levels) <= i {
 						l.Levels = append(l.Levels, model.ListLevel{})
 					}
-					l.Levels[i].Start = atoi(so.attr("w:val"))
+					l.Levels[i].Start, l.Levels[i].Restart = atoi(so.attr("w:val")), true
 				}
 			}
 		}
@@ -1238,7 +1324,7 @@ func (r *reader) picture(id string) *model.Picture {
 	if !ok || id == "" || rl.Mode == "External" || r.pkg == nil {
 		return nil
 	}
-	part := resolve(r.main, rl.Target)
+	part := opc.Resolve(r.main, rl.Target)
 	data, err := r.pkg.read(part)
 	if err != nil || len(data) == 0 {
 		return nil

@@ -153,6 +153,11 @@ func (s *Sheet) shift(rows bool, at, n int) {
 	}
 	s.Spills = spills
 	s.shiftAnnots(rows, at, n)
+	s.shiftFilter(rows, at, n)
+	s.shiftValidations(rows, at, n)
+	s.shiftOutline(rows, at, n)
+	s.shiftPivots(rows, at, n)
+	s.shiftCharts(rows, at, n)
 
 	freeze := &s.FreezeCols
 	if rows {
@@ -200,6 +205,21 @@ func (s *Sheet) SpillAnchor(row, col int) (r, c int, ok bool) {
 	return 0, 0, false
 }
 
+// Clone returns a deep copy of the workbook, for writing it in the
+// background (AutoRecover) while editing goes on. The theme is shared:
+// editing doesn't change it.
+func (wb *Workbook) Clone() *Workbook {
+	c := *wb
+	c.Sheets = make([]*Sheet, len(wb.Sheets))
+	for i, sh := range wb.Sheets {
+		c.Sheets[i] = sh.Clone()
+	}
+	c.Styles = slices.Clone(wb.Styles)
+	c.Warnings = slices.Clone(wb.Warnings)
+	c.Names = slices.Clone(wb.Names)
+	return &c
+}
+
 // Clone returns a deep copy of the sheet.
 func (s *Sheet) Clone() *Sheet {
 	c := *s
@@ -216,6 +236,13 @@ func (s *Sheet) Clone() *Sheet {
 	}
 	c.Notes = maps.Clone(s.Notes)
 	c.Links = maps.Clone(s.Links)
+	c.AutoFilter = s.AutoFilter.Clone()
+	c.Filtered = cloneFiltered(s.Filtered)
+	c.Validations = CloneValidations(s.Validations)
+	c.Outline = s.Outline.Clone()
+	c.Pivots = ClonePivots(s.Pivots)
+	c.Charts = CloneCharts(s.Charts)
+	c.ChartSheet = s.ChartSheet.Clone()
 	return &c
 }
 

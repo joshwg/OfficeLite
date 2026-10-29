@@ -21,6 +21,10 @@ var (
 // MaxSerial is 9999-12-31 in the 1900 system; Excel's last valid date.
 const MaxSerial = 2958465
 
+// Offset1904 is the number of days between the two date systems' serial
+// numbers for the same day (1904-01-01 is 1462 in the 1900 system).
+const Offset1904 = 1462
+
 // SerialToTime converts a serial number to a UTC time. Serial 60 in the
 // 1900 system (the fictitious 1900-02-29) maps to 1900-03-01; use
 // SerialToYMD for Excel's exact calendar fields.
@@ -83,7 +87,7 @@ func DateSerial(year, month, day int, date1904 bool) (float64, bool) {
 		year += 1900
 	}
 	// Normalize the month first so that DATE(2026,14,1) is 2027-02-01.
-	y := year + floorDiv(month-1, 12)
+	y := year + FloorDiv(month-1, 12)
 	m := (month-1)%12 + 1
 	if m <= 0 {
 		m += 12
@@ -98,7 +102,8 @@ func DateSerial(year, month, day int, date1904 bool) (float64, bool) {
 	return s, true
 }
 
-func floorDiv(a, b int) int {
+// FloorDiv is a/b rounded toward negative infinity.
+func FloorDiv(a, b int) int {
 	q := a / b
 	if (a%b != 0) && ((a < 0) != (b < 0)) {
 		q--

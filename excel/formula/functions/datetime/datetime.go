@@ -23,10 +23,6 @@ const (
 	dateFormat     = "m/d/yyyy"
 	dateTimeFormat = "m/d/yyyy h:mm"
 	timeFormat     = "h:mm AM/PM"
-
-	// offset1904 is the number of days between the two date systems'
-	// serial numbers for the same day.
-	offset1904 = 1462
 )
 
 // Register adds the date and time functions to r.
@@ -106,26 +102,15 @@ func missing(v f.Value) bool {
 // maxSerial is 9999-12-31 in the workbook's date system.
 func maxSerial(e *f.Env) float64 {
 	if e.Date1904() {
-		return f.MaxSerial - offset1904
+		return f.MaxSerial - f.Offset1904
 	}
 	return f.MaxSerial
-}
-
-// num coerces v like f.Num, but parses date text in the workbook's date
-// system (f.Num always reads date text as a 1900-system serial).
-func num(e *f.Env, v f.Value) (float64, f.Value) {
-	if s, ok := v.(f.String); ok && e.Date1904() {
-		if d, ok := f.ParseDateTime(string(s), true); ok {
-			return d, nil
-		}
-	}
-	return f.Num(v)
 }
 
 // serial coerces a date argument to a whole serial number (Excel truncates
 // the time of day). Negative or too-large serials are #NUM!.
 func serial(e *f.Env, v f.Value) (float64, f.Value) {
-	n, err := num(e, v)
+	n, err := e.Num(v)
 	if err != nil {
 		return 0, err
 	}
@@ -152,7 +137,7 @@ func daysIn(e *f.Env, y, m int) int {
 // years are taken literally: a result before 1900 or after 9999 fails.
 func mkDate(e *f.Env, y, m, d int) (float64, bool) {
 	t := y*12 + m - 1
-	y, m = floorDiv(t, 12), t-floorDiv(t, 12)*12+1
+	y, m = f.FloorDiv(t, 12), t-f.FloorDiv(t, 12)*12+1
 	if y < 1900 || y > 9999 {
 		return 0, false
 	}
@@ -165,41 +150,9 @@ func mkDate(e *f.Env, y, m, d int) (float64, bool) {
 	return s, true
 }
 
-// firstOfMonth is the serial of the first day of a month. It is computed
-// with integer calendar arithmetic because f.DateSerial goes through
-// time.Duration, which overflows for dates after 2192.
+// firstOfMonth is the serial of the first day of a month.
 func firstOfMonth(e *f.Env, y, m int) int {
-	n := civilDays(y, m, 1)
-	if e.Date1904() {
-		return n - civilDays(1904, 1, 1)
-	}
-	n -= civilDays(1899, 12, 30)
-	if n < 61 {
-		n-- // before March 1900 Excel's serials are one lower
-	}
-	return n
-}
-
-// civilDays counts days since 1970-01-01 in the proleptic Gregorian
-// calendar (Howard Hinnant's days_from_civil).
-func civilDays(y, m, d int) int {
-	if m <= 2 {
-		y--
-	}
-	era := floorDiv(y, 400)
-	yoe := y - era*400
-	mp := (m + 9) % 12
-	doy := (153*mp+2)/5 + d - 1
-	doe := yoe*365 + yoe/4 - yoe/100 + doy
-	return era*146097 + doe - 719468
-}
-
-func floorDiv(a, b int) int {
-	q := a / b
-	if a%b != 0 && (a < 0) != (b < 0) {
-		q--
-	}
-	return q
+	return int(f.TimeToSerial(time.Date(y, time.Month(m), 1, 0, 0, 0, 0, time.UTC), e.Date1904()))
 }
 
 // dow is the day of the week of a serial, Monday = 0 ... Sunday = 6, as
@@ -207,7 +160,7 @@ func floorDiv(a, b int) int {
 func dow(e *f.Env, s float64) int {
 	n := int(s)
 	if e.Date1904() {
-		n += offset1904
+		n += f.Offset1904
 	}
 	return (n%7 + 7 + 5) % 7
 }
@@ -405,7 +358,7 @@ func monthShift(e *f.Env, a []f.Value, eom bool) f.Value {
 // clock implements HOUR, MINUTE and SECOND on the time of day rounded to
 // the nearest second.
 func clock(e *f.Env, v f.Value, pick func(secs int) int) f.Value {
-	n, err := num(e, v)
+	n, err := e.Num(v)
 	if err != nil {
 		return err
 	}

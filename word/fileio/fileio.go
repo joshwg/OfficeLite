@@ -1,5 +1,6 @@
 // Package fileio opens and saves Word documents, picking the format from
-// the file's content (.docx zip, .doc compound file, or plain text).
+// the file's content (.docx zip, .doc compound file, or plain text); Pages
+// documents (.pages) are opened read-only.
 package fileio
 
 import (
@@ -10,9 +11,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"officelite/common/iwork"
 	"officelite/common/ole"
 	"officelite/word/fileio/docfile"
 	"officelite/word/fileio/docxfile"
+	"officelite/word/fileio/pagesfile"
 	"officelite/word/model"
 )
 
@@ -73,10 +76,16 @@ func Open(path string) (*model.Document, error) {
 
 // Read decodes a document from its bytes; name is used for the document
 // name and, when the content is ambiguous, its extension.
-func Read(name string, data []byte) (*model.Document, error) {
-	var doc *model.Document
-	var err error
+func Read(name string, data []byte) (doc *model.Document, err error) {
+	// A reader bug on a damaged file must not take the app down with it.
+	defer func() {
+		if r := recover(); r != nil {
+			doc, err = nil, fmt.Errorf("the file is damaged or not supported (internal error: %v)", r)
+		}
+	}()
 	switch {
+	case len(data) >= 4 && string(data[:4]) == "PK\x03\x04" && iwork.IsPackage(data):
+		doc, err = pagesfile.Read(data) // read-only: FormatFor has no .pages
 	case len(data) >= 4 && string(data[:4]) == "PK\x03\x04":
 		doc, err = docxfile.Read(data)
 	case ole.IsCompoundFile(data):

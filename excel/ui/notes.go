@@ -3,8 +3,6 @@ package ui
 import (
 	"image"
 	"os"
-	"os/exec"
-	"runtime"
 	"strings"
 
 	"gioui.org/font"
@@ -132,7 +130,7 @@ func (a *App) layoutNoteDialog(gtx layout.Context, k int) {
 				return layout.Inset{Bottom: 6}.Layout(gtx, a.ui.Label(13, d.author+":", chromeText, font.Bold).Layout)
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return a.textField(gtx, &d.ed, 380, 6, "Type the note")
+				return gui.TextField(gtx, a.ui, &d.ed, 380, 6, "Type the note")
 			}),
 		)
 	}
@@ -140,7 +138,7 @@ func (a *App) layoutNoteDialog(gtx layout.Context, k int) {
 	if d.existing {
 		btns = append([]layout.Widget{a.plainButton(&a.ins.extra, "Delete Note")}, btns...)
 	}
-	a.modal(gtx, &a.ins.block, title, 420, body, btns...)
+	a.ui.ModalDialog(gtx, &a.ins.block, title, 420, body, btns...)
 }
 
 // drawAnnots draws note markers, the note under the pointer or of the
@@ -280,28 +278,10 @@ func (a *App) followLinkAt(v *render.View, hit render.Hit) bool {
 	if h.Location != "" {
 		target += "#" + h.Location
 	}
-	if err := openURL(target); err != nil {
+	if err := gui.OpenURL(target); err != nil {
 		a.errMsg = "Cannot open " + target + ": " + err.Error()
 	} else {
 		a.notice = "Opening " + target
 	}
 	return true
-}
-
-// openURL opens a link with the system's handler.
-func openURL(s string) error {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", s)
-	case "darwin":
-		cmd = exec.Command("open", s)
-	default:
-		cmd = exec.Command("xdg-open", s)
-	}
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	go cmd.Wait()
-	return nil
 }

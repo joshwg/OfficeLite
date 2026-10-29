@@ -114,3 +114,35 @@ func TestFormatPainter(t *testing.T) {
 		t.Errorf("partial paint changed the paragraph style")
 	}
 }
+
+// Invisible markers (a bookmark inside a word, a comment range) don't
+// stop a match or count as word boundaries, and replacing keeps them.
+func TestFindAcrossMarkers(t *testing.T) {
+	d, e := newDoc("")
+	p := d.Body[0].(*Paragraph)
+	mark := func() Run { return Run{Kind: RunOpaque, Opaque: &Opaque{Format: "docx"}} }
+	p.Runs = []Run{{Text: "the ca"}, mark(), {Text: "t sat"}, mark()}
+	e.reindex()
+	ms := e.FindAll("cat", FindOptions{WholeWords: true})
+	if len(ms) != 1 || ms[0].A != (Pos{0, 4}) || ms[0].B != (Pos{0, 8}) {
+		t.Fatalf("across a marker: %v", ms)
+	}
+	if ms := e.FindAll("ca", FindOptions{WholeWords: true}); len(ms) != 0 {
+		t.Fatalf("marker taken as a word boundary: %v", ms)
+	}
+	if ms := e.FindAll("sat", FindOptions{WholeWords: true}); len(ms) != 1 || ms[0].B != (Pos{0, 12}) {
+		t.Fatalf("before a trailing marker: %v", ms)
+	}
+	if n := e.ReplaceAll("cat", "dog", FindOptions{}); n != 1 {
+		t.Fatalf("replaced %d", n)
+	}
+	markers := 0
+	for _, r := range p.Runs {
+		if r.Kind == RunOpaque {
+			markers++
+		}
+	}
+	if got := p.Text(); got != "the dog￼ sat￼" || markers != 2 {
+		t.Fatalf("replace: %q, %d markers", got, markers)
+	}
+}

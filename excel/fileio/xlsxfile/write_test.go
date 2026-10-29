@@ -90,6 +90,7 @@ func buildModel() *model.Workbook {
 	second.Spills[[2]int{8, 0}] = model.Range{R1: 8, C1: 0, R2: 9, C2: 1}
 	second.Set(10, 0, model.Cell{Formula: "PIVOTBY(A1:A2,B1:B2,C1:C2,LAMBDA(x,SUM(x)),0,0,,0)", Num: 1, Text: "1", Kind: model.KindNumber, Dynamic: true})
 	second.Set(11, 0, model.Cell{Formula: `DSUM(A1:C3,1,E1:E2)+DCOUNT(A1:C3,,E1:E2)+DGET(A1:C3,2,E1:F2)+DSTDEVP(A:C,3,E:E)`, Num: 1, Text: "1", Kind: model.KindNumber})
+	second.Set(12, 0, model.Cell{Formula: `BIN2DEC(1010)+HEX2DEC("FF")+LEN(DEC2OCT(8,3)&OCT2HEX(17))+CONVERT(1,"lbm","kg")`, Num: 1, Text: "1", Kind: model.KindNumber})
 	second.ActiveRow, second.ActiveCol = 4, 1
 	hidden := model.NewSheet("Hidden")
 	hidden.Hidden = true
@@ -207,6 +208,9 @@ func TestWriteRoundTrip(t *testing.T) {
 	}
 	if !strings.Contains(parts["xl/worksheets/sheet2.xml"], `<f>DSUM(A1:C3,1,E1:E2)+DCOUNT(A1:C3,,E1:E2)+DGET(A1:C3,2,E1:F2)+DSTDEVP(A:C,3,E:E)</f>`) {
 		t.Error("database functions written with a prefix")
+	}
+	if !strings.Contains(parts["xl/worksheets/sheet2.xml"], `<f>BIN2DEC(1010)+HEX2DEC(&#34;FF&#34;)+LEN(DEC2OCT(8,3)&amp;OCT2HEX(17))+CONVERT(1,&#34;lbm&#34;,&#34;kg&#34;)</f>`) {
+		t.Error("engineering functions written with a prefix")
 	}
 	if !strings.Contains(parts["xl/worksheets/sheet2.xml"], `<f>SUM(_xlfn.TAKE(A1:A3,2))+ROWS(_xlfn.DROP(A1:B3,1))+COUNTA(_xlfn.VSTACK(A1,B1),_xlfn.HSTACK(A2,B2))+SUM(_xlfn.EXPAND(A1,2,2,0))</f>`) ||
 		!strings.Contains(parts["xl/worksheets/sheet2.xml"], `<f>ROWS(_xlfn.TRIMRANGE(A:A))+SUM(_xlfn.WRAPROWS(_xlfn.TOROW(A1:A3),2,0))+SUM(_xlfn.WRAPCOLS(_xlfn.TOCOL(A1:A3),2,0))+SUM(_xlfn.CHOOSEROWS(A1:A3,-1))+SUM(_xlfn.CHOOSECOLS(A1:B1,2))</f>`) {
@@ -354,13 +358,13 @@ func compareWorkbooks(t *testing.T, want, got *model.Workbook) {
 func TestPatchSheet(t *testing.T) {
 	src := `<sheetFormatPr/><sheetData><row r="1"><c r="A1"><v>1</v></c><c r="A10" s="2"></c><c r="B1" s="3"></c></row></sheetData>`
 	var out bytes.Buffer
-	if err := patchSheet(&out, strings.NewReader(src), &sheetPatch{cols: "<cols/>", cells: []rawCell{{"B1", "<X/>"}}}); err != nil {
+	if err := patchSheet(&out, strings.NewReader(src), &sheetPatch{cols: "<cols/>", cells: []rawCell{{ref: "B1", xml: "<X/>"}}}); err != nil {
 		t.Fatal(err)
 	}
 	if want := `<sheetFormatPr/><cols/><sheetData><row r="1"><c r="A1"><v>1</v></c><c r="A10" s="2"></c><X/></row></sheetData>`; out.String() != want {
 		t.Errorf("patched = %s", out.String())
 	}
-	if err := patchSheet(io.Discard, strings.NewReader(src), &sheetPatch{cells: []rawCell{{"C1", "<X/>"}}}); err == nil {
+	if err := patchSheet(io.Discard, strings.NewReader(src), &sheetPatch{cells: []rawCell{{ref: "C1", xml: "<X/>"}}}); err == nil {
 		t.Error("missing cell not reported")
 	}
 }

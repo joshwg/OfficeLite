@@ -79,12 +79,14 @@ type Backstage struct {
 	Visible bool
 	Page    Page
 
-	back    widget.Clickable
-	nav     [numPages]widget.Clickable
-	browse  widget.Clickable
-	tiles   []widget.Clickable
-	recents []widget.Clickable
-	list    widget.List
+	back     widget.Clickable
+	nav      [numPages]widget.Clickable
+	browse   widget.Clickable
+	tiles    []widget.Clickable
+	recents  []widget.Clickable
+	list     widget.List
+	recover  DropDown // the Info page's AutoRecover interval (recovery.go)
+	autosave DropDown // the Info page's AutoSave default (autosave.go)
 }
 
 // Show opens the backstage at page p.
@@ -206,8 +208,8 @@ func (b *Backstage) navColumn(gtx layout.Context, th *Theme) layout.Dimensions {
 	return layout.Dimensions{Size: image.Pt(w, h)}
 }
 
-func pageIcon(p Page) *widget.Icon {
-	return [numPages]*widget.Icon{IconHome, IconNew, IconOpen, IconInfo, IconSave, IconSave, IconPrint, IconExport, IconClose}[p]
+func pageIcon(p Page) *Icon {
+	return [numPages]*Icon{IconHome, IconNew, IconOpen, IconInfo, IconSave, IconSave, IconPrint, IconExport, IconClose}[p]
 }
 
 func (b *Backstage) content(gtx layout.Context, th *Theme, cfg BackstageConfig) layout.Dimensions {

@@ -11,10 +11,13 @@ import (
 	"strings"
 	"sync"
 	"unicode/utf16"
+	"weak"
 
 	"gioui.org/font"
 	"gioui.org/font/opentype"
 	"gioui.org/text"
+
+	"officelite/common/atomicfile"
 )
 
 // FontLibrary indexes font folders (the OS font folders plus extras) by
@@ -108,26 +111,68 @@ func (l *FontLibrary) registerShaper(sh *text.Shaper, faces []font.FontFace) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	seen := map[any]bool{}
-	var files []FaceFile
+	var sf shaperFaceList
 	for _, f := range faces {
 		k := any(f.Face.Face().Font)
 		if seen[k] {
 			continue
 		}
 		seen[k] = true
-		files = append(files, l.files[f.Face]) // zero for the Go fonts
+		sf.files = append(sf.files, l.files[f.Face]) // zero for the Go fonts
+		sf.families = append(sf.families, string(f.Font.Typeface))
 	}
-	shaperFaces.Store(sh, files)
+	k := weak.Make(sh)
+	shaperFacesMu.Lock()
+	shaperFaces[k] = &sf
+	shaperFacesMu.Unlock()
+	runtime.AddCleanup(sh, func(k weak.Pointer[text.Shaper]) {
+		shaperFacesMu.Lock()
+		delete(shaperFaces, k)
+		shaperFacesMu.Unlock()
+	}, k)
 }
 
 // shaperFaces maps each *text.Shaper made by a FontLibrary to its faces'
-// files, by face index.
-var shaperFaces sync.Map
+// files and family names, by face index. Shapers are made per window and
+// per document, so they are held weakly and dropped once collected.
+var (
+	shaperFacesMu sync.RWMutex
+	shaperFaces   = map[weak.Pointer[text.Shaper]]*shaperFaceList{}
+)
+
+type shaperFaceList struct {
+	files    []FaceFile
+	families []string
+}
+
+func shaperFacesOf(sh *text.Shaper) *shaperFaceList {
+	if sh == nil {
+		return nil
+	}
+	k := weak.Make(sh)
+	shaperFacesMu.RLock()
+	defer shaperFacesMu.RUnlock()
+	return shaperFaces[k]
+}
 
 func faceFiles(sh *text.Shaper) []FaceFile {
-	v, _ := shaperFaces.Load(sh)
-	files, _ := v.([]FaceFile)
-	return files
+	if sf := shaperFacesOf(sh); sf != nil {
+		return sf.files
+	}
+	return nil
+}
+
+// GlyphFamily returns the family of the face a glyph shaped by sh (a
+// FontLibrary shaper) comes from, or "" if it isn't known. The shaper
+// falls back to any face that has a character, so this tells whether a
+// font really has it.
+func GlyphFamily(sh *text.Shaper, id text.GlyphID) string {
+	if sf := shaperFacesOf(sh); sf != nil {
+		if i := int(uint64(id) >> 48); i < len(sf.families) {
+			return sf.families[i]
+		}
+	}
+	return ""
 }
 
 func NewFontLibrary(dirs ...string) *FontLibrary {
@@ -276,8 +321,8 @@ func (l *FontLibrary) scan() {
 	}
 	if changed && cachePath != "" {
 		if b, err := json.Marshal(cache); err == nil {
-			_ = os.MkdirAll(filepath.Dir(cachePath), 0o755)
-			_ = os.WriteFile(cachePath, b, 0o644)
+			// Whole or not at all: other OfficeLite processes read it.
+			_ = atomicfile.WriteFile(cachePath, b, 0o644)
 		}
 	}
 }

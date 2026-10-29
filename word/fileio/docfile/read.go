@@ -5,11 +5,9 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"unicode/utf16"
-
-	"golang.org/x/text/encoding/charmap"
 
 	"officelite/common/ole"
+	"officelite/common/textenc"
 	"officelite/word/model"
 )
 
@@ -54,19 +52,27 @@ type reader struct {
 	unitEnd map[int]int // field begin CP → end CP for fields kept as a unit
 	fldAt   map[int][2]byte
 
-	footnoteRefs map[int]int // CP → footnote number
-	endnoteRefs  map[int]int
+	fieldBegin map[int]int  // begin CP → separator CP of fields kept around a result spanning paragraphs
+	fieldEnd   map[int]bool // their end CPs
+
+	sections []*model.Section        // every section, in order
+	sectEnd  map[int]*model.Section  // section by the CP after its section mark
+	noteAt   map[int]*model.Note     // notes by reference CP
+	inNote   bool                    // building a note's blocks
+	shapes   map[uint32]*shape       // OfficeArt shapes by spid (shapes.go)
+	floats   map[int]*model.Floating // floating objects by anchor CP
+	txbx     map[uint32][2]int       // text box stories by shape id
 
 	chpCache map[[2]int]*chpInfo
 	warned   map[string]bool
-	sedCPs   map[int]bool // CPs that start a new section
+	sedCPs   map[int]bool // CPs that start a new section (after the first)
 }
 
 // Read decodes a Word 97-2003 .doc document.
 func Read(data []byte) (doc *model.Document, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			doc, err = nil, fmt.Errorf("doc: malformed document (%v)", r)
+			doc, err = nil, fmt.Errorf("the file is damaged or not supported (internal error: %v)", r)
 		}
 	}()
 	names, err := ole.Streams(data)
@@ -90,7 +96,7 @@ func Read(data []byte) (doc *model.Document, err error) {
 	}
 	_, r.data, _ = ole.ReadStream(data, "Data")
 
-	r.doc = &model.Document{Lists: map[int]*model.List{}, Page: model.LetterPage()}
+	r.doc = &model.Document{Lists: map[int]*model.List{}, Section: model.Section{Page: model.LetterPage()}}
 	for _, n := range names {
 		switch strings.ToLower(n) {
 		case "macros", "_vba_project_cur", "vba":
@@ -106,16 +112,19 @@ func Read(data []byte) (doc *model.Document, err error) {
 	r.readFonts()
 	r.readStyles()
 	r.readLists()
-	r.readSection()
+	r.readSections()
 	if dop := r.fib.blob(r.table, fcDop); len(dop) >= 12 {
 		if tab := u16(dop[10:]); tab > 0 {
 			r.doc.DefaultTabStop = twips(int(tab))
 		}
 	}
-	r.readNotes()
 	r.readFields()
+	r.readNotes()
+	r.readHeaders()
+	r.readShapes()
 	r.subdocWarnings()
 	r.buildBody()
+	r.doc.NumberNotes()
 	r.doc.Source = data
 	r.doc.SourceFormat = "doc"
 	return r.doc, nil
@@ -159,6 +168,19 @@ func (r *reader) readPieces() error {
 	if ccp < 0 {
 		return errors.New("doc: bad text length")
 	}
+	// The subdocuments (notes, headers, text boxes...) follow the main
+	// text, with a final paragraph mark when there are any.
+	all := ccp
+	for _, k := range []int{lwCcpFtn, lwCcpHdd, lwCcpAtn, lwCcpEdn, lwCcpTxbx, lwCcpHdrTxbx} {
+		if v := int(r.fib.lw[k]); v > 0 {
+			all += v
+		}
+	}
+	if all > ccp {
+		all++
+	}
+	mainCcp := ccp
+	ccp = all
 	r.text = make([]uint16, 0, ccp)
 	r.cpFc = make([]uint32, 0, ccp)
 	r.cpPiece = make([]int32, 0, ccp)
@@ -185,7 +207,7 @@ func (r *reader) readPieces() error {
 				if int(fc) >= len(r.wd) {
 					return errors.New("doc: text outside the WordDocument stream")
 				}
-				ch = cp1252(r.wd[fc])
+				ch = uint16(textenc.Windows1252Rune(r.wd[fc]))
 			} else {
 				fc = p.fc + 2*uint32(c-cp)
 				if int(fc)+2 > len(r.wd) {
@@ -198,17 +220,10 @@ func (r *reader) readPieces() error {
 			r.cpPiece = append(r.cpPiece, int32(i))
 		}
 	}
-	if len(r.text) < ccp {
+	if len(r.text) < mainCcp {
 		return errors.New("doc: piece table shorter than the text")
 	}
 	return nil
-}
-
-func cp1252(b byte) uint16 {
-	if b < 0x80 || b >= 0xA0 {
-		return uint16(b)
-	}
-	return uint16(charmap.Windows1252.DecodeByte(b))
 }
 
 // pieceSprms returns the property modifiers a piece's Prm adds.
@@ -347,24 +362,11 @@ func (r *reader) readFonts() {
 		ffn := b[p+1 : end]
 		name := ""
 		if len(ffn) > 39 {
-			name = utf16z(ffn[39:])
+			name = textenc.UTF16Z(ffn[39:])
 		}
 		r.fonts = append(r.fonts, name)
 		p = end
 	}
-}
-
-// utf16z decodes a NUL-terminated little-endian UTF-16 string.
-func utf16z(b []byte) string {
-	var u []uint16
-	for i := 0; i+1 < len(b); i += 2 {
-		c := u16(b[i:])
-		if c == 0 {
-			break
-		}
-		u = append(u, c)
-	}
-	return string(utf16.Decode(u))
 }
 
 func (r *reader) font(ftc uint16) string {
@@ -374,121 +376,11 @@ func (r *reader) font(ftc uint16) string {
 	return ""
 }
 
-// readSection takes the page setup from the last section.
-func (r *reader) readSection() {
-	plc := r.fib.blob(r.table, fcPlcfSed)
-	r.sedCPs = map[int]bool{}
-	pg := model.PageSetup{Width: 612, Height: 792, MarginLeft: 90, MarginRight: 90, MarginTop: 72, MarginBottom: 72, Header: 36, Footer: 36}
-	if len(plc) < 4+12 {
-		r.doc.Page = pg
-		return
-	}
-	n := (len(plc) - 4) / 16
-	for i := 1; i < n; i++ {
-		r.sedCPs[int(u32(plc[4*i:]))] = true
-	}
-	if n > 1 {
-		r.warn(fmt.Sprintf("The document has %d sections; WordLite keeps the last section's page setup and turns section breaks into page breaks.", n))
-	}
-	sed := plc[4*(n+1)+12*(n-1):]
-	fc := u32(sed[2:])
-	if fc != 0xFFFFFFFF && int(fc)+2 <= len(r.wd) {
-		cb := int(u16(r.wd[fc:]))
-		if int(fc)+2+cb <= len(r.wd) {
-			eachSprm(r.wd[fc+2:int(fc)+2+cb], func(op uint16, a []byte) {
-				switch op {
-				case sprmSXaPage:
-					pg.Width = twips(int(u16(a)))
-				case sprmSYaPage:
-					pg.Height = twips(int(u16(a)))
-				case sprmSDxaLeft:
-					pg.MarginLeft = twips(int(u16(a)))
-				case sprmSDxaRight:
-					pg.MarginRight = twips(int(u16(a)))
-				case sprmSDyaTop:
-					pg.MarginTop = twips(abs(int(i16(a))))
-				case sprmSDyaBottom:
-					pg.MarginBottom = twips(abs(int(i16(a))))
-				case sprmSDyaHdrTop:
-					pg.Header = twips(int(u16(a)))
-				case sprmSDyaHdrBottom:
-					pg.Footer = twips(int(u16(a)))
-				case sprmSBOrientation:
-					pg.Landscape = u8(a) == 2
-				}
-			})
-		}
-	}
-	r.doc.Page = pg
-}
-
 func abs(v int) int {
 	if v < 0 {
 		return -v
 	}
 	return v
-}
-
-// readNotes collects footnote and endnote reference positions.
-func (r *reader) readNotes() {
-	r.footnoteRefs = plcPositions(r.fib.blob(r.table, fcPlcffndRef), 2)
-	r.endnoteRefs = plcPositions(r.fib.blob(r.table, fcPlcfendRef), 2)
-}
-
-// plcPositions numbers the CPs of a PLC with data elements of size cb.
-func plcPositions(plc []byte, cb int) map[int]int {
-	out := map[int]int{}
-	if len(plc) < 4 {
-		return out
-	}
-	n := (len(plc) - 4) / (4 + cb)
-	for i := 0; i < n; i++ {
-		out[int(u32(plc[4*i:]))] = i + 1
-	}
-	return out
-}
-
-// subdocWarnings reports stories WordLite doesn't show.
-func (r *reader) subdocWarnings() {
-	lw := r.fib.lw
-	if lw[lwCcpFtn] > 0 {
-		r.warn("Footnotes are not shown and are not kept when saving.")
-	}
-	if lw[lwCcpEdn] > 0 {
-		r.warn("Endnotes are not shown and are not kept when saving.")
-	}
-	if lw[lwCcpAtn] > 0 {
-		r.warn("Comments are not shown and are not kept when saving.")
-	}
-	if lw[lwCcpTxbx] > 0 || lw[lwCcpHdrTxbx] > 0 {
-		r.warn("Text boxes are not shown and are not kept when saving.")
-	}
-	if lw[lwCcpHdd] > 0 && r.headerHasText() {
-		r.warn("Headers and footers are not shown and are not kept when saving.")
-	}
-}
-
-// headerHasText reports whether the header story holds anything besides
-// paragraph marks (Word always stores separators there).
-func (r *reader) headerHasText() bool {
-	lw := r.fib.lw
-	start := int(lw[lwCcpText] + lw[lwCcpFtn])
-	end := start + int(lw[lwCcpHdd])
-	plcHdd := r.fib.blob(r.table, fcPlcfHdd)
-	// The first six stories are footnote/endnote separators.
-	if len(plcHdd) >= 4*8 {
-		start += int(u32(plcHdd[4*6:]))
-	}
-	for cp := start; cp < end; cp++ {
-		c, ok := r.charAt(cp)
-		if !ok {
-			return false
-		}
-		if c != 0x0D && c != 0x07 && c != 0x03 && c != 0x04 {
-			return true
-		}
-	}
-	return false
 }
 
 // charAt reads any CP of the document (including subdocuments).
@@ -498,7 +390,7 @@ func (r *reader) charAt(cp int) (uint16, bool) {
 			if p.compressed {
 				fc := int(p.fc) + cp - p.cp
 				if fc < len(r.wd) {
-					return cp1252(r.wd[fc]), true
+					return uint16(textenc.Windows1252Rune(r.wd[fc])), true
 				}
 			} else {
 				fc := int(p.fc) + 2*(cp-p.cp)

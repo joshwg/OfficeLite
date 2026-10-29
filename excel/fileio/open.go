@@ -1,5 +1,6 @@
-// Package fileio loads spreadsheet files (.xlsx, .xls, .csv) into a
-// model.Workbook, picking the reader from the file's content.
+// Package fileio loads spreadsheet files (.xlsx, .xls, .csv, and
+// read-only .numbers) into a model.Workbook, picking the reader from the
+// file's content.
 package fileio
 
 import (
@@ -8,8 +9,10 @@ import (
 	"os"
 	"path/filepath"
 
+	"officelite/common/iwork"
 	"officelite/common/ole"
 	"officelite/excel/fileio/csvfile"
+	"officelite/excel/fileio/numbersfile"
 	"officelite/excel/fileio/xlsfile"
 	"officelite/excel/fileio/xlsxfile"
 	"officelite/excel/model"
@@ -28,12 +31,16 @@ func Open(path string) (*model.Workbook, error) {
 
 // Read parses data. The format comes from the content, not the extension:
 // files named .xls are often really CSV or .xlsx in disguise.
-func Read(name string, data []byte) (*model.Workbook, error) {
-	var (
-		wb  *model.Workbook
-		err error
-	)
+func Read(name string, data []byte) (wb *model.Workbook, err error) {
+	// A reader bug on a damaged file must not take the app down with it.
+	defer func() {
+		if r := recover(); r != nil {
+			wb, err = nil, fmt.Errorf("%s: the file is damaged or not supported (internal error: %v)", name, r)
+		}
+	}()
 	switch {
+	case bytes.HasPrefix(data, magicZip) && iwork.IsPackage(data):
+		wb, err = numbersfile.Read(data) // read-only: FormatFor has no .numbers
 	case bytes.HasPrefix(data, magicZip):
 		wb, err = xlsxfile.Read(data)
 	case ole.IsCompoundFile(data):

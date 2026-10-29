@@ -65,6 +65,9 @@ func (a *App) gridContextMenu(st *sheetState, pos f32.Point) {
 	a.grid.focusPending = true
 	v := &st.view
 	hit := v.HitTest(pos.X, pos.Y)
+	if hit.Area == render.AreaOutline {
+		return // the outline's gutters have no menu
+	}
 	inside := false
 	switch hit.Area {
 	case render.AreaCell:
@@ -85,6 +88,11 @@ func (a *App) gridContextMenu(st *sheetState, pos f32.Point) {
 		items = a.headerMenu(false)
 	default:
 		items = a.cellMenu()
+		act := v.Sel.Active
+		if pt, _ := v.Sheet.PivotAt(act.Row, act.Col); pt != nil {
+			items = a.pivotCellMenu(pt) // a report's cell (pivot.go)
+			a.pv.ctxAt = pos.Round()
+		}
 	}
 	openCtx(&a.cm.grid, &a.cm.gridActs, pos.Round(), items)
 }

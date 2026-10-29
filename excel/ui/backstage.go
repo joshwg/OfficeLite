@@ -15,6 +15,7 @@ import (
 
 	"officelite/common/doctype"
 	"officelite/common/gui"
+	"officelite/common/lockfile"
 	"officelite/common/recent"
 	"officelite/common/version"
 	"officelite/excel/fileio"
@@ -99,6 +100,9 @@ func (a *App) openFile(path string) {
 		return
 	}
 	a.back.Hide()
+	if lockfile.Activate(path) {
+		return // open in a window already, which comes to the front
+	}
 	kind, _ := doctype.DetectFile(path)
 	switch {
 	case kind == doctype.Document:
@@ -118,7 +122,7 @@ func (a *App) save() {
 		return
 	}
 	f, ok := fileio.FormatFor(a.path)
-	if a.path == "" || !ok {
+	if a.path == "" || !ok || a.lk.readOnly {
 		a.back.Show(gui.PageSaveAs)
 		return
 	}
@@ -131,12 +135,14 @@ func (a *App) save() {
 	}
 	path := a.path
 	a.confirmFormat(f, path, func() {
-		if err := fileio.SaveFile(a.wb, path, f, a.active); err != nil {
-			a.errMsg = "Save failed: " + err.Error()
+		// After an AutoSave still writing, never under it (autosave.go).
+		if err := a.as.saver.Save(func() error { return fileio.SaveFile(a.wb, path, f, a.active) }); err != nil {
+			a.errMsg = lockfile.SaveError(path, err)
 			a.closing = false
 			return
 		}
 		a.modified = false
+		a.dropRecovery() // recover.go
 		a.fileInfo, _ = os.Stat(path)
 		a.errMsg = ""
 		a.notice = "Saved " + filepath.Base(path) + lossNote(a.wb, f, a.active)
@@ -205,7 +211,10 @@ func (a *App) askSaveBeforeClose() {
 			a.save()
 		case 1:
 			a.mayClose = true
-			a.win.Perform(system.ActionClose)
+			a.ar.saver.Close() // the changes and their recovery copy go
+			if a.win != nil {
+				a.win.Perform(system.ActionClose)
+			}
 		default:
 			a.closing = false
 		}
@@ -245,10 +254,10 @@ func (a *App) saveAs(f fileio.Format, export bool) {
 // workbook can't change while it is written.
 func (a *App) writeAs(f fileio.Format, export bool) {
 	a.saving.Store(true)
-	name := a.baseName() + f.Ext()
+	name := a.saveAsName(f) // recover.go
 	go func() {
 		wc, err := a.expl.CreateFile(name)
-		a.post(func() {
+		a.calls.Post(func() {
 			defer a.saving.Store(false)
 			if errors.Is(err, explorer.ErrUserDecline) {
 				a.closing = false
@@ -289,14 +298,23 @@ func (a *App) saved(wb *model.Workbook, f fileio.Format, path string, export boo
 		return
 	}
 	a.modified = false
+	a.dropRecovery()
 	if filepath.IsAbs(path) {
 		a.path = path
 		a.fileInfo, _ = os.Stat(path)
 		a.recent.Add(path, recent.Spreadsheet)
+		a.lk.readOnly = false
+		a.lk.doc.Set(path, true) // the new file's registration and owner file
+		a.as.elsewhere = false
 	}
 	wb.Name = filepath.Base(path)
 	a.warned = path
-	a.win.Option(windowTitle(wb.Name))
+	if a.win != nil {
+		a.win.Option(windowTitle(wb.Name))
+	}
+	if !a.as.saver.On() {
+		a.autoSaveLoaded() // on for a .xlsx when that's the default (autosave.go)
+	}
 	a.closeIfClosing()
 }
 
@@ -320,7 +338,7 @@ func (a *App) backstagePage(p gui.Page) []layout.Widget {
 		f := saveFormats[bs.saveFmt]
 		rows := []layout.Widget{
 			th.Property("File name", a.baseName()+f.Ext()),
-			th.Property("Current file", orNone(a.path, "Not saved yet")),
+			th.Property("Current file", gui.OrNone(a.path, "Not saved yet")),
 			th.Heading("Save as type"),
 		}
 		for i, sf := range saveFormats {
@@ -394,13 +412,13 @@ func (a *App) infoPage() []layout.Widget {
 	}
 	rows := []layout.Widget{
 		th.Heading(wb.Name),
-		th.Paragraph(orNone(a.path, "This workbook hasn't been saved yet."), gui.MutedText),
+		th.Paragraph(gui.OrNone(a.path, "This workbook hasn't been saved yet."), gui.MutedText),
 		th.Heading("Properties"),
 		th.Property("Type", fileType(a.path)),
 	}
 	if fi := a.fileInfo; fi != nil {
 		rows = append(rows,
-			th.Property("Size", byteSize(fi.Size())),
+			th.Property("Size", gui.ByteSize(fi.Size())),
 			th.Property("Modified", fi.ModTime().Format("January 2, 2006 3:04 PM")))
 	}
 	rows = append(rows,
@@ -417,16 +435,11 @@ func (a *App) infoPage() []layout.Widget {
 			rows = append(rows, th.Paragraph("• "+w, gui.ChromeText))
 		}
 	}
+	rows = append(rows, a.back.AutoRecoverRows(th)...)
+	rows = append(rows, a.back.AutoSaveRows(th, ".xlsx")...)
 	rows = append(rows, th.Heading("About"),
 		th.Paragraph(version.String()+" · "+appName+" · MIT License", gui.MutedText))
 	return rows
-}
-
-func orNone(s, none string) string {
-	if s == "" {
-		return none
-	}
-	return s
 }
 
 func fileType(path string) string {
@@ -443,22 +456,13 @@ func fileType(path string) string {
 		return "CSV (Comma delimited)"
 	case ".tsv", ".txt":
 		return "Text (Tab delimited)"
+	case ".numbers":
+		return "Apple Numbers Spreadsheet (imported; Save As to keep changes)"
 	}
 	return "Text"
 }
 
-func byteSize(n int64) string {
-	switch {
-	case n < 1024:
-		return fmt.Sprintf("%d bytes", n)
-	case n < 1024*1024:
-		return fmt.Sprintf("%.1f KB", float64(n)/1024)
-	default:
-		return fmt.Sprintf("%.1f MB", float64(n)/(1024*1024))
-	}
-}
-
-func formatIcon(f fileio.Format) *widget.Icon {
+func formatIcon(f fileio.Format) *gui.Icon {
 	if f.MultiSheet() {
 		return gui.IconGrid
 	}

@@ -20,7 +20,9 @@ import (
 	"officelite/common/colors"
 	"officelite/common/doctype"
 	"officelite/common/gui"
+	"officelite/excel/edit"
 	"officelite/excel/model"
+	"officelite/excel/render"
 )
 
 var (
@@ -40,6 +42,7 @@ const (
 	menuHome
 	menuInsert
 	menuFormulas
+	menuData
 	menuView
 )
 
@@ -84,9 +87,9 @@ func (a *App) menus() []gui.Menu {
 			visible++
 		}
 	}
-	return []gui.Menu{
+	menus := a.chartSheetMenus(append([]gui.Menu{
 		menuFile: {Label: "File", Primary: true},
-		menuHome: {Label: "Home", Items: []gui.MenuItem{
+		menuHome: {Label: "Home", Tab: true, Selected: a.tab == tabHome, Items: []gui.MenuItem{
 			homeUndo:        {Label: "Undo", Shortcut: "Ctrl+Z", Disabled: !a.book.CanUndo() && !editing, Tip: "Undo your last action."},
 			homeRedo:        {Label: "Redo", Shortcut: "Ctrl+Y", Disabled: !a.book.CanRedo() || editing, Tip: "Redo your last action."},
 			2:               {Separator: true},
@@ -120,6 +123,7 @@ func (a *App) menus() []gui.Menu {
 		menuFormulas: {Label: "Formulas", Items: []gui.MenuItem{
 			{Label: "Calculate Now", Shortcut: "F9", Tip: "Recalculate every formula in the workbook."},
 		}},
+		menuData: a.dataMenuDef(),
 		menuView: {Label: "View", Items: []gui.MenuItem{
 			{Label: "Zoom In", Shortcut: "Ctrl+Alt+=", Tip: "Make the sheet bigger on screen."},
 			{Label: "Zoom Out", Shortcut: "Ctrl+Alt+-", Tip: "Make the sheet smaller on screen."},
@@ -127,10 +131,34 @@ func (a *App) menus() []gui.Menu {
 			{Separator: true},
 			{Label: "Gridlines", Checked: a.wb.Sheets[a.active].ShowGridLines, Tip: "Show or hide the lines between cells."},
 		}},
-	}
+	}, append(a.pivotMenus(), a.chartMenus()...)...)) // PivotTable Analyze and Design while in a report (pivot.go), Chart Design and Format with a chart (chartribbon.go); chart sheets (chart.go)
+	// Undo and Redo name the next step, as Excel's do ("Undo Typing 'x' in B5").
+	home := menus[menuHome].Items
+	home[homeUndo].Label = gui.HistoryLabel("Undo", a.undoLabels())
+	home[homeRedo].Label = gui.HistoryLabel("Redo", a.redoLabels())
+	return menus
 }
 
 func (a *App) menuChosen(ev gui.MenuEvent) {
+	if ev.Menu > menuView {
+		i := ev.Menu - menuView - 1
+		if n := len(a.pivotMenus()); i >= n {
+			a.chartMenuChosen(i - n)
+		} else {
+			a.pivotMenuChosen(i)
+		}
+		return
+	}
+	if ev.Item == gui.MenuTab {
+		// Home and Data also switch the ribbon, as Excel's tabs do.
+		switch ev.Menu {
+		case menuHome:
+			a.tab = tabHome
+		case menuData:
+			a.tab = tabData
+		}
+		return
+	}
 	switch ev.Menu {
 	case menuFile:
 		a.back.Show(gui.PageHome)
@@ -178,6 +206,8 @@ func (a *App) menuChosen(ev gui.MenuEvent) {
 		a.insertChosen(ev.Item)
 	case menuFormulas:
 		a.recalculate()
+	case menuData:
+		a.dataChosen(ev.Item)
 	case menuView:
 		switch ev.Item {
 		case 0:
@@ -198,6 +228,7 @@ func (a *App) menuChosen(ev gui.MenuEvent) {
 
 func (a *App) layout(gtx layout.Context) {
 	a.gtx = gtx
+	a.takeDrops() // drop.go
 	if a.dialog.Visible {
 		if i := a.dialog.Clicked(gtx); i >= 0 && a.answer != nil {
 			answer := a.answer
@@ -206,13 +237,18 @@ func (a *App) layout(gtx layout.Context) {
 		}
 	}
 	defer a.dialog.Layout(gtx, a.ui)
+	defer a.layoutPivotDialog(gtx) // pivotdlg.go
+	defer a.layoutChartDialog(gtx) // chartdlg.go
 	defer a.layoutDialogs(gtx)
 	defer a.layoutInsertDialogs(gtx)
 	a.dialogInput(gtx) // before the shortcuts: Esc and Enter go to an open dialog
 	a.insertDialogInput(gtx)
+	a.pivotDialogInput(gtx)
+	a.chartDialogInput(gtx)
 	a.insertKeys(gtx)
 	a.globalKeys(gtx)
 	a.editKeys(gtx)
+	defer a.autoSaveFrame() // after this frame's edits (autosave.go)
 	gui.FillRect(gtx.Ops, image.Rectangle{Max: gtx.Constraints.Max}, chromeBG)
 	if a.back.Visible {
 		layout.Flex{Axis: layout.Vertical}.Layout(gtx,
@@ -228,12 +264,23 @@ func (a *App) layout(gtx layout.Context) {
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return a.menu.Layout(gtx, a.ui, a.menus(), a.menuChosen)
 		}),
-		layout.Rigid(a.layoutRibbon),
-		layout.Rigid(a.formulaBar),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if a.onChartSheet() && a.tab < tabChartDesign {
+				gtx = gtx.Disabled() // no cells to format (chart.go)
+			}
+			return a.layoutRibbon(gtx)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if a.onChartSheet() {
+				gtx = gtx.Disabled()
+			}
+			return a.formulaBar(gtx)
+		}),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{}.Layout(gtx,
 				layout.Flexed(1, a.layoutGrid),
 				layout.Rigid(a.vScrollbar),
+				layout.Rigid(a.layoutPane), // PivotTable Fields (pivotpane.go)
 			)
 		}),
 		layout.Rigid(a.bottomBar),
@@ -257,7 +304,8 @@ func (a *App) globalKeys(gtx layout.Context) {
 			key.Filter{Name: "-", Required: key.ModShortcut | key.ModAlt},
 			key.Filter{Name: "0", Required: key.ModShortcut},
 			key.Filter{Name: key.NameF9},
-			key.Filter{Name: key.NameF11, Required: key.ModShift},
+			key.Filter{Name: key.NameF11, Optional: key.ModShift},
+			key.Filter{Name: key.NameF1, Required: key.ModAlt},
 		)
 		if !ok {
 			break
@@ -265,6 +313,24 @@ func (a *App) globalKeys(gtx layout.Context) {
 		e, ok := ev.(key.Event)
 		if !ok || e.State != key.Press {
 			continue
+		}
+		if e.Name != key.NameEscape {
+			if a.modalOpen() {
+				continue // the dialog has the keyboard; Esc closes it below
+			}
+			switch e.Name {
+			case key.NameF9, key.NameF11, key.NameF1, "+", "=", "-", "0":
+				if a.back.Visible {
+					continue // the File page has no sheet to act on
+				}
+			}
+			if a.rename.active {
+				// A tab being renamed takes its new name first, as when it
+				// loses the focus; a name that is refused keeps it open.
+				if a.finishRename(true); a.rename.active {
+					continue
+				}
+			}
 		}
 		switch e.Name {
 		case "N":
@@ -299,6 +365,12 @@ func (a *App) globalKeys(gtx layout.Context) {
 			case a.menu.IsOpen():
 				a.menu.Close()
 				continue
+			case a.filt.open:
+				a.closeFilterMenu() // a filter drop-down (filter.go)
+				continue
+			case a.vlist.open:
+				a.closeValidList() // a validation list (validation.go)
+				continue
 			case a.cm.grid.IsOpen() || a.cm.tabs.IsOpen():
 				a.cm.grid.Close() // right-click menus (ctxmenu.go)
 				a.cm.tabs.Close()
@@ -306,15 +378,23 @@ func (a *App) globalKeys(gtx layout.Context) {
 			case a.ins.kind != dlgNone:
 				a.closeDialog()
 				continue
+			case a.ch.dlg.kind != cdNone:
+				a.closeChartDialog() // chartdlg.go
+				continue
 			case a.back.Visible:
 				a.back.Hide()
 				a.closing = false
 			case a.rename.active:
 				a.finishRename(false)
+			case a.ch.title.active:
+				a.finishTitleEdit(false) // chart.go
 			case a.ed.active:
 				a.cancelEdit()
+			case a.state().view.SelElem.Kind > render.ElemChartArea && a.state().view.SelChart != nil:
+				a.state().view.SelElem = render.ChartElem{Kind: render.ElemChartArea} // a chart's part, then the chart
 			default:
 				a.clip = nil
+				a.state().view.SelChart, a.state().view.SelElem = nil, render.ChartElem{}
 			}
 			a.grid.focusPending = true
 		case "+", "=":
@@ -326,7 +406,13 @@ func (a *App) globalKeys(gtx layout.Context) {
 		case key.NameF9:
 			a.recalculate()
 		case key.NameF11:
-			a.insertSheet()
+			if e.Modifiers.Contain(key.ModShift) {
+				a.insertSheet()
+			} else {
+				a.insertChartSheet() // chart.go
+			}
+		case key.NameF1:
+			a.insertChart(edit.ColumnClustered) // Alt+F1: the default chart beside the data
 		}
 	}
 }
@@ -346,15 +432,20 @@ func (a *App) titleBar(gtx layout.Context) layout.Dimensions {
 	h := gtx.Dp(36)
 	gui.FillRect(gtx.Ops, image.Rect(0, 0, gtx.Constraints.Max.X, h), accent)
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = h, h
-	name := a.wb.Name
+	name := a.docName()
 	if a.modified {
 		name += " •"
+	}
+	if st := a.autoSaveStatus(gtx); st != "" {
+		name += " – " + st
 	}
 	return layout.Inset{Left: 12, Right: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return gui.Middle(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(a.label(15, appName, colors.White, true).Layout),
-				layout.Rigid(layout.Spacer{Width: 16}.Layout),
+				layout.Rigid(layout.Spacer{Width: 12}.Layout),
+				layout.Rigid(a.autoSaveSwitch), // autosave.go
+				layout.Rigid(layout.Spacer{Width: 12}.Layout),
 				layout.Flexed(1, a.label(13, name, colors.White, false).Layout),
 			)
 		})
@@ -442,7 +533,8 @@ func (a *App) vScrollbar(gtx layout.Context) layout.Dimensions {
 	gtx.Constraints.Min.Y = gtx.Constraints.Max.Y
 	fr := v.Sheet.FreezeRows
 	visible := float64(v.VisibleRows())
-	total := float64(max(v.Sheet.UsedRows(), v.TopRow+int(visible), st.selEnd.Row+1)-fr) + visible
+	rows, _ := a.dataExtent(st)
+	total := float64(max(rows, v.TopRow, st.selEnd.Row+1)-fr) + visible
 	a.scrollHints()
 	pos := a.vbar.Layout(gtx, float64(v.TopRow-fr), visible, total)
 	if top := fr + int(pos+0.5); top != v.TopRow {
@@ -464,7 +556,8 @@ func (a *App) bottomBar(gtx layout.Context) layout.Dimensions {
 			v := &st.view
 			fc := v.Sheet.FreezeCols
 			visible := float64(v.VisibleCols())
-			total := float64(max(v.Sheet.UsedCols(), v.LeftCol+int(visible), st.selEnd.Col+1)-fc) + visible
+			_, cols := a.dataExtent(st)
+			total := float64(max(cols, v.LeftCol, st.selEnd.Col+1)-fc) + visible
 			ins := layout.Inset{Top: 8, Bottom: 8, Right: 14}
 			return ins.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				pos := a.hbar.Layout(gtx, float64(v.LeftCol-fc), visible, total)
@@ -499,34 +592,54 @@ func (a *App) sheetTabs(gtx layout.Context) layout.Dimensions {
 		}
 	}
 	a.renameEvents(gtx)
+	for a.newSheetBtn.Clicked(gtx) {
+		a.newSheet()
+	}
 	a.tabList.Axis = layout.Horizontal
 	return layout.Inset{Left: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return a.tabList.Layout(gtx, len(a.wb.Sheets), func(gtx layout.Context, i int) layout.Dimensions {
-			sh := a.wb.Sheets[i]
-			if sh.Hidden {
-				return layout.Dimensions{}
+		// The tabs, then the + that adds a sheet right after them.
+		btnW := gtx.Dp(30)
+		return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				gtx.Constraints.Max.X = max(gtx.Constraints.Max.X-btnW, 0)
+				return a.tabStrip(gtx)
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Left: 4}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return gui.ToolButton(gtx, a.ui, &a.newSheetBtn, gui.IconNew, "", false, color.NRGBA{})
+				})
+			}),
+		)
+	})
+}
+
+// tabStrip lays out the sheet tabs.
+func (a *App) tabStrip(gtx layout.Context) layout.Dimensions {
+	return a.tabList.Layout(gtx, len(a.wb.Sheets), func(gtx layout.Context, i int) layout.Dimensions {
+		sh := a.wb.Sheets[i]
+		if sh.Hidden {
+			return layout.Dimensions{}
+		}
+		activeTab := i == a.active
+		if a.rename.active && a.rename.sheet == i {
+			return a.renameBox(gtx)
+		}
+		return a.tabBtns[i].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			m := op.Record(gtx.Ops)
+			c := chromeText
+			if activeTab {
+				c = accent
 			}
-			activeTab := i == a.active
-			if a.rename.active && a.rename.sheet == i {
-				return a.renameBox(gtx)
+			l := a.label(13, sh.Name, c, activeTab)
+			d := layout.Inset{Top: 6, Bottom: 6, Left: 14, Right: 14}.Layout(gtx, l.Layout)
+			call := m.Stop()
+			if activeTab {
+				gui.FillRect(gtx.Ops, image.Rectangle{Max: d.Size}, tabActiveBG)
+				gui.HLine(gtx.Ops, gtx.Dp(8), d.Size.X-gtx.Dp(8), d.Size.Y-gtx.Dp(3), gtx.Dp(2), accent)
 			}
-			return a.tabBtns[i].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				m := op.Record(gtx.Ops)
-				c := chromeText
-				if activeTab {
-					c = accent
-				}
-				l := a.label(13, sh.Name, c, activeTab)
-				d := layout.Inset{Top: 6, Bottom: 6, Left: 14, Right: 14}.Layout(gtx, l.Layout)
-				call := m.Stop()
-				if activeTab {
-					gui.FillRect(gtx.Ops, image.Rectangle{Max: d.Size}, tabActiveBG)
-					gui.HLine(gtx.Ops, gtx.Dp(8), d.Size.X-gtx.Dp(8), d.Size.Y-gtx.Dp(3), gtx.Dp(2), accent)
-				}
-				call.Add(gtx.Ops)
-				gui.VLine(gtx.Ops, d.Size.X-1, gtx.Dp(6), d.Size.Y-gtx.Dp(6), 1, chromeLine)
-				return d
-			})
+			call.Add(gtx.Ops)
+			gui.VLine(gtx.Ops, d.Size.X-1, gtx.Dp(6), d.Size.Y-gtx.Dp(6), 1, chromeLine)
+			return d
 		})
 	})
 }

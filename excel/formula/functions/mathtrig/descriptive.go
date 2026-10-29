@@ -5,6 +5,7 @@ import (
 	"sort"
 
 	f "officelite/excel/formula"
+	"officelite/excel/formula/functions/internal/stats"
 )
 
 // Descriptive statistics beyond what SUBTOTAL/AGGREGATE need: GEOMEAN,
@@ -103,7 +104,7 @@ func listSpec(name string, g func(xs []float64) f.Value) f.Spec {
 		}}
 }
 
-func mean(xs []float64) float64 { return sum(xs) / float64(len(xs)) }
+func mean(xs []float64) float64 { return stats.Sum(xs) / float64(len(xs)) }
 
 // devsq is the sum of squared deviations from the mean.
 func devsq(xs []float64) float64 {
@@ -229,7 +230,7 @@ func percentRank(exclusive bool) func(e *f.Env, a []f.Value) f.Value {
 			r = pos / float64(n-1)
 		}
 		p := math.Pow(10, sig)
-		return f.NumberOrErr(math.Floor(sig15(r*p)) / p)
+		return f.NumberOrErr(math.Floor(f.Round15(r*p)) / p)
 	}
 }
 

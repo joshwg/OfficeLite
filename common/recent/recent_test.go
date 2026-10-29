@@ -1,7 +1,9 @@
 package recent
 
 import (
+	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -29,5 +31,54 @@ func TestList(t *testing.T) {
 	}
 	if n := len(l.Entries()); n > Max {
 		t.Errorf("len = %d, want <= %d", n, Max)
+	}
+}
+
+// TestListShared checks that two lists on one file (two OfficeLite
+// processes) keep each other's changes.
+func TestListShared(t *testing.T) {
+	store := filepath.Join(t.TempDir(), "recent.json")
+	a, b := Open(store), Open(store)
+	if err := a.Add("/a/one.xlsx", Spreadsheet); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Add("/b/two.docx", Document); err != nil { // b hasn't seen one.xlsx
+		t.Fatal(err)
+	}
+	if err := a.Add("/a/three.csv", Spreadsheet); err != nil {
+		t.Fatal(err)
+	}
+	names := func(es []Entry) []string {
+		var s []string
+		for _, e := range es {
+			s = append(s, e.Name())
+		}
+		return s
+	}
+	want := []string{"three.csv", "two.docx", "one.xlsx"}
+	if got := names(Open(store).Entries()); !slices.Equal(got, want) {
+		t.Fatalf("file holds %q, want %q", got, want)
+	}
+	if got := names(a.Entries()); !slices.Equal(got, want) {
+		t.Fatalf("a holds %q, want %q", got, want)
+	}
+	if err := b.Remove("/a/one.xlsx"); err != nil {
+		t.Fatal(err)
+	}
+	want = []string{"three.csv", "two.docx"}
+	if got := names(Open(store).Entries()); !slices.Equal(got, want) {
+		t.Fatalf("after remove the file holds %q, want %q", got, want)
+	}
+	if es, _ := os.ReadDir(filepath.Dir(store)); len(es) != 1 {
+		t.Errorf("left temporary files: %v", es)
+	}
+
+	// A save that fails is reported; the list in memory still changes.
+	bad := Open(filepath.Join(store, "recent.json")) // under a file
+	if err := bad.Add("/x.csv", Spreadsheet); err == nil {
+		t.Error("no error saving under a file")
+	}
+	if len(bad.Entries()) != 1 {
+		t.Error("entry not kept in memory")
 	}
 }

@@ -27,17 +27,18 @@ import (
 	"strings"
 
 	f "officelite/excel/formula"
+	"officelite/excel/formula/functions/internal/stats"
 )
 
 // Register adds the database functions to r.
 func Register(r *f.Registry) {
 	r.Add(
-		spec("DSUM", func(xs []float64) f.Value { return f.NumberOrErr(sum(xs)) }),
+		spec("DSUM", func(xs []float64) f.Value { return f.NumberOrErr(stats.Sum(xs)) }),
 		spec("DAVERAGE", func(xs []float64) f.Value {
 			if len(xs) == 0 {
 				return f.ErrDiv0
 			}
-			return f.NumberOrErr(sum(xs) / float64(len(xs)))
+			return f.NumberOrErr(stats.Sum(xs) / float64(len(xs)))
 		}),
 		spec("DMIN", func(xs []float64) f.Value {
 			if len(xs) == 0 {
@@ -112,27 +113,13 @@ func spec(name string, agg func([]float64) f.Value) f.Spec {
 		}}
 }
 
-func sum(xs []float64) float64 {
-	t := 0.0
-	for _, x := range xs {
-		t += x
-	}
-	return t
-}
-
 // variance is the sample (ddof 1) or population (ddof 0) variance, or its
 // square root.
 func variance(xs []float64, ddof int, sqrt bool) f.Value {
-	n := len(xs) - ddof
-	if n <= 0 {
+	v, ok := stats.Variance(xs, ddof)
+	if !ok {
 		return f.ErrDiv0
 	}
-	mean := sum(xs) / float64(len(xs))
-	ss := 0.0
-	for _, x := range xs {
-		ss += (x - mean) * (x - mean)
-	}
-	v := ss / float64(n)
 	if sqrt {
 		v = math.Sqrt(v)
 	}

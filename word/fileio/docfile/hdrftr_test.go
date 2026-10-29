@@ -1,22 +1,18 @@
 package docfile
 
 import (
-	"slices"
 	"testing"
 
 	"officelite/word/model"
 )
 
-func TestHeadersWarnAndCustomStyles(t *testing.T) {
+func TestHeadersAndCustomStyles(t *testing.T) {
 	doc := model.New("x")
 	e := model.NewEditor(doc)
 	e.InsertText("Text")
 	e.SelectAll()
 	if _, err := e.NewStyle(model.StyleSpec{Name: "My Style", Type: model.ParagraphStyle}); err != nil {
 		t.Fatal(err)
-	}
-	if ws := Warnings(doc); slices.Contains(ws, WarnHeadersLost) {
-		t.Errorf("headers warning without headers: %v", ws)
 	}
 	b := roundTrip(t, doc)
 	st := b.Styles.FindStyleByName("My Style")
@@ -26,8 +22,24 @@ func TestHeadersWarnAndCustomStyles(t *testing.T) {
 	if n := b.Styles.Default(model.ParagraphStyle); n == nil || n.Custom {
 		t.Errorf("Normal is custom")
 	}
-	doc.NewHeaderFooter(model.HFDefault, false)
-	if ws := Warnings(doc); !slices.Contains(ws, WarnHeadersLost) {
-		t.Errorf("no headers warning: %v", ws)
+	// Headers and footers are saved in the header subdocument.
+	h := doc.NewHeaderFooter(model.HFDefault, false)
+	h.Blocks[0].(*model.Paragraph).Runs = []model.Run{{Text: "Head "}, {Kind: model.RunOpaque, Text: "1", Opaque: &model.Opaque{Field: "PAGE"}}}
+	f := doc.NewHeaderFooter(model.HFFirst, true)
+	f.Blocks[0].(*model.Paragraph).Runs = []model.Run{{Text: "First foot"}}
+	doc.HF.TitlePage = true
+	if ws := Warnings(doc); len(ws) != 0 {
+		t.Errorf("warnings: %v", ws)
+	}
+	b = roundTrip(t, doc)
+	if !b.HF.TitlePage || b.HF.Headers[model.HFDefault] == nil || b.HF.Footers[model.HFFirst] == nil || b.HF.Footers[model.HFDefault] != nil {
+		t.Fatalf("headers = %+v", b.HF)
+	}
+	p := b.HF.Headers[model.HFDefault].Blocks[0].(*model.Paragraph)
+	if p.Text() != "Head ￼" || p.Runs[1].Opaque.Field != "PAGE" || p.Runs[1].Text != "1" {
+		t.Errorf("header = %q %+v", p.Text(), p.Runs)
+	}
+	if got := b.HF.Footers[model.HFFirst].Blocks[0].(*model.Paragraph).Text(); got != "First foot" {
+		t.Errorf("first footer = %q", got)
 	}
 }

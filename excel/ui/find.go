@@ -198,19 +198,20 @@ func (a *App) layoutFindDialog(gtx layout.Context, k int) {
 	}
 	within := []string{"Sheet", "Workbook"}
 	lookIn := []string{"Formulas", "Values"}
+	form := gui.Form{Th: a.ui, LabelW: 100}
 	body := func(gtx layout.Context) layout.Dimensions {
 		rows := []layout.FlexChild{
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{}.Layout(gtx, tab(&d.tabFind, "Find", !d.replace), tab(&d.tabReplace, "Replace", d.replace))
 			}),
 			layout.Rigid(layout.Spacer{Height: 8}.Layout),
-			a.labeled("Find what:", 100, func(gtx layout.Context) layout.Dimensions {
-				return a.textField(gtx, &d.what, 300, 1, "")
+			form.Field("Find what:", func(gtx layout.Context) layout.Dimensions {
+				return gui.TextField(gtx, a.ui, &d.what, 300, 1, "")
 			}),
 		}
 		if d.replace {
-			rows = append(rows, a.labeled("Replace with:", 100, func(gtx layout.Context) layout.Dimensions {
-				return a.textField(gtx, &d.with, 300, 1, "")
+			rows = append(rows, form.Field("Replace with:", func(gtx layout.Context) layout.Dimensions {
+				return gui.TextField(gtx, a.ui, &d.with, 300, 1, "")
 			}))
 		}
 		cur := lookIn[0]
@@ -237,9 +238,9 @@ func (a *App) layoutFindDialog(gtx layout.Context, k int) {
 			layout.Rigid(layout.Spacer{Height: 4}.Layout),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{}.Layout(gtx,
-					layout.Rigid(a.checkBox(&d.matchCase, "Match case")),
+					layout.Rigid(a.ui.CheckBox(&d.matchCase, "Match case")),
 					layout.Rigid(layout.Spacer{Width: 16}.Layout),
-					layout.Rigid(a.checkBox(&d.whole, "Match entire cell contents")),
+					layout.Rigid(a.ui.CheckBox(&d.whole, "Match entire cell contents")),
 				)
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -384,11 +385,11 @@ func (a *App) layoutGoToDialog(gtx layout.Context, k int) {
 				return layout.Dimensions{Size: image.Pt(w, h)}
 			}),
 			layout.Rigid(layout.Spacer{Height: 10}.Layout),
-			a.labeled("Reference:", 80, func(gtx layout.Context) layout.Dimensions {
-				return a.textField(gtx, &d.ref, 260, 1, "B12, Sheet2!A1:C5 or a name")
+			gui.Form{Th: a.ui, LabelW: 80}.Field("Reference:", func(gtx layout.Context) layout.Dimensions {
+				return gui.TextField(gtx, a.ui, &d.ref, 260, 1, "B12, Sheet2!A1:C5 or a name")
 			}),
 			a.errorLine(),
 		)
 	}
-	a.modal(gtx, &a.ins.block, "Go To", 380, body, a.accentButton(&a.ins.ok, "OK"), a.plainButton(&a.ins.cancel, "Cancel"))
+	a.ui.ModalDialog(gtx, &a.ins.block, "Go To", 380, body, a.accentButton(&a.ins.ok, "OK"), a.plainButton(&a.ins.cancel, "Cancel"))
 }

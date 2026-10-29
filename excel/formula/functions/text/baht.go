@@ -62,7 +62,7 @@ func bahtText(_ *f.Env, a []f.Value) f.Value {
 		return err
 	}
 	neg := x < 0
-	cents := math.Floor(roundDec(math.Abs(x), 2)*100 + 0.5)
+	cents := math.Floor(f.RoundDigits(math.Abs(x), 2, f.RoundHalf)*100 + 0.5)
 	baht, satang := math.Floor(cents/100), int(math.Mod(cents, 100))
 	var blocks []int // six-digit blocks, least significant first
 	for baht > 0 {

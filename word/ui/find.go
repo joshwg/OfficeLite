@@ -10,11 +10,9 @@ import (
 	"gioui.org/font"
 	"gioui.org/io/key"
 	"gioui.org/layout"
-	"gioui.org/op"
 	"gioui.org/unit"
 	"gioui.org/widget"
 
-	"officelite/common/colors"
 	"officelite/common/gui"
 	wl "officelite/word/layout"
 	"officelite/word/model"
@@ -341,28 +339,7 @@ func (d *window) findBarLayout(gtx layout.Context) layout.Dimensions {
 // textBox draws a single-line editor with a border, width wide.
 func (d *window) textBox(gtx layout.Context, ed *widget.Editor, width unit.Dp, hint string) layout.Dimensions {
 	ed.SingleLine = true
-	w := gtx.Dp(width)
-	gtx.Constraints = layout.Constraints{Min: image.Pt(w, 0), Max: image.Pt(w, gtx.Dp(26))}
-	m := op.Record(gtx.Ops)
-	dims := layout.Inset{Left: 5, Right: 5, Top: 4, Bottom: 4}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		gtx.Constraints.Min.X = gtx.Constraints.Max.X
-		if ed.Len() == 0 && hint != "" && !gtx.Focused(ed) {
-			m := op.Record(gtx.Ops)
-			ed.Layout(gtx, d.th.Shaper, gui.UIFont, unit.Sp(13), gui.Material(gtx.Ops, gui.ChromeText), gui.Material(gtx.Ops, selColor))
-			m.Stop()
-			return d.th.Label(13, hint, gui.MutedText, font.Normal).Layout(gtx)
-		}
-		return ed.Layout(gtx, d.th.Shaper, gui.UIFont, unit.Sp(13), gui.Material(gtx.Ops, gui.ChromeText), gui.Material(gtx.Ops, selColor))
-	})
-	call := m.Stop()
-	border := gui.ChromeLine
-	if gtx.Focused(ed) {
-		border = d.th.Accent
-	}
-	gui.FillRect(gtx.Ops, image.Rectangle{Max: dims.Size}.Inset(-1), border)
-	gui.FillRect(gtx.Ops, image.Rectangle{Max: dims.Size}, colors.White)
-	call.Add(gtx.Ops)
-	return dims
+	return gui.TextField(gtx, d.th, ed, width, 1, hint)
 }
 
 // drawMatches highlights the find matches on page cpg of eng.

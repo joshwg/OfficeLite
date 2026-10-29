@@ -32,6 +32,9 @@ type Placed struct {
 	W    float64 // width of the text column (page text area or cell)
 
 	order int // index in document order of all placed lines
+	// collapsed is set on the empty paragraph that ends a table cell
+	// after a nested table: Word gives it no room and shows no mark.
+	collapsed bool
 }
 
 // Page is a laid-out page.
@@ -39,9 +42,18 @@ type Page struct {
 	Index         int
 	Width, Height float64
 	Top           float64 // offset of the page in the page view
-	Lines         []Placed
-	Fills         []Fill
-	Rules         []Rect // table borders, as thin rectangles
+	// X is the page's left edge in the page view, relative to the widest
+	// page's (pages of different sizes are centered under each other).
+	X float64
+	// Section is the index of the page's section (model.Document.Sections),
+	// First is set on a section's first page, and Number is the page's
+	// number as PAGE fields show it (sections may restart numbering).
+	Section int
+	First   bool
+	Number  int
+	Lines   []Placed
+	Fills   []Fill
+	Rules   []Rect // table borders, as thin rectangles
 	// Header and Footer are the page's header and footer (nil when it has
 	// none); BodyTop and BodyBottom bound the body text area (see
 	// hdrftr.go).
@@ -50,6 +62,12 @@ type Page struct {
 	// TableRows are the rows of the body's tables placed on the page, for
 	// resizing columns and rows by their borders.
 	TableRows []TableRowBox
+	// Notes are the page's footnotes (at the bottom of the text area) and
+	// endnotes, each area with its separator line; see notes.go.
+	Notes []*Band
+	// Floats are the floating objects (text boxes, shapes, pictures)
+	// anchored on the page; see float.go.
+	Floats []*FloatBox
 }
 
 // TableRowBox is a table row placed on a page: its top and bottom and the
@@ -75,8 +93,9 @@ type LineRef struct{ Page, Line int }
 type Engine struct {
 	Doc   *model.Document
 	Pages []*Page
-	// Height is the page view's total height in points.
-	Height float64
+	// Height is the page view's total height in points, Width the
+	// widest page's width.
+	Height, Width float64
 	// LastRelaid and LastDuration describe the last Layout call: how many
 	// paragraphs were broken into lines again and how long it took.
 	LastRelaid   int
@@ -104,11 +123,23 @@ type Engine struct {
 	empty     bool // nothing placed on the page yet
 	hardBreak bool // the page was started by a page break
 	setup     model.PageSetup
+	secs      []*model.Section // the document's sections
+	sec       int              // the section being laid out
+	secFirst  bool             // the next page is its section's first
+	pageNum   int              // the number of the last page started
+	cols      colState
+	breaks    map[*model.Paragraph]model.SectionBreak // section break paragraphs: the next section's break
+	notes     noteState                               // see notes.go
+	fields    []model.FieldRange                      // fields spanning paragraphs, shaded when the caret is in one
+	paraTop   float64                                 // top of the paragraph being placed, on its page
+	lastBox   *Para
 
 	// FieldValue, when set, gives the shown value of fields (PAGE in a
 	// header); see hdrftr.go.
 	FieldValue func(instr string) (string, bool)
 	hf         hfState
+
+	showHidden bool // hidden text is laid out (see marks.go)
 }
 
 // New returns an engine for doc measuring text with shaper.
@@ -161,30 +192,44 @@ func (e *Engine) Layout() {
 		e.index[l.P] = i
 	}
 	e.labels = e.listLabels(e.locs)
+	e.fields = model.FieldRangesIn(e.locs)
 	e.paraLines = make([][]LineRef, len(e.locs))
 	e.order = e.order[:0]
 	e.used = make(map[*model.Paragraph]bool, len(e.locs))
 
-	e.setup = e.Doc.Page
-	if e.setup.Width <= 0 || e.setup.Height <= 0 {
-		e.setup = model.LetterPage()
-	}
+	e.secs = e.Doc.Sections()
+	e.breaks = map[*model.Paragraph]model.SectionBreak{}
 	e.Pages = nil
+	e.page = nil
 	e.prepareHF(relayAll)
+	e.prepareNotes()
+	e.sec, e.secFirst, e.pageNum = 0, true, 0
+	e.useSection()
+	if s := e.secs[0]; s.PageNumRestart {
+		e.pageNum = s.PageNumStart - 1
+	}
 	e.newPage(false)
 	body := e.Doc.Body
 	for bi, b := range body {
 		switch b := b.(type) {
 		case *model.Paragraph:
 			next := 0.0
-			if bi+1 < len(body) {
+			if bi+1 < len(body) && b.Sect == nil {
 				next = e.firstLineHeight(body[bi+1])
 			}
-			e.placePara(b, next)
+			pl := e.para(b, e.textWidth(), nil)
+			sp := e.spacing(pl, body, bi)
+			e.placePara(pl, sp, next)
+			if b.Sect != nil && e.sec+1 < len(e.secs) {
+				e.breaks[b] = e.secs[e.sec+1].Break
+				e.startSection(e.sec + 1)
+			}
 		case *model.Table:
 			e.placeTable(b)
 		}
 	}
+	e.placeEndnotes()
+	e.finishPage()
 	for p := range e.cache {
 		if !e.used[p] {
 			delete(e.cache, p)
@@ -192,48 +237,230 @@ func (e *Engine) Layout() {
 	}
 	e.placeHF()
 	top := float64(PageGap)
+	e.Width = 0
 	for _, pg := range e.Pages {
 		pg.Top = top
 		top += pg.Height + PageGap
+		e.Width = max(e.Width, pg.Width)
+	}
+	for _, pg := range e.Pages {
+		pg.X = math.Round((e.Width - pg.Width) / 2)
 	}
 	e.Height = top
 	e.LastDuration = time.Since(start)
 }
 
-func (e *Engine) textLeft() float64 { return math.Abs(e.setup.MarginLeft) }
-func (e *Engine) textWidth() float64 {
+// colState is the text columns of the section being laid out.
+type colState struct {
+	x, w []float64 // each column's left offset (from the left margin) and width
+	i    int       // the column being filled
+	top  float64   // where the columns start on the page
+	maxY float64   // the lowest y reached in the columns before i
+}
+
+// useSection takes the page setup and columns of section e.sec.
+func (e *Engine) useSection() {
+	s := e.secs[e.sec]
+	e.setup = s.Page
+	if e.setup.Width <= 0 || e.setup.Height <= 0 {
+		e.setup = model.LetterPage()
+	}
+	e.cols.x, e.cols.w = s.Columns.Layout(e.areaWidth())
+	e.cols.i = 0
+}
+
+// startSection starts section k after the paragraph that ended the
+// previous one: on a new page (an even or odd one, leaving a page blank
+// when needed) or, for a continuous break on a page of the same size,
+// below what is on the page with the new section's margins and columns.
+func (e *Engine) startSection(k int) {
+	s := e.secs[k]
+	pg := s.Page
+	if pg.Width <= 0 || pg.Height <= 0 {
+		pg = model.LetterPage()
+	}
+	sameSize := math.Abs(pg.Width-e.page.Width) < 0.5 && math.Abs(pg.Height-e.page.Height) < 0.5
+	if (s.Break == model.BreakContinuous || s.Break == model.BreakNextColumn) && sameSize {
+		if s.Break == model.BreakNextColumn && e.cols.i+1 < len(e.cols.x) {
+			e.sec = k
+			e.nextColumn()
+			return
+		}
+		y := max(e.y, e.cols.maxY)
+		e.sec = k
+		e.useSection()
+		e.y, e.cols.top, e.cols.maxY = y, y, y
+		return
+	}
+	e.finishPage() // the footnotes go with the old page's geometry
+	next := e.pageNum + 1
+	if s.PageNumRestart {
+		next = s.PageNumStart
+	}
+	if s.Break == model.BreakEvenPage && next%2 == 1 || s.Break == model.BreakOddPage && next%2 == 0 {
+		e.newPage(true) // Word leaves this page blank
+		if !s.PageNumRestart {
+			next++
+		}
+	}
+	e.sec = k
+	e.secFirst = true
+	e.pageNum = next - 1
+	e.useSection()
+	e.newPage(true)
+}
+
+// nextColumn continues in the next column, or on a new page after the
+// last one.
+func (e *Engine) nextColumn() {
+	if e.cols.i+1 >= len(e.cols.x) {
+		e.newPage(false)
+		return
+	}
+	e.cols.maxY = max(e.cols.maxY, e.y)
+	e.cols.i++
+	e.y = e.cols.top
+	e.empty = true
+	e.hardBreak = false
+}
+
+// areaWidth is the width between the page's margins (all columns).
+func (e *Engine) areaWidth() float64 {
 	return max(e.setup.Width-math.Abs(e.setup.MarginLeft)-math.Abs(e.setup.MarginRight), 72)
 }
+
+func (e *Engine) textLeft() float64 {
+	x := math.Abs(e.setup.MarginLeft)
+	if e.cols.i < len(e.cols.x) {
+		x += e.cols.x[e.cols.i]
+	}
+	return x
+}
+
+func (e *Engine) textWidth() float64 {
+	if e.cols.i < len(e.cols.w) {
+		return max(e.cols.w[e.cols.i], 18)
+	}
+	return e.areaWidth()
+}
+
 func (e *Engine) textTop() float64 { return max(math.Abs(e.setup.MarginTop), e.hfTop()) }
+
+// textBottom is where the body text must end on the page: above the
+// bottom margin (or a footer reaching higher) and the page's footnotes.
 func (e *Engine) textBottom() float64 {
+	return max(e.areaBottom()-e.notes.footH, e.textTop()+72)
+}
+
+// areaBottom is the bottom of the text area without the footnotes.
+func (e *Engine) areaBottom() float64 {
 	return max(min(e.setup.Height-math.Abs(e.setup.MarginBottom), e.hfBottom()), e.textTop()+72)
 }
 
 func (e *Engine) newPage(hard bool) {
-	e.page = &Page{Index: len(e.Pages), Width: e.setup.Width, Height: e.setup.Height}
+	e.finishPage()
+	e.pageNum++
+	e.page = &Page{Index: len(e.Pages), Width: e.setup.Width, Height: e.setup.Height,
+		Section: e.sec, First: e.secFirst, Number: e.pageNum}
+	e.secFirst = false
 	e.Pages = append(e.Pages, e.page)
+	e.cols.i, e.cols.maxY = 0, 0
 	e.y = e.textTop()
+	e.cols.top = e.y
 	e.empty = true
 	e.hardBreak = hard
+	e.lastBox = nil
 }
 
 // para returns the (cached) layout of p for a column width wide.
-func (e *Engine) para(p *model.Paragraph, width float64, inTable bool) *Para {
+func (e *Engine) para(p *model.Paragraph, width float64, t *model.Table) *Para {
 	e.used[p] = true
 	label := e.labels[p]
-	if c := e.cache[p]; c != nil && c.width == width && c.label == label && c.inTable == inTable {
+	if c := e.cache[p]; c != nil && c.width == width && c.label == label && c.table == t {
 		return c
 	}
-	c := e.layoutPara(p, width, label, inTable)
+	c := e.layoutPara(p, width, label, t)
 	e.cache[p] = c
 	e.LastRelaid++
 	return c
 }
 
+// paraSpacing is the space around a paragraph where it is placed, and
+// its top and bottom borders (nil: none drawn).
+type paraSpacing struct {
+	before, after float64
+	top, bottom   *model.Border
+}
+
+// spacing returns the spacing of paragraph blocks[i]: with contextual
+// spacing, no space toward a neighboring paragraph of the same style.
+// Neighbors with the same borders share one box, as in Word: the top
+// border is drawn above the first and the bottom border below the last.
+func (e *Engine) spacing(pl *Para, blocks []model.Block, i int) paraSpacing {
+	sp := paraSpacing{before: pl.Before, after: pl.After}
+	var prev, next *model.Paragraph
+	if i > 0 {
+		prev, _ = blocks[i-1].(*model.Paragraph)
+	}
+	if i+1 < len(blocks) {
+		next, _ = blocks[i+1].(*model.Paragraph)
+	}
+	if pl.Props.ContextualSpacing.Bool(false) {
+		style := e.paraStyle(pl.P)
+		if prev != nil && e.paraStyle(prev) == style {
+			sp.before = 0
+		}
+		if next != nil && e.paraStyle(next) == style {
+			sp.after = 0
+		}
+	}
+	bs := pl.Props.Borders
+	same := func(q *model.Paragraph) bool {
+		return q != nil && sameBorders(bs, e.Doc.ResolvePara(q).Borders)
+	}
+	if b := bs[model.EdgeTop]; b != nil && b.Width > 0 && !same(prev) {
+		sp.top = b
+	}
+	if b := bs[model.EdgeBottom]; b != nil && b.Width > 0 && !same(next) {
+		sp.bottom = b
+	}
+	return sp
+}
+
+func sameBorders(a, b [4]*model.Border) bool {
+	for i := range a {
+		if (a[i] == nil) != (b[i] == nil) || a[i] != nil && *a[i] != *b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// borderFill is a paragraph's top or bottom border b with its top at y,
+// across the paragraph's indents in a text column from x, w wide.
+func borderFill(pl *Para, b *model.Border, x, w, y float64) Fill {
+	c, ok := colors.ParseHex(b.Color)
+	if !ok {
+		c = ruleColor
+	}
+	return Fill{Rect{x + pl.Left, y, x + w - pl.Right, y + b.Width}, c}
+}
+
+// paraStyle returns a paragraph's style ID, the default style for none.
+func (e *Engine) paraStyle(p *model.Paragraph) string {
+	if p.Style != "" {
+		return p.Style
+	}
+	if st := e.Doc.Styles.Default(model.ParagraphStyle); st != nil {
+		return st.ID
+	}
+	return ""
+}
+
 func (e *Engine) firstLineHeight(b model.Block) float64 {
 	switch b := b.(type) {
 	case *model.Paragraph:
-		pl := e.para(b, e.textWidth(), false)
+		pl := e.para(b, e.textWidth(), nil)
 		return pl.Before + pl.Lines[0].Height
 	case *model.Table:
 		if len(b.Rows) > 0 {
@@ -243,7 +470,8 @@ func (e *Engine) firstLineHeight(b model.Block) float64 {
 	return 0
 }
 
-// place adds a line to the current page.
+// place adds a line to the current page, with the footnotes it
+// references and the floating objects anchored in it.
 func (e *Engine) place(pl Placed) {
 	pg := e.page
 	ref := LineRef{pg.Index, len(pg.Lines)}
@@ -252,17 +480,40 @@ func (e *Engine) place(pl Placed) {
 	e.paraLines[pl.Para] = append(e.paraLines[pl.Para], ref)
 	e.order = append(e.order, ref)
 	e.empty = false
+	if pl.Box != e.lastBox {
+		e.lastBox, e.paraTop = pl.Box, pl.Y
+	}
+	for k := range pl.Line.Items {
+		it := &pl.Line.Items[k]
+		if it.Kind != ItemObject || it.Obj == nil {
+			continue
+		}
+		if n := it.Obj.Note; n != nil && !n.Endnote {
+			e.addFootnote(n)
+		}
+		if f := it.Obj.Float; f != nil {
+			e.addFloat(f, &pl, it.X)
+		}
+	}
 }
 
-func (e *Engine) placePara(p *model.Paragraph, nextFirst float64) {
-	pl := e.para(p, e.textWidth(), false)
-	idx := e.index[p]
+// placePara places a laid-out paragraph with its spacing and borders
+// (see spacing).
+func (e *Engine) placePara(pl *Para, sp paraSpacing, nextFirst float64) {
+	before, after := sp.before, sp.after
+	topB, botB := 0.0, 0.0 // room for the borders
+	if b := sp.top; b != nil {
+		topB = b.Width + b.Space
+	}
+	if b := sp.bottom; b != nil {
+		botB = b.Width + b.Space
+	}
+	idx := e.index[pl.P]
 	pp := pl.Props
 	bottom := e.textBottom()
 	if pp.PageBreakBefore.Bool(false) && !e.empty {
 		e.newPage(true)
 	}
-	before := pl.Before
 	if e.empty && e.page.Index > 0 && !e.hardBreak {
 		before = 0 // Word drops space before at the top of a page
 	}
@@ -270,19 +521,30 @@ func (e *Engine) placePara(p *model.Paragraph, nextFirst float64) {
 	if !e.empty {
 		need := 0.0
 		if pp.KeepLines.Bool(false) {
-			need = before + pl.Height
+			need = before + topB + pl.Height + botB
 		}
 		if pp.KeepNext.Bool(false) {
-			need = before + pl.Height + pl.After + nextFirst
+			need = before + topB + pl.Height + botB + after + nextFirst
 		}
 		if need > 0 && e.y+need > bottom && need <= bottom-e.textTop() {
-			e.newPage(false)
+			e.nextColumn()
+			bottom = e.textBottom()
 			before = 0
 		}
 	}
 	e.y += before
+	if b := sp.top; b != nil {
+		if !e.empty && e.y+topB+lines[0].Height > bottom+0.01 {
+			e.nextColumn()
+			bottom = e.textBottom()
+		}
+		e.page.Fills = append(e.page.Fills, borderFill(pl, b, e.textLeft(), e.textWidth(), e.y))
+		e.y += topB
+	}
 	widow := pp.WidowControl.Bool(false) && len(lines) > 1
 	for k, l := range lines {
+		e.y = e.clearFloats(e.y, l.Height)
+		bottom = e.textBottom() - e.footNeed(l)
 		if !e.empty {
 			breakHere := e.y+l.Height > bottom+0.01
 			// Widow/orphan control: never leave the first or the last line
@@ -294,7 +556,8 @@ func (e *Engine) placePara(p *model.Paragraph, nextFirst float64) {
 				breakHere = true
 			}
 			if breakHere {
-				e.newPage(false)
+				e.nextColumn()
+				e.y = e.clearFloats(e.y, l.Height)
 			}
 		}
 		e.place(Placed{Line: l, Para: idx, Box: pl, X: e.textLeft(), Y: e.y, W: e.textWidth()})
@@ -306,7 +569,11 @@ func (e *Engine) placePara(p *model.Paragraph, nextFirst float64) {
 			e.newPage(true)
 		}
 	}
-	e.y += pl.After
+	if b := sp.bottom; b != nil {
+		e.page.Fills = append(e.page.Fills, borderFill(pl, b, e.textLeft(), e.textWidth(), e.y+b.Space))
+		e.y += botB
+	}
+	e.y += after
 }
 
 // Tables.
@@ -335,14 +602,25 @@ type flow struct {
 	height float64
 }
 
-func (e *Engine) layoutFlow(blocks []model.Block, width float64) *flow {
+func (e *Engine) layoutFlow(blocks []model.Block, width float64, t *model.Table) *flow {
 	f := &flow{}
 	y := 0.0
-	for _, b := range blocks {
+	for i, b := range blocks {
 		switch b := b.(type) {
 		case *model.Paragraph:
-			pl := e.para(b, width, true)
-			y += pl.Before
+			pl := e.para(b, width, t)
+			if _, after := prevBlock(blocks, i).(*model.Table); after && t != nil && i == len(blocks)-1 && b.Len() == 0 {
+				for _, l := range pl.Lines {
+					f.lines = append(f.lines, Placed{Line: l, Para: e.index[b], Box: pl, Y: max(y-l.Height, 0), W: width, collapsed: true})
+				}
+				continue
+			}
+			sp := e.spacing(pl, blocks, i)
+			y += sp.before
+			if b := sp.top; b != nil {
+				f.fills = append(f.fills, borderFill(pl, b, 0, width, y))
+				y += b.Width + b.Space
+			}
 			for _, l := range pl.Lines {
 				f.lines = append(f.lines, Placed{Line: l, Para: e.index[b], Box: pl, Y: y, W: width})
 				if pl.Shading.A > 0 {
@@ -350,7 +628,11 @@ func (e *Engine) layoutFlow(blocks []model.Block, width float64) *flow {
 				}
 				y += l.Height
 			}
-			y += pl.After
+			if b := sp.bottom; b != nil {
+				f.fills = append(f.fills, borderFill(pl, b, 0, width, y+b.Space))
+				y += b.Space + b.Width
+			}
+			y += sp.after
 		case *model.Table:
 			rows, x0 := e.layoutTable(b, width)
 			for r := range rows {
@@ -361,6 +643,14 @@ func (e *Engine) layoutFlow(blocks []model.Block, width float64) *flow {
 	}
 	f.height = y
 	return f
+}
+
+// prevBlock returns blocks[i-1], or nil.
+func prevBlock(blocks []model.Block, i int) model.Block {
+	if i > 0 {
+		return blocks[i-1]
+	}
+	return nil
 }
 
 // layoutTable lays out every cell and computes row heights; x0 is the
@@ -424,7 +714,7 @@ func (e *Engine) layoutTable(t *model.Table, avail float64) ([]*rowBox, float64)
 					st.rowSpan++
 				}
 			} else {
-				cb.flow = e.layoutFlow(c.Blocks, max(cb.w-2*cellMargin, 6))
+				cb.flow = e.layoutFlow(c.Blocks, max(cb.w-2*cellMargin, 6), t)
 				if c.VMerge == 1 {
 					starts[g] = cb
 				} else {
@@ -499,16 +789,39 @@ func (e *Engine) emitRow(rows []*rowBox, r int, x0, y float64, lines *[]Placed, 
 				*rules = append(*rules, Rect{rr.X0 + x + cellMargin, rr.Y0 + y + off, rr.X1 + x + cellMargin, rr.Y1 + y + off})
 			}
 		}
-		if !borders {
-			continue
-		}
+		// The table's borders are hairline rules; a cell's own borders
+		// are filled in their width and color, centered on its edges.
 		bottom := y + rb.height
-		*rules = append(*rules, Rect{x, y, x + bw, bottom}, Rect{x + cb.w, y, x + cb.w + bw, bottom})
+		bs := &cb.cell.Borders
+		half := func(i int) float64 {
+			if bs[i] != nil {
+				return bs[i].Width / 2
+			}
+			return 0
+		}
+		edge := func(i int, rule, own Rect) {
+			if b := bs[i]; b != nil {
+				if b.Width > 0 {
+					c, ok := colors.ParseHex(b.Color)
+					if !ok {
+						c = ruleColor
+					}
+					*fills = append(*fills, Fill{own, c})
+				}
+			} else if borders {
+				*rules = append(*rules, rule)
+			}
+		}
+		x1 := x + cb.w
+		y0, y1 := y-half(model.EdgeTop), bottom+half(model.EdgeBottom)
+		edge(model.EdgeLeft, Rect{x, y, x + bw, bottom}, Rect{x - half(model.EdgeLeft), y0, x + half(model.EdgeLeft), y1})
+		edge(model.EdgeRight, Rect{x1, y, x1 + bw, bottom}, Rect{x1 - half(model.EdgeRight), y0, x1 + half(model.EdgeRight), y1})
+		hx0, hx1 := x-half(model.EdgeLeft), x1+half(model.EdgeRight)
 		if !cb.cont {
-			*rules = append(*rules, Rect{x, y, x + cb.w + bw, y + bw})
+			edge(model.EdgeTop, Rect{x, y, x + cb.w + bw, y + bw}, Rect{hx0, y - half(model.EdgeTop), hx1, y + half(model.EdgeTop)})
 		}
 		if !continuesBelow(rows, r, cb.x) {
-			*rules = append(*rules, Rect{x, bottom, x + cb.w + bw, bottom + bw})
+			edge(model.EdgeBottom, Rect{x, bottom, x + cb.w + bw, bottom + bw}, Rect{hx0, bottom - half(model.EdgeBottom), hx1, bottom + half(model.EdgeBottom)})
 		}
 	}
 }
@@ -525,31 +838,163 @@ func continuesBelow(rows []*rowBox, r int, x float64) bool {
 	return false
 }
 
+// placeTable places a table's rows. Rows linked by vertical merges are
+// placed as one group. A group that doesn't fit in the rest of the page
+// is split between lines, as Word lets rows break across pages, unless a
+// row can't split (it then starts a new page when it fits on one).
 func (e *Engine) placeTable(t *model.Table) {
 	rows, x0 := e.layoutTable(t, e.textWidth())
-	bottom := e.textBottom()
-	for r, rb := range rows {
-		if e.y+rb.height > bottom+0.01 && !e.empty {
-			e.newPage(false)
+	for r := 0; r < len(rows); {
+		end := groupEnd(rows, r)
+		e.placeRows(t, rows, r, end, x0)
+		r = end
+	}
+}
+
+// groupEnd returns the end (exclusive) of the rows from r that vertically
+// merged cells hold together.
+func groupEnd(rows []*rowBox, r int) int {
+	end := r + 1
+	for k := r; k < end; k++ {
+		for _, cb := range rows[k].cells {
+			if cb.flow != nil {
+				end = max(end, min(k+cb.rowSpan, len(rows)))
+			}
 		}
-		pg := e.page
-		var lines []Placed
-		e.emitRow(rows, r, e.textLeft()+x0, e.y, &lines, &pg.Fills, &pg.Rules, t.Borders)
-		box := TableRowBox{Table: t, Row: r, Y0: e.y, Y1: e.y + rb.height}
+	}
+	return end
+}
+
+// placeRows places rows [r0, r1) of a table: laid out from y 0 as if the
+// page were endless, then cut into pieces that fit the pages.
+func (e *Engine) placeRows(t *model.Table, rows []*rowBox, r0, r1 int, x0 float64) {
+	left := e.textLeft() + x0
+	var lines []Placed
+	var fills []Fill
+	var rules []Rect
+	var boxes []TableRowBox
+	h, xr := 0.0, 0.0
+	cantSplit := false
+	for r := r0; r < r1; r++ {
+		e.emitRow(rows, r, left, h, &lines, &fills, &rules, t.Borders)
+		box := TableRowBox{Table: t, Row: r, Y0: h, Y1: h + rows[r].height}
 		g := 0
-		for i, cb := range rb.cells {
-			x := e.textLeft() + x0 + cb.x
+		for i, cb := range rows[r].cells {
+			x := left + cb.x
 			if i == 0 {
 				box.Edges = append(box.Edges, TableEdge{X: x, Grid: g})
 			}
 			g += max(cb.cell.Span, 1)
 			box.Edges = append(box.Edges, TableEdge{X: x + cb.w, Grid: g})
+			xr = max(xr, x+cb.w)
 		}
-		pg.TableRows = append(pg.TableRows, box)
-		for _, pl := range lines {
-			e.place(pl)
-		}
-		e.y += rb.height
-		e.empty = false
+		boxes = append(boxes, box)
+		h += rows[r].height
+		cantSplit = cantSplit || t.Rows[r].CantSplit
 	}
+	bottom := e.textBottom()
+	if !e.empty && e.y+h > bottom+0.01 && cantSplit && h <= bottom-e.textTop() {
+		e.nextColumn()
+	}
+	for s := 0.0; ; {
+		bottom = e.textBottom()
+		if dx := e.textLeft() + x0 - left; dx != 0 {
+			// Continued in another column: move the rest over.
+			left += dx
+			xr += dx
+			for i := range lines {
+				lines[i].X += dx
+			}
+			for i := range fills {
+				fills[i].R.X0, fills[i].R.X1 = fills[i].R.X0+dx, fills[i].R.X1+dx
+			}
+			for i := range rules {
+				rules[i].X0, rules[i].X1 = rules[i].X0+dx, rules[i].X1+dx
+			}
+			for i := range boxes {
+				for k := range boxes[i].Edges {
+					boxes[i].Edges[k].X += dx
+				}
+			}
+		}
+		cut := math.Inf(1)
+		if e.y+h-s > bottom+0.01 {
+			cut = cutBefore(lines, s, s+bottom-e.y)
+			if cut <= s+0.01 {
+				if !e.empty {
+					e.nextColumn() // nothing fits here: start in the next column or page
+					continue
+				}
+				cut = s + bottom - e.y // a line taller than a page
+			}
+		}
+		// Place what lies in [s, cut), moved to e.y.
+		dy := e.y - s
+		pg := e.page
+		for _, f := range fills {
+			if r, ok := clipY(f.R, s, cut); ok {
+				pg.Fills = append(pg.Fills, Fill{shiftY(r, dy), f.C})
+			}
+		}
+		for _, rr := range rules {
+			if r, ok := clipY(rr, s, cut); ok {
+				pg.Rules = append(pg.Rules, shiftY(r, dy))
+			}
+		}
+		for _, b := range boxes {
+			if r, ok := clipY(Rect{0, b.Y0, 0, b.Y1}, s, cut); ok {
+				b.Y0, b.Y1 = r.Y0+dy, r.Y1+dy
+				pg.TableRows = append(pg.TableRows, b)
+			}
+		}
+		for _, pl := range lines {
+			if pl.Y >= s-0.01 && pl.Y < cut-0.01 {
+				pl.Y += dy
+				e.place(pl)
+			}
+		}
+		e.empty = false
+		if math.IsInf(cut, 1) {
+			e.y += h - s
+			return
+		}
+		if t.Borders {
+			// The split row is closed at the page bottom and reopened at the
+			// top of the next page.
+			pg.Rules = append(pg.Rules, Rect{left, cut + dy, xr + 0.5, cut + dy + 0.5})
+			e.nextColumn()
+			dx := e.textLeft() + x0 - left
+			e.page.Rules = append(e.page.Rules, Rect{left + dx, e.y, xr + dx + 0.5, e.y + 0.5})
+		} else {
+			e.nextColumn()
+		}
+		s = cut
+	}
+}
+
+// cutBefore returns the highest y at most limit, and above s, where no
+// line from s on is cut in two; s when the first line doesn't fit.
+func cutBefore(lines []Placed, s, limit float64) float64 {
+	cut := limit
+	for moved := true; moved; {
+		moved = false
+		for _, pl := range lines {
+			if pl.Y >= s-0.01 && pl.Y < cut-0.01 && pl.Y+pl.Line.Height > cut+0.01 {
+				cut, moved = pl.Y, true
+			}
+		}
+	}
+	return max(cut, s)
+}
+
+// clipY clips r to the band [y0, y1); ok is false when nothing is left.
+func clipY(r Rect, y0, y1 float64) (Rect, bool) {
+	r.Y0, r.Y1 = max(r.Y0, y0), min(r.Y1, y1)
+	return r, r.Y1 > r.Y0 || r.Y0 == r.Y1 && r.Y0 >= y0 && r.Y0 < y1
+}
+
+func shiftY(r Rect, dy float64) Rect {
+	r.Y0 += dy
+	r.Y1 += dy
+	return r
 }

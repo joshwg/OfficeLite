@@ -88,13 +88,21 @@ const (
 	dwriteFontSimulationsNone = 0
 )
 
-// comCall calls method m of the COM object obj.
-func comCall(obj unsafe.Pointer, m int, args ...uintptr) uintptr {
+// method returns the address of method m of the COM object obj. Calls go
+// straight to syscall.SyscallN with each uintptr(unsafe.Pointer(&x))
+// written in its argument list: only there does Go keep x alive and in
+// place for the call (passed through another function first, a stack
+// that grows mid-call could move x out from under COM).
+func method(obj unsafe.Pointer, m int) uintptr {
 	vtbl := *(*unsafe.Pointer)(obj)
-	fn := *(*uintptr)(unsafe.Add(vtbl, m*int(unsafe.Sizeof(uintptr(0)))))
-	r, _, _ := syscall.SyscallN(fn, append([]uintptr{uintptr(obj)}, args...)...)
-	return r
+	return *(*uintptr)(unsafe.Add(vtbl, m*int(unsafe.Sizeof(uintptr(0)))))
 }
+
+// comRelease releases a COM object.
+func comRelease(obj unsafe.Pointer) { syscall.SyscallN(method(obj, mRelease), uintptr(obj)) }
+
+// hr is a COM call's HRESULT.
+func hr(r, _ uintptr, _ syscall.Errno) uintptr { return r }
 
 func f32arg(v float32) uintptr { return uintptr(math.Float32bits(v)) }
 
@@ -142,20 +150,20 @@ func fontFace(ff FaceFile) unsafe.Pointer {
 		return nil
 	}
 	var file unsafe.Pointer
-	if comCall(dw.factory, mCreateFontFileReference, uintptr(unsafe.Pointer(path)), 0, uintptr(unsafe.Pointer(&file))) != 0 || file == nil {
+	if hr(syscall.SyscallN(method(dw.factory, mCreateFontFileReference), uintptr(dw.factory), uintptr(unsafe.Pointer(path)), 0, uintptr(unsafe.Pointer(&file)))) != 0 || file == nil {
 		return nil
 	}
-	defer comCall(file, mRelease)
+	defer comRelease(file)
 	var supported int32
 	var fileType, faceType, n uint32
-	if comCall(file, mAnalyze, uintptr(unsafe.Pointer(&supported)), uintptr(unsafe.Pointer(&fileType)),
-		uintptr(unsafe.Pointer(&faceType)), uintptr(unsafe.Pointer(&n))) != 0 || supported == 0 || uint32(ff.Index) >= n {
+	if hr(syscall.SyscallN(method(file, mAnalyze), uintptr(file), uintptr(unsafe.Pointer(&supported)), uintptr(unsafe.Pointer(&fileType)),
+		uintptr(unsafe.Pointer(&faceType)), uintptr(unsafe.Pointer(&n)))) != 0 || supported == 0 || uint32(ff.Index) >= n {
 		return nil
 	}
 	files := [1]unsafe.Pointer{file}
 	var face unsafe.Pointer
-	if comCall(dw.factory, mCreateFontFace, uintptr(faceType), 1, uintptr(unsafe.Pointer(&files[0])),
-		uintptr(ff.Index), dwriteFontSimulationsNone, uintptr(unsafe.Pointer(&face))) != 0 {
+	if hr(syscall.SyscallN(method(dw.factory, mCreateFontFace), uintptr(dw.factory), uintptr(faceType), 1, uintptr(unsafe.Pointer(&files[0])),
+		uintptr(ff.Index), dwriteFontSimulationsNone, uintptr(unsafe.Pointer(&face)))) != 0 {
 		return nil
 	}
 	dw.faces[ff] = face
@@ -298,14 +306,14 @@ func rasterize(face unsafe.Pointer, size float32, idx []uint16, adv []float32, o
 		glyphOffsets:  &offs[0],
 	}
 	var an unsafe.Pointer
-	if comCall(dw.factory, mCreateGlyphRunAnalysis2, uintptr(unsafe.Pointer(&run)), 0, dw.mode,
+	if hr(syscall.SyscallN(method(dw.factory, mCreateGlyphRunAnalysis2), uintptr(dw.factory), uintptr(unsafe.Pointer(&run)), 0, dw.mode,
 		dwriteMeasuringModeNatural, dwriteGridFitModeEnabled, dwriteTextAntialiasModeGrayscale,
-		f32arg(frac), f32arg(0), uintptr(unsafe.Pointer(&an))) != 0 || an == nil {
+		f32arg(frac), f32arg(0), uintptr(unsafe.Pointer(&an)))) != 0 || an == nil {
 		return nil
 	}
-	defer comCall(an, mRelease)
+	defer comRelease(an)
 	var r struct{ left, top, right, bottom int32 }
-	if comCall(an, mGetAlphaTextureBounds, dwriteTextureAliased1x1, uintptr(unsafe.Pointer(&r))) != 0 {
+	if hr(syscall.SyscallN(method(an, mGetAlphaTextureBounds), uintptr(an), dwriteTextureAliased1x1, uintptr(unsafe.Pointer(&r)))) != 0 {
 		return nil
 	}
 	w, h := int(r.right-r.left), int(r.bottom-r.top)
@@ -313,46 +321,85 @@ func rasterize(face unsafe.Pointer, size float32, idx []uint16, adv []float32, o
 		return &runImage{}
 	}
 	buf := make([]byte, w*h)
-	if comCall(an, mCreateAlphaTexture, dwriteTextureAliased1x1, uintptr(unsafe.Pointer(&r)),
-		uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf))) != 0 {
+	if hr(syscall.SyscallN(method(an, mCreateAlphaTexture), uintptr(an), dwriteTextureAliased1x1, uintptr(unsafe.Pointer(&r)),
+		uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))) != 0 {
 		return nil
 	}
 	lut := coverageLUT(c)
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
 	for i := 0; i < w*h; i++ {
-		a := uint32(lut[buf[i]]) * uint32(c.A) / 255
-		p := img.Pix[4*i : 4*i+4 : 4*i+4]
-		p[0] = uint8((uint32(c.R)*a + 127) / 255)
-		p[1] = uint8((uint32(c.G)*a + 127) / 255)
-		p[2] = uint8((uint32(c.B)*a + 127) / 255)
-		p[3] = uint8(a)
+		copy(img.Pix[4*i:4*i+4], lut[buf[i]][:])
 	}
 	op := paint.NewImageOp(img)
 	op.Filter = paint.FilterNearest
 	return &runImage{img: op, off: image.Pt(int(r.left), int(r.top)), size: image.Pt(w, h)}
 }
 
-// coverageLUT maps glyph coverage to the alpha to paint text of color c
-// with. Windows thickens dark text by enhancing contrast (less for light
-// text). Gio blends in linear light, which makes the edges of dark text
-// on a light page lighter than blending in sRGB would, so the alpha moves
-// (by dw.linear) toward the one that lands on the sRGB blend, taking the
-// page to be white for dark text and black for light text.
-func coverageLUT(c color.NRGBA) *[256]uint8 {
+// coverageLUT maps glyph coverage to the premultiplied pixel to paint text
+// of color c with. Windows thickens dark text by enhancing contrast (less
+// for light text). Gio blends in linear light, which makes the edges of
+// dark text on a light page lighter than blending in sRGB would, so the
+// alpha moves (by dw.linear) toward the one that lands on the sRGB blend,
+// taking the page to be white for dark text and black for light text.
+//
+// Gio also decodes the image's premultiplied sRGB values to linear light
+// as they are, and since lin(c·a) is not lin(c)·a, painting c·a made the
+// edges of colored text grayer than the color (green text got gray-green
+// edges, where Windows blends a tint of the green). For dark text each
+// pixel is instead made to land, on white, on the sRGB blend of the color
+// (alpha from the darkest channel, the other channels the linear light
+// left), at the coverage that keeps the luminance c·a gave: the contrast
+// and linear-light tuning above was made with it.
+func coverageLUT(c color.NRGBA) *[256][4]uint8 {
 	lum := (0.2126*float64(c.R) + 0.7152*float64(c.G) + 0.0722*float64(c.B)) / 255
 	k := dw.contrast * min(max(4*(0.75-lum), 0), 1)
-	var lut [256]uint8
+	ca := float64(c.A) / 255
+	cs := [3]float64{float64(c.R) / 255, float64(c.G) / 255, float64(c.B) / 255}
+	var lut [256][4]uint8
+	y := func(o [3]float64) float64 { return 0.2126*o[0] + 0.7152*o[1] + 0.0722*o[2] }
+	blend := func(eff float64) (o [3]float64) {
+		for ch := range o {
+			o[ch] = srgbToLinear(cs[ch]*eff + 1 - eff)
+		}
+		return o
+	}
 	for i := range lut {
 		a := float64(i) / 255
 		a = a * (k + 1) / (a*k + 1)
-		var b float64
+		var rgb [3]float64 // premultiplied, linear light
+		var alpha float64
 		if lum < 0.5 {
-			b = 1 - srgbToLinear(1-a)
+			a += (1 - srgbToLinear(1-a) - a) * dw.linear
+			var old [3]float64
+			for ch := range old {
+				old[ch] = srgbToLinear(cs[ch]*a) + 1 - a
+			}
+			want := y(old)
+			lo, hi := 0.0, 1.0
+			for range 24 {
+				if m := (lo + hi) / 2; y(blend(m)) > want {
+					lo = m
+				} else {
+					hi = m
+				}
+			}
+			t := blend((lo + hi) / 2)
+			// The alpha is rounded up first so the channels make up for it.
+			alpha = math.Ceil((1-min(t[0], t[1], t[2]))*ca*255-1e-9) / 255
+			for ch := range rgb {
+				rgb[ch] = ca*t[ch] - ca + alpha
+			}
 		} else {
-			b = srgbToLinear(a)
+			a += (srgbToLinear(a) - a) * dw.linear
+			alpha = a * ca
+			for ch := range rgb {
+				rgb[ch] = srgbToLinear(cs[ch]*a) * ca
+			}
 		}
-		a += (b - a) * dw.linear
-		lut[i] = uint8(math.Round(a * 255))
+		for ch := range rgb {
+			lut[i][ch] = uint8(math.Round(linearToSRGB(min(max(rgb[ch], 0), alpha)) * 255))
+		}
+		lut[i][3] = uint8(math.Round(alpha * 255))
 	}
 	return &lut
 }
@@ -362,4 +409,11 @@ func srgbToLinear(v float64) float64 {
 		return v / 12.92
 	}
 	return math.Pow((v+0.055)/1.055, 2.4)
+}
+
+func linearToSRGB(v float64) float64 {
+	if v <= 0.0031308 {
+		return v * 12.92
+	}
+	return 1.055*math.Pow(v, 1/2.4) - 0.055
 }

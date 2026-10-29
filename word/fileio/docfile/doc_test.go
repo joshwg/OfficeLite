@@ -56,7 +56,11 @@ func paragraphs(doc *model.Document) []*model.Paragraph {
 // formatting, tables, lists and page setup.
 func canon(doc *model.Document) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "page %+v\n", doc.Page)
+	secs := doc.Sections()
+	for i, s := range secs {
+		fmt.Fprintf(&b, "section %d page %+v break=%d cols=%+v pgn=%v/%d/%q title=%v\n", i, s.Page, s.Break, s.Columns,
+			s.PageNumRestart, s.PageNumStart, s.PageNumFormat, s.HF.TitlePage)
+	}
 	var ids []int
 	for id := range doc.Lists {
 		ids = append(ids, id)
@@ -67,23 +71,38 @@ func canon(doc *model.Document) string {
 		}
 	}
 	var blocks func([]model.Block, string)
+	defer func() {
+		for i, s := range secs {
+			for k := range 3 {
+				for _, footer := range []bool{false, true} {
+					if h := *s.HF.Slot(model.HFKind(k), footer); h != nil {
+						fmt.Fprintf(&b, "section %d hf %d footer=%v\n", i, k, footer)
+						blocks(h.Blocks, "    ")
+					}
+				}
+			}
+		}
+	}()
 	blocks = func(bs []model.Block, ind string) {
 		for _, bl := range bs {
 			switch bl := bl.(type) {
 			case *model.Paragraph:
-				fmt.Fprintf(&b, "%sP %q %s mark=%+v resolved=%s\n", ind, bl.Style, paraStr(bl.Props), bl.Mark, paraStr(zeroNil(doc.ResolvePara(bl))))
+				fmt.Fprintf(&b, "%sP %q %s mark=%+v resolved=%s sect=%v\n", ind, bl.Style, paraStr(bl.Props), bl.Mark, paraStr(zeroNil(doc.ResolvePara(bl))), bl.Sect != nil)
 				for i := range bl.Runs {
 					r := &bl.Runs[i]
 					if r.Opaque != nil && strings.Contains(string(r.Opaque.Data), `"k":"shape"`) {
 						continue // floating shapes are dropped on save
 					}
-					kind, note := r.Kind, r.Opaque != nil && strings.Contains(string(r.Opaque.Data), `"k":"note"`)
-					if note {
-						kind = model.RunText // saved as plain text
-					}
-					fmt.Fprintf(&b, "%s  R%d %q cs=%q %+v => %+v", ind, kind, r.Text, r.Style, r.Props, doc.ResolveRun(bl, r))
-					if r.Opaque != nil && !note {
-						fmt.Fprintf(&b, " opaque %s %.1fx%.1f %s", r.Opaque.Format, r.Opaque.Width, r.Opaque.Height, r.Opaque.Data)
+					fmt.Fprintf(&b, "%s  R%d %q cs=%q %+v => %+v", ind, r.Kind, r.Text, r.Style, r.Props, doc.ResolveRun(bl, r))
+					switch o := r.Opaque; {
+					case o != nil && o.Note != nil:
+						fmt.Fprintf(&b, " note endnote=%v mark=%q\n", o.Note.Endnote, o.Note.Mark)
+						blocks(o.Note.Blocks, ind+"    ")
+						continue
+					case o != nil && o.NoteMark:
+						b.WriteString(" note mark")
+					case o != nil:
+						fmt.Fprintf(&b, " opaque %s %.1fx%.1f %s field=%q/%d", o.Format, o.Width, o.Height, o.Data, o.Field, o.FieldChar)
 					}
 					b.WriteString("\n")
 				}
@@ -232,8 +251,11 @@ func TestReadRich(t *testing.T) {
 	if doc.Page.MarginLeft != 54 || doc.Page.Width != 612 {
 		t.Errorf("page = %+v", doc.Page)
 	}
-	if len(doc.Warnings) != 2 {
+	if len(doc.Warnings) != 0 {
 		t.Errorf("warnings = %q", doc.Warnings)
+	}
+	if refs := model.NoteRefs(doc.Body); len(refs) != 1 || refs[0].Note.Endnote || len(refs[0].Note.Blocks) == 0 {
+		t.Errorf("footnotes = %+v", refs)
 	}
 	if s := doc.Styles.Find("Heading1"); s == nil || s.Run.Size != 20 || s.Para.KeepNext != model.On || s.BasedOn != "Normal" {
 		t.Errorf("Heading1 = %+v", s)
@@ -358,16 +380,25 @@ func builtDoc() *model.Document {
 func TestWriteBuilt(t *testing.T) {
 	doc := builtDoc()
 	ws := Warnings(doc)
-	if len(ws) != 2 || !strings.Contains(strings.Join(ws, "|"), "[picture]") || !strings.Contains(strings.Join(ws, "|"), "Nested") {
+	if len(ws) != 1 || !strings.Contains(strings.Join(ws, "|"), "[picture]") {
 		t.Errorf("warnings = %q", ws)
 	}
 	back := roundTrip(t, doc)
 
 	ps, bp := paragraphs(doc), paragraphs(back)
-	// The nested table is flattened into its cell and a paragraph follows
-	// the final table.
-	if len(bp) != len(ps)+1 {
-		t.Fatalf("%d paragraphs, want %d", len(bp), len(ps)+1)
+	// The cell ending in the nested table gets a paragraph after it, as
+	// does the final table.
+	if len(bp) != len(ps)+2 {
+		t.Fatalf("%d paragraphs, want %d", len(bp), len(ps)+2)
+	}
+	bp = bp[:0]
+	for _, l := range back.Locate() {
+		if l.Cell != nil && l.Index > 0 && l.Index == len(*l.Blocks)-1 && l.P.Len() == 0 {
+			if _, ok := (*l.Blocks)[l.Index-1].(*model.Table); ok {
+				continue // the paragraph added after the nested table
+			}
+		}
+		bp = append(bp, l.P)
 	}
 	if a := Warnings(back); len(a) != 0 {
 		t.Errorf("re-read document still warns: %q", a)
@@ -592,7 +623,7 @@ func TestPropsRoundTrip(t *testing.T) {
 	}
 	pp := model.ParaProps{Align: model.AlignJustify, SpaceBefore: model.F(3), SpaceAfter: model.F(0), Line: 1.15, LineRule: model.LineAuto,
 		IndentLeft: model.F(10), IndentRight: model.F(-5), IndentFirst: model.F(-10), KeepNext: model.On, KeepLines: model.Off,
-		PageBreakBefore: model.On, WidowControl: model.Off, Shading: "ABCDEF", OutlineLevel: 3,
+		PageBreakBefore: model.On, WidowControl: model.Off, ContextualSpacing: model.On, Shading: "ABCDEF", OutlineLevel: 3,
 		Tabs: []model.TabStop{{Pos: 30, Clear: true}, {Pos: 50, Align: model.AlignCenter, Leader: '-'}}}
 	var pi papInfo
 	r.decodePap(&pi, w.encPap(pp))
@@ -731,18 +762,45 @@ func TestFieldsAndLinks(t *testing.T) {
 
 func TestReadComplex(t *testing.T) {
 	doc := readFixture(t, "complex.doc")
-	w := strings.Join(doc.Warnings, "|")
-	for _, want := range []string{"2 sections", "table of contents", "Endnotes", "Comments", "Text boxes", "Headers and footers", "Nested tables", "Floating"} {
-		if !strings.Contains(w, want) {
-			t.Errorf("no warning about %s: %q", want, doc.Warnings)
-		}
+	if w := strings.Join(doc.Warnings, "|"); w != "Comments are not shown and are not kept when saving." {
+		t.Errorf("warnings = %q", doc.Warnings)
 	}
-	if !doc.Page.Landscape {
-		t.Error("last section is landscape")
+	secs := doc.Sections()
+	if len(secs) != 2 || secs[0].Page.Landscape || secs[0].Page.Width != 612 || secs[0].Page.MarginLeft != 36 ||
+		!secs[1].Page.Landscape || secs[1].Page.Width != 792 || secs[1].Break != model.BreakNextPage {
+		t.Errorf("sections = %+v / %+v", secs[0].Page, secs[len(secs)-1].Page)
+	}
+	if f := secs[0].HF.Footers[model.HFDefault]; f == nil || f.Blocks[0].(*model.Paragraph).Text() != "Footer" {
+		t.Errorf("footer = %+v", f)
+	}
+	if secs[1].HF.Any() {
+		t.Error("the second section's headers are linked to the first's")
 	}
 	ps := paragraphs(doc)
-	if ps[0].Style != "TOC1" || ps[0].Text() != "Chapter A\t1" {
-		t.Errorf("TOC entry = %q %q", ps[0].Style, ps[0].Text())
+	// The table of contents stays a field: its begin (with the code) and
+	// end characters around the result paragraphs.
+	if o := ps[0].Runs[0].Opaque; ps[0].Style != "TOC1" || ps[0].Text() != "￼Chapter A\t￼" || o == nil ||
+		o.FieldChar != model.FieldStart || o.Field != `TOC \o "1-3"` {
+		t.Errorf("TOC entry = %q %q %+v", ps[0].Style, ps[0].Text(), o)
+	}
+	if o := ps[1].Runs[0].Opaque; o == nil || o.FieldChar != model.FieldEnd {
+		t.Errorf("TOC end = %+v", ps[1].Runs)
+	}
+	refs := model.NoteRefs(doc.Body)
+	if len(refs) != 1 || !refs[0].Note.Endnote || refs[0].Para.Runs[refs[0].Run].Text != "1" {
+		t.Fatalf("endnotes = %+v", refs)
+	}
+	if got := refs[0].Note.Blocks[0].(*model.Paragraph).Text(); got != "￼ Endnote text" {
+		t.Errorf("endnote text = %q", got)
+	}
+	var floats []*model.Floating
+	model.Floats(doc.Body, func(p *model.Paragraph, _ int, f *model.Floating) { floats = append(floats, f) })
+	if len(floats) != 1 || !floats[0].IsTextBox() || floats[0].X != 264 || floats[0].W != 100 || floats[0].H != 50 ||
+		floats[0].RelY != model.RelParagraph || floats[0].Line == "" || floats[0].Wrap != model.WrapNone {
+		t.Fatalf("floats = %+v", floats)
+	}
+	if got := floats[0].Blocks[0].(*model.Paragraph).Text(); got != "Inside box" {
+		t.Errorf("text box = %q", got)
 	}
 	var link *model.Run
 	for i, r := range ps[3].Runs {
@@ -769,9 +827,51 @@ func TestReadComplex(t *testing.T) {
 	if r1.Cells[0].VMerge != 1 || r1.Cells[0].VAlign != 1 || r2.Cells[0].VMerge != 2 {
 		t.Errorf("vertical merge = %+v / %+v", r1.Cells[0], r2.Cells[0])
 	}
-	var nested []string
-	model.WalkBlocks(r1.Cells[1].Blocks, func(p *model.Paragraph) bool { nested = append(nested, p.Text()); return true })
-	if strings.Join(nested, ",") != "n1,n4," {
-		t.Errorf("nested cell = %q", nested)
+	// The nested table: one row of two cells, and the outer cell's own
+	// (empty) paragraph after it.
+	cell := r1.Cells[1]
+	if len(cell.Blocks) != 2 {
+		t.Fatalf("nested cell blocks = %d", len(cell.Blocks))
+	}
+	in, ok := cell.Blocks[0].(*model.Table)
+	if !ok || len(in.Rows) != 1 || len(in.Rows[0].Cells) != 2 || len(in.Columns) != 2 || in.Columns[0] != 129.6 {
+		t.Fatalf("nested table = %+v", cell.Blocks[0])
+	}
+	if a, b := in.Rows[0].Cells[0].Blocks[0].(*model.Paragraph).Text(), in.Rows[0].Cells[1].Blocks[0].(*model.Paragraph).Text(); a != "n1" || b != "n4" {
+		t.Errorf("nested cells = %q %q", a, b)
+	}
+}
+
+// Sections, headers and footers, notes, nested tables and the table of
+// contents survive saving the complex document as .doc again.
+func TestRoundTripComplex(t *testing.T) {
+	doc := readFixture(t, "complex.doc")
+	if ws := Warnings(doc); len(ws) != 1 || ws[0] != WarnFloatsLost {
+		t.Errorf("warnings = %q", ws)
+	}
+	back := roundTrip(t, doc)
+	want := strings.ReplaceAll(canon(doc), "Commented endnote", "Commented endnote")
+	diffLines(t, want, canon(back))
+}
+
+// A row that can't split and a list starting at 0 survive .doc saving;
+// lists read from a .doc keep their list id so lists of one id count
+// together.
+func TestCantSplitAndStartZero(t *testing.T) {
+	d := model.New("t")
+	d.Lists[1] = &model.List{Levels: []model.ListLevel{{Format: "decimal", Text: "%1.", Start: 0, Indent: 36, Hang: 18}}}
+	cell := &model.TableCell{Span: 1, Blocks: []model.Block{&model.Paragraph{Runs: []model.Run{{Text: "c"}}}}}
+	d.Body = []model.Block{
+		&model.Paragraph{Props: model.ParaProps{List: &model.ListRef{NumID: 1}}, Runs: []model.Run{{Text: "zero"}}},
+		&model.Table{Columns: []float64{100}, Rows: []*model.TableRow{{CantSplit: true, Cells: []*model.TableCell{cell}}}},
+		&model.Paragraph{},
+	}
+	back := roundTrip(t, d)
+	l := back.Lists[back.Body[0].(*model.Paragraph).Props.List.NumID]
+	if l == nil || l.Levels[0].Start != 0 || l.Abstract == "" {
+		t.Errorf("list: %+v", l)
+	}
+	if tb, ok := back.Body[1].(*model.Table); !ok || !tb.Rows[0].CantSplit {
+		t.Errorf("cantSplit lost: %T", back.Body[1])
 	}
 }

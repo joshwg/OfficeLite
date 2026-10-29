@@ -93,9 +93,15 @@ func (v *View) ColEdgeAt(x float32) (int, bool) { return edgeAt(v.ColEdges(), x,
 // RowEdgeAt returns the row whose bottom edge is within EdgeSlop of y.
 func (v *View) RowEdgeAt(y float32) (int, bool) { return edgeAt(v.RowEdges(), y, v.EdgeSlop()) }
 
-// HeaderSize is the width of the row headers and the height of the
-// column headers on screen.
+// HeaderSize is where the cells start on screen: the right edge of the
+// row headers and the bottom of the column headers (the outline's
+// gutters included; see Gutters).
 func (v *View) HeaderSize() (w, h int) { return v.hdrW, v.hdrH }
+
+// Gutters is the width of the row outline's gutter left of the row
+// headers and the height of the column outline's gutter above the column
+// headers (0 without an outline); the headers start there.
+func (v *View) Gutters() (w, h int) { return v.gutW, v.gutH }
 
 func edgeAt(edges []Edge, p float32, slop int) (int, bool) {
 	best, dist := -1, slop+1

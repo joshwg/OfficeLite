@@ -47,6 +47,13 @@ type writer struct {
 	hasPic  bool
 	warns   []string
 	warned  map[string]bool
+
+	// sections and subdocuments (writestories.go)
+	secs     []*model.Section
+	secEnds  []int // CP after each section's mark but the last's
+	mainLen  int   // ccpText
+	stories  storyLayout
+	noteRefs [2][]wnoteRef // footnote and endnote references
 }
 
 const textStart = 0x400
@@ -129,10 +136,13 @@ func encode(doc *model.Document) ([]byte, error) {
 		papPn[i] = uint32(len(wd) / 512)
 		wd = append(wd, p...)
 	}
-	sepxFc := len(wd)
-	sepx := w.sepx()
-	wd = binary.LittleEndian.AppendUint16(wd, uint16(len(sepx)))
-	wd = append(wd, sepx...)
+	var sepxFcs []int
+	for _, s := range w.secs {
+		sepxFcs = append(sepxFcs, len(wd))
+		g := sepx(s)
+		wd = binary.LittleEndian.AppendUint16(wd, uint16(len(g)))
+		wd = append(wd, g...)
+	}
 
 	// 1Table.
 	var tbl []byte
@@ -144,29 +154,31 @@ func encode(doc *model.Document) ([]byte, error) {
 	put(fcStshf, stsh)
 	fcl[fcStshfOrig] = fcl[fcStshf]
 	ccp := len(w.text)
-	{ // PlcfSed
+	{ // PlcfSed: a SED per section
 		var b []byte
 		b = binary.LittleEndian.AppendUint32(b, 0)
+		for _, cp := range w.secEnds {
+			b = binary.LittleEndian.AppendUint32(b, uint32(cp))
+		}
 		b = binary.LittleEndian.AppendUint32(b, uint32(ccp))
-		b = binary.LittleEndian.AppendUint16(b, 0)
-		b = binary.LittleEndian.AppendUint32(b, uint32(sepxFc))
-		b = binary.LittleEndian.AppendUint16(b, 0)
-		b = binary.LittleEndian.AppendUint32(b, 0xFFFFFFFF)
+		for _, fc := range sepxFcs {
+			b = binary.LittleEndian.AppendUint16(b, 0)
+			b = binary.LittleEndian.AppendUint32(b, uint32(fc))
+			b = binary.LittleEndian.AppendUint16(b, 0)
+			b = binary.LittleEndian.AppendUint32(b, 0xFFFFFFFF)
+		}
 		put(fcPlcfSed, b)
 	}
+	w.subdocPLCs(put, ccp)
 	put(fcPlcfBteChpx, plcBte(chpFcs, chpPn))
 	put(fcPlcfBtePapx, plcBte(papFcs, papPn))
 	put(fcSttbfFfn, w.sttbfFfn())
-	if len(w.flds) > 0 {
-		var b []byte
-		for _, f := range w.flds {
-			b = binary.LittleEndian.AppendUint32(b, uint32(f.cp))
+	st := &w.stories
+	for _, f := range []struct{ idx, start, n int }{{fcPlcfFldMom, 0, w.mainLen}, {fcPlcfFldHdr, st.hddStart, st.hddLen},
+		{fcPlcfFldFtn, st.ftnStart, st.ftnLen}, {fcPlcfFldEdn, st.ednStart, st.ednLen}} {
+		if b := w.fieldPLC(f.start, f.n); b != nil {
+			put(f.idx, b)
 		}
-		b = binary.LittleEndian.AppendUint32(b, uint32(ccp))
-		for _, f := range w.flds {
-			b = append(b, f.fld[0], f.fld[1])
-		}
-		put(fcPlcfFldMom, b)
 	}
 	put(fcDop, dop(w.doc))
 	{ // Clx: one Unicode piece
@@ -186,7 +198,7 @@ func encode(doc *model.Document) ([]byte, error) {
 		put(fcPlfLfo, lfo)
 	}
 
-	writeFib(wd, w, fcl, ccp, textEnd)
+	writeFib(wd, w, fcl, w.mainLen, textEnd)
 	streams := []ole.Stream{{Name: "WordDocument", Data: wd}, {Name: "1Table", Data: tbl}}
 	if len(w.data) > 0 {
 		streams = append(streams, ole.Stream{Name: "Data", Data: w.data})
@@ -221,6 +233,9 @@ func writeFib(wd []byte, w *writer, fcl [][2]uint32, ccp, textEnd int) {
 	lw := make([]uint32, nLw97)
 	lw[lwCbMac] = uint32(len(wd))
 	lw[lwCcpText] = uint32(ccp)
+	lw[lwCcpFtn] = uint32(w.stories.ftnLen)
+	lw[lwCcpHdd] = uint32(w.stories.hddLen)
+	lw[lwCcpEdn] = uint32(w.stories.ednLen)
 	lw[11], lw[14], lw[17] = 0xFFFFF, 0xFFFFF, 0xFFFFF
 	for i, v := range lw {
 		le.PutUint32(wd[p+4*i:], v)
@@ -405,21 +420,31 @@ func (w *writer) endPara(mark uint16, markChpx []byte, istd int, papx []byte) {
 	w.paras = append(w.paras, wpara{len(w.text), uint16(istd), papx})
 }
 
-// body writes the document's blocks.
+// body writes the document's blocks (a section break's paragraph ends
+// with a section mark, 0x0C), then the subdocuments.
 func (w *writer) body() {
-	if w.doc.HF.Any() {
-		w.warn(WarnHeadersLost)
-	}
-	blocks := w.doc.Body
+	w.secs = w.doc.Sections()
+	w.blocks(w.doc.Body, true)
+	w.mainLen = len(w.text)
+	w.subdocs()
+}
+
+// blocks writes blocks of the main document (main set) or a story.
+func (w *writer) blocks(blocks []model.Block, main bool) {
 	if len(blocks) == 0 {
 		blocks = []model.Block{&model.Paragraph{}}
 	}
-	for _, b := range blocks {
+	for i, b := range blocks {
 		switch b := b.(type) {
 		case *model.Paragraph:
+			if main && b.Sect != nil && i < len(blocks)-1 {
+				w.para(b, 0x0C, nil, false)
+				w.secEnds = append(w.secEnds, len(w.text))
+				continue
+			}
 			w.para(b, 0x0D, nil, false)
 		case *model.Table:
-			w.table(b)
+			w.table(b, 1)
 		}
 	}
 	if _, ok := blocks[len(blocks)-1].(*model.Table); ok {
@@ -570,11 +595,23 @@ func (w *writer) run(r *model.Run, inTable bool) {
 // opaque writes a preserved run: .doc fields and pictures go back as they
 // were; anything else becomes its placeholder text.
 func (w *writer) opaque(r *model.Run, chpx []byte, inTable bool) {
+	if o := r.Opaque; o != nil && (o.Note != nil || o.NoteMark) {
+		w.noteRun(r, chpx)
+		return
+	}
+	if o := r.Opaque; o != nil && o.Float != nil {
+		w.warn(WarnFloatsLost)
+		return
+	}
+	if o := r.Opaque; o != nil && o.FieldChar != model.FieldNone && o.Format != opaqueFormat {
+		w.fieldCharRun(r, chpx)
+		return
+	}
 	if r.Opaque != nil && r.Opaque.Format == opaqueFormat {
 		var blob opaqueBlob
 		if json.Unmarshal(r.Opaque.Data, &blob) == nil {
 			switch blob.Kind {
-			case "field", "picture":
+			case "field", "picture", "fieldbegin", "fieldend":
 				if w.writeBlob(&blob, r.Style) {
 					return
 				}
@@ -630,12 +667,19 @@ func (w *writer) writeBlob(b *opaqueBlob, style string) bool {
 			case 0x0D, 0x07, 0x0C:
 				return false
 			}
-			if depth < 0 {
+			if depth < 0 && b.Kind != "fieldend" {
 				return false
 			}
 		}
 	}
-	if depth != 0 || nf != len(b.Flds) {
+	want := 0 // fields kept around a result: an open begin, a lone end
+	switch b.Kind {
+	case "fieldbegin":
+		want = 1
+	case "fieldend":
+		want = -1
+	}
+	if depth != want || nf != len(b.Flds) {
 		return false
 	}
 	k := 0
@@ -681,8 +725,11 @@ func (w *writer) writeBlob(b *opaqueBlob, style string) bool {
 	return true
 }
 
-// table writes a table as cell paragraphs plus a row-end mark per row.
-func (w *writer) table(t *model.Table) {
+// table writes a table at nesting depth (1 for a table in the body) as
+// cell paragraphs plus a row-end mark per row. Nested tables are written
+// in their cells, their cells ending with sprmPFInnerTableCell and
+// their rows with sprmPFInnerTtp.
+func (w *writer) table(t *model.Table, depth int) {
 	x0 := toTwips(t.Indent)
 	textWidth := toTwips(w.doc.Page.Width - w.doc.Page.MarginLeft - w.doc.Page.MarginRight)
 	if textWidth <= 0 {
@@ -722,40 +769,52 @@ func (w *writer) table(t *model.Table) {
 		}
 		var inCell grpprl
 		inCell.b(sprmPFInTable, 1)
+		inCell.l(sprmPItap, uint32(depth))
 		for _, c := range cells {
-			var paras []*model.Paragraph
-			for _, b := range c.Blocks {
+			blocks := c.Blocks
+			if n := len(blocks); n == 0 {
+				blocks = []model.Block{&model.Paragraph{}}
+			} else if _, ok := blocks[n-1].(*model.Table); ok {
+				blocks = append(blocks[:n:n], &model.Paragraph{}) // a cell ends with a paragraph
+			}
+			for i, b := range blocks {
 				switch b := b.(type) {
 				case *model.Paragraph:
-					paras = append(paras, b)
+					mark, extra := uint16(0x0D), []byte(inCell)
+					if i == len(blocks)-1 {
+						if depth == 1 {
+							mark = 0x07
+						} else {
+							var g grpprl
+							g.b(sprmPFInnerTableCell, 1)
+							extra = append(append([]byte(nil), inCell...), g...)
+						}
+					}
+					w.para(b, mark, extra, true)
 				case *model.Table:
-					w.warn("Nested tables are saved as paragraphs inside the outer cell.")
-					model.WalkBlocks([]model.Block{b}, func(p *model.Paragraph) bool {
-						paras = append(paras, p)
-						return true
-					})
+					w.table(b, depth+1)
 				}
-			}
-			if len(paras) == 0 {
-				paras = []*model.Paragraph{{}}
-			}
-			for i, p := range paras {
-				mark := uint16(0x0D)
-				if i == len(paras)-1 {
-					mark = 0x07
-				}
-				w.para(p, mark, inCell, true)
 			}
 		}
-		w.endPara(0x07, nil, 0, w.tap(t, row, cells, centers))
+		if depth == 1 {
+			w.endPara(0x07, nil, 0, w.tap(t, row, cells, centers, depth))
+		} else {
+			w.endPara(0x0D, nil, 0, w.tap(t, row, cells, centers, depth))
+		}
 	}
 }
 
 // tap encodes a row's table properties for its row-end paragraph.
-func (w *writer) tap(t *model.Table, row *model.TableRow, cells []*model.TableCell, centers []int) []byte {
+func (w *writer) tap(t *model.Table, row *model.TableRow, cells []*model.TableCell, centers []int, depth int) []byte {
 	var g grpprl
 	g.b(sprmPFInTable, 1)
-	g.b(sprmPFTtp, 1)
+	if depth == 1 {
+		g.b(sprmPFTtp, 1)
+	} else {
+		g.b(sprmPFInnerTableCell, 1)
+		g.b(sprmPFInnerTtp, 1)
+	}
+	g.l(sprmPItap, uint32(depth))
 	switch t.Align {
 	case model.AlignCenter:
 		g.w(sprmTJc90, 1)
@@ -768,6 +827,10 @@ func (w *writer) tap(t *model.Table, row *model.TableRow, cells []*model.TableCe
 	}
 	if row.Header {
 		g.b(sprmTTableHeader, 1)
+	}
+	if row.CantSplit {
+		g.b(sprmTFCantSplit, 1)
+		g.b(sprmTFCantSplit90, 1)
 	}
 	brc := []byte{0, 0, 0, 0}
 	if t.Borders {
@@ -939,7 +1002,8 @@ func (w *writer) encPap(p model.ParaProps) []byte {
 	for _, t := range []struct {
 		v  model.Tri
 		op uint16
-	}{{p.KeepLines, sprmPFKeep}, {p.KeepNext, sprmPFKeepFollow}, {p.PageBreakBefore, sprmPFPageBreakBefore}, {p.WidowControl, sprmPFWidowControl}} {
+	}{{p.KeepLines, sprmPFKeep}, {p.KeepNext, sprmPFKeepFollow}, {p.PageBreakBefore, sprmPFPageBreakBefore}, {p.WidowControl, sprmPFWidowControl},
+		{p.ContextualSpacing, sprmPFContextualSpacing}} {
 		switch t.v {
 		case model.On:
 			g.b(t.op, 1)
@@ -1033,27 +1097,6 @@ func encTabs(tabs []model.TabStop) []byte {
 	return b
 }
 
-// sepx encodes the page setup.
-func (w *writer) sepx() []byte {
-	pg := w.doc.Page
-	if pg.Width <= 0 || pg.Height <= 0 {
-		pg = model.LetterPage()
-	}
-	var g grpprl
-	g.w(sprmSXaPage, uint16(clampTw(pg.Width, 144, 31680)))
-	g.w(sprmSYaPage, uint16(clampTw(pg.Height, 144, 31680)))
-	g.w(sprmSDxaLeft, uint16(clampTw(pg.MarginLeft, 0, 31680)))
-	g.w(sprmSDxaRight, uint16(clampTw(pg.MarginRight, 0, 31680)))
-	g.w(sprmSDyaTop, uint16(clampTw(pg.MarginTop, 0, 31680)))
-	g.w(sprmSDyaBottom, uint16(clampTw(pg.MarginBottom, 0, 31680)))
-	g.w(sprmSDyaHdrTop, uint16(clampTw(pg.Header, 0, 31680)))
-	g.w(sprmSDyaHdrBottom, uint16(clampTw(pg.Footer, 0, 31680)))
-	if pg.Landscape {
-		g.b(sprmSBOrientation, 2)
-	}
-	return g
-}
-
 // sttbfFfn encodes the font table.
 func (w *writer) sttbfFfn() []byte {
 	b := binary.LittleEndian.AppendUint16(nil, uint16(len(w.fonts)))
@@ -1107,15 +1150,28 @@ func dop(doc *model.Document) []byte {
 	if doc.DefaultTabStop > 0 {
 		tab = clampTw(doc.DefaultTabStop, 1, 31680)
 	}
-	le.PutUint16(d[0:], 0x0002)       // fWidowControl
-	le.PutUint16(d[2:], 1<<2)         // nFtn = 1
-	d[6] = 0x80                       // fWord97Compat... (as Word writes)
-	d[7] = 0x18                       //
-	le.PutUint16(d[8:], 0xF000)       // copts60
-	le.PutUint16(d[10:], uint16(tab)) // dxaTab
-	le.PutUint16(d[14:], 360)         // dxaHotZ
-	le.PutUint16(d[32:], 1)           // nRevision
-	le.PutUint16(d[52:], 1<<2)        // nEdn = 1
-	le.PutUint16(d[82:], 100<<3)      // pctWwdSaved = 100%
+	le.PutUint16(d[0:], 0x0002) // fWidowControl
+	if doc.HF.EvenOdd {
+		d[0] |= 1 // fFacingPages: different odd and even headers
+	}
+	ns := doc.Notes
+	le.PutUint16(d[2:], uint16(max(ns.FootStart, 1))<<2) // nFtn
+	d[6] = 0x80                                          // fWord97Compat... (as Word writes)
+	d[7] = 0x18                                          //
+	le.PutUint16(d[8:], 0xF000)                          // copts60
+	le.PutUint16(d[10:], uint16(tab))                    // dxaTab
+	le.PutUint16(d[14:], 360)                            // dxaHotZ
+	le.PutUint16(d[32:], 1)                              // nRevision
+	le.PutUint16(d[52:], uint16(max(ns.EndStart, 1))<<2) // nEdn
+	d[54] = 3                                            // epc: endnotes at the end of the document
+	for i, f := range pgnFormats {
+		if f == ns.Format(false) {
+			le.PutUint16(d[488:], uint16(i)) // nfcFtnRef
+		}
+		if f == ns.Format(true) {
+			le.PutUint16(d[490:], uint16(i)) // nfcEdnRef
+		}
+	}
+	le.PutUint16(d[82:], 100<<3) // pctWwdSaved = 100%
 	return d
 }

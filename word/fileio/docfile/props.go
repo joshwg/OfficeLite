@@ -260,6 +260,8 @@ func (r *reader) decodePap(p *papInfo, g []byte) {
 			pp.PageBreakBefore = model.TriOf(u8(a) != 0)
 		case sprmPFWidowControl:
 			pp.WidowControl = model.TriOf(u8(a) != 0)
+		case sprmPFContextualSpacing:
+			pp.ContextualSpacing = model.TriOf(u8(a) != 0)
 		case sprmPShd:
 			pp.Shading = shdColor(a)
 		case sprmPShd80:

@@ -1,15 +1,12 @@
 package ui
 
 import (
-	"image"
-	"image/color"
 	"slices"
 	"strconv"
 	"strings"
 
 	"gioui.org/font"
 	"gioui.org/layout"
-	"gioui.org/unit"
 	"gioui.org/widget"
 
 	"officelite/common/colors"
@@ -26,12 +23,12 @@ var commonFonts = []string{
 
 var fontSizes = []float64{8, 9, 10, 10.5, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72}
 
-// palette is the font color menu: name and RRGGBB ("" = automatic).
-var palette = []struct{ name, hex string }{
-	{"Automatic", ""}, {"Black", "000000"}, {"Dark Gray", "595959"}, {"Gray", "A6A6A6"},
-	{"Dark Red", "C00000"}, {"Red", "FF0000"}, {"Orange", "FFC000"}, {"Yellow", "FFFF00"},
-	{"Light Green", "92D050"}, {"Green", "00B050"}, {"Light Blue", "00B0F0"}, {"Blue", "0070C0"},
-	{"Dark Blue", "002060"}, {"Purple", "7030A0"}, {"Blue Accent", "4472C4"}, {"Orange Accent", "ED7D31"},
+// choiceHex is a picked color as a run stores it ("" for Automatic).
+func choiceHex(c gui.ColorChoice) string {
+	if c.None {
+		return ""
+	}
+	return colors.Hex(c.Color)
 }
 
 var lineSpacings = []float64{1, 1.08, 1.15, 1.5, 2, 2.5, 3}
@@ -39,8 +36,10 @@ var lineSpacings = []float64{1, 1.08, 1.15, 1.5, 2, 2.5, 3}
 type toolbar struct {
 	ribbon gui.Ribbon
 
-	styleDD, fontDD, sizeDD, colorDD, spacingDD gui.DropDown
-	pasteDD, hlDD, caseDD, selectDD             gui.DropDown
+	styleDD, fontDD, sizeDD, spacingDD gui.DropDown
+	colorCP                            gui.ColorPicker
+	pasteDD, hlDD, caseDD, selectDD    gui.DropDown
+	undoHL, redoHL                     gui.HistoryList
 
 	undo, redo, bold, italic, under, strike   widget.Clickable
 	alignL, alignC, alignR, alignJ            widget.Clickable
@@ -49,6 +48,7 @@ type toolbar struct {
 	cut, copy, painter                        widget.Clickable
 	grow, shrink, sub, super, hl, color       widget.Clickable
 	find, replace, stylesPane, newStyle       widget.Clickable
+	marks                                     widget.Clickable
 	state                                     toolState
 	stateKey                                  toolKey
 	styleIDs                                  []string
@@ -62,8 +62,6 @@ type toolbar struct {
 // setTips attaches Word's tooltips to the ribbon's buttons.
 func (t *toolbar) setTips() {
 	tip := gui.SetTip
-	tip(&t.undo, "Undo", "Ctrl+Z", "Undo your last action.")
-	tip(&t.redo, "Redo", "Ctrl+Y", "Redo your last action.")
 	tip(&t.pasteDD, "Paste", "Ctrl+V", "Add content from the Clipboard.")
 	tip(&t.fontDD, "Font", "", "Pick a new font for your text.")
 	tip(&t.sizeDD, "Font Size", "", "Change the size of your text.")
@@ -84,7 +82,7 @@ func (t *toolbar) setTips() {
 	tip(&t.hl, "Text Highlight Color", "", "Make your text stand out by highlighting it in a bright color.")
 	tip(&t.hlDD, "Text Highlight Color", "", "Choose a highlight color.")
 	tip(&t.color, "Font Color", "", "Change the color of your text.")
-	tip(&t.colorDD, "Font Color", "", "Choose a color for your text.")
+	tip(&t.colorCP, "Font Color", "", "Choose a color for your text.")
 	tip(&t.bullets, "Bullets", "", "Create a bulleted list.")
 	tip(&t.numbers, "Numbering", "", "Create a numbered list.")
 	tip(&t.indLess, "Decrease Indent", "", "Move your paragraph closer to the margin.")
@@ -93,6 +91,7 @@ func (t *toolbar) setTips() {
 	tip(&t.alignC, "Center", "Ctrl+E", "Center your content on the page.")
 	tip(&t.alignR, "Align Right", "Ctrl+R", "Align your content with the right margin.")
 	tip(&t.alignJ, "Justify", "Ctrl+J", "Distribute your text evenly between the margins.")
+	tip(&t.marks, "Show/Hide ¶", "Ctrl+Shift+8", "Show paragraph marks and other hidden formatting symbols.")
 	tip(&t.spacingDD, "Line and Paragraph Spacing", "", "Choose how much space appears between lines of text or between paragraphs.")
 	tip(&t.modify, "Modify Style", "", "Change the formatting of the current style.")
 	tip(&t.newStyle, "New Style", "", "Create a new style.")
@@ -234,8 +233,6 @@ func (d *window) styleItems() ([]gui.DropItem, []string) {
 	return items, ids
 }
 
-func fmtSize(s float64) string { return strconv.FormatFloat(s, 'f', -1, 64) }
-
 // Ribbon menus.
 var (
 	pasteChoices = []string{"Keep Source Formatting", "Keep Text Only", "", "Paste Special…"}
@@ -251,18 +248,6 @@ var (
 		{"none", "No Color", ""},
 	}
 )
-
-func menuItems(labels []string) []gui.DropItem {
-	items := make([]gui.DropItem, len(labels))
-	for i, l := range labels {
-		if l == "" {
-			items[i] = gui.DropItem{Separator: true}
-		} else {
-			items[i] = gui.DropItem{Label: l}
-		}
-	}
-	return items
-}
 
 // ribbonHeight is the ribbon's height in dp, for tests.
 const ribbonHeight = int(gui.RibbonHeight)
@@ -280,15 +265,8 @@ func (d *window) toolbar(gtx layout.Context) layout.Dimensions {
 	st := d.toolState()
 	th := d.th
 
-	did := false
-	click := func(b *widget.Clickable, f func()) {
-		for b.Clicked(gtx) {
-			f()
-			did = true
-		}
-	}
-	click(&t.undo, func() { ed.Undo() })
-	click(&t.redo, func() { ed.Redo() })
+	k := &gui.RibbonKit{Th: th, Op: ed.Op} // commands' undo steps take their buttons' names
+	click := func(b *widget.Clickable, f func()) { k.Click(gtx, b, f) }
 	click(&t.cut, func() { d.copy(gtx, true) })
 	click(&t.copy, func() { d.copy(gtx, false) })
 	for {
@@ -322,6 +300,7 @@ func (d *window) toolbar(gtx layout.Context) layout.Dimensions {
 	click(&t.numbers, func() { ed.ToggleList(false) })
 	click(&t.indLess, func() { ed.Indent(-1) })
 	click(&t.indMore, func() { ed.Indent(1) })
+	click(&t.marks, d.toggleMarks)
 	click(&t.clear, ed.ClearAllFormatting)
 	click(&t.modify, func() { d.dlg.openFor(d, ed.ParaStyleID(ed.Sel.Caret.Para)) })
 	click(&t.stylesPane, func() { d.pane.open = !d.pane.open })
@@ -345,11 +324,7 @@ func (d *window) toolbar(gtx layout.Context) layout.Dimensions {
 	}
 	sizeItems := make([]gui.DropItem, len(fontSizes))
 	for i, s := range fontSizes {
-		sizeItems[i] = gui.DropItem{Label: fmtSize(s)}
-	}
-	colorItems := make([]gui.DropItem, len(palette))
-	for i, c := range palette {
-		colorItems[i] = gui.DropItem{Label: c.name, Swatch: colors.HexOr(c.hex, colors.RGB(0))}
+		sizeItems[i] = gui.DropItem{Label: gui.FormatPt(s)}
 	}
 	hlItems := make([]gui.DropItem, len(highlights))
 	for i, h := range highlights {
@@ -367,73 +342,8 @@ func (d *window) toolbar(gtx layout.Context) layout.Dimensions {
 		gui.DropItem{Label: "Add Space After Paragraph"}, gui.DropItem{Label: "Remove Space After Paragraph"})
 
 	// Layout helpers.
-	row := gui.RibbonRow
-	stack := gui.RibbonStack
-	btn := func(b *widget.Clickable, ic *widget.Icon, checked bool) layout.Widget {
-		return func(gtx layout.Context) layout.Dimensions {
-			return gui.ToolButton(gtx, th, b, ic, "", checked, color.NRGBA{})
-		}
-	}
-	disabled := func(b *widget.Clickable, ic *widget.Icon, off bool) layout.Widget {
-		return func(gtx layout.Context) layout.Dimensions {
-			if off {
-				gtx = gtx.Disabled()
-			}
-			return gui.ToolButton(gtx, th, b, ic, "", false, color.NRGBA{})
-		}
-	}
-	text := func(b *widget.Clickable, label string, checked bool) layout.Widget {
-		return func(gtx layout.Context) layout.Dimensions {
-			return gui.ToolButton(gtx, th, b, nil, label, checked, color.NRGBA{})
-		}
-	}
-	gap := func(w unit.Dp) layout.Widget { return layout.Spacer{Width: w}.Layout }
-	sep := gui.ToolSeparator
-	chosen := func(i int, f func(int)) {
-		if i >= 0 {
-			f(i)
-			did = true
-		}
-	}
-	combo := func(dd *gui.DropDown, width unit.Dp, cur string, items []gui.DropItem, listW unit.Dp, apply func(int)) layout.Widget {
-		return func(gtx layout.Context) layout.Dimensions {
-			dd.ListWidth = listW
-			gtx.Constraints.Min.Y = gtx.Dp(gui.RibbonRowHeight)
-			var i int
-			dims := gui.Middle(gtx, func(gtx layout.Context) layout.Dimensions {
-				i = dd.Layout(gtx, th, width, cur, items)
-				return layout.Dimensions{Size: image.Pt(gtx.Dp(width), gtx.Dp(24))}
-			})
-			chosen(i, apply)
-			return dims
-		}
-	}
-	drop := func(dd *gui.DropDown, ic *widget.Icon, label string, items []gui.DropItem, listW unit.Dp, apply func(int)) layout.Widget {
-		return func(gtx layout.Context) layout.Dimensions {
-			i, dims := gui.DropButton(gtx, th, dd, ic, label, color.NRGBA{}, items, listW)
-			chosen(i, apply)
-			return dims
-		}
-	}
-	split := func(b *widget.Clickable, dd *gui.DropDown, ic *widget.Icon, bar color.NRGBA, items []gui.DropItem, listW unit.Dp, apply func(int)) layout.Widget {
-		return func(gtx layout.Context) layout.Dimensions {
-			i, dims := gui.SplitButton(gtx, th, b, dd, ic, bar, items, listW)
-			chosen(i, apply)
-			return dims
-		}
-	}
-	big := func(dd *gui.DropDown, ic *widget.Icon, label string, items []gui.DropItem, listW unit.Dp, apply func(int)) layout.Widget {
-		return func(gtx layout.Context) layout.Dimensions {
-			i, dims := gui.BigDropButton(gtx, th, dd, ic, label, items, listW)
-			chosen(i, apply)
-			return dims
-		}
-	}
-	bigBtn := func(b *widget.Clickable, ic *widget.Icon, label string, checked bool) layout.Widget {
-		return func(gtx layout.Context) layout.Dimensions {
-			return gui.BigButton(gtx, th, b, ic, label, false, checked)
-		}
-	}
+	row, stack, sep, gap := gui.RibbonRow, gui.RibbonStack, gui.ToolSeparator, gui.Gap
+	btn, text, combo, drop, split, big, bigBtn := k.Btn, k.Text, k.Combo, k.Drop, k.Split, k.BigDrop, k.BigBtn
 
 	hlBar := colors.HexOr("FFFF00", colors.White)
 	for _, h := range highlights {
@@ -443,11 +353,11 @@ func (d *window) toolbar(gtx layout.Context) layout.Dimensions {
 	}
 	groups := []gui.RibbonGroup{
 		{Caption: "Undo", Content: stack(
-			row(disabled(&t.undo, gui.IconUndo, !ed.CanUndo())),
-			row(disabled(&t.redo, gui.IconRedo, !ed.CanRedo())),
+			row(k.History(&t.undo, &t.undoHL, gui.IconUndo, "Undo", "Ctrl+Z", ed.UndoLabels(), func(n int) { ed.UndoN(n) })),
+			row(k.History(&t.redo, &t.redoHL, gui.IconRedo, "Redo", "Ctrl+Y", ed.RedoLabels(), func(n int) { ed.RedoN(n) })),
 		)},
 		{Caption: "Clipboard", Content: gui.RibbonSide(2,
-			big(&t.pasteDD, gui.IconContentPaste, "Paste", menuItems(pasteChoices), 200, func(i int) {
+			big(&t.pasteDD, gui.IconContentPaste, "Paste", gui.MenuItems(pasteChoices), 200, func(i int) {
 				switch i {
 				case 0:
 					d.paste(gtx)
@@ -469,12 +379,12 @@ func (d *window) toolbar(gtx layout.Context) layout.Dimensions {
 					ed.SetFont(fonts[i])
 				}),
 				gap(4),
-				combo(&t.sizeDD, 52, fmtSize(st.size), sizeItems, 60, func(i int) { ed.SetSize(fontSizes[i]) }),
+				combo(&t.sizeDD, 52, gui.FormatPt(st.size), sizeItems, 60, func(i int) { ed.SetSize(fontSizes[i]) }),
 				gap(2),
-				text(&t.grow, "A⁺", false),
-				text(&t.shrink, "A⁻", false),
+				k.Glyph(&t.grow, "A⁺", false),
+				k.Glyph(&t.shrink, "A⁻", false),
 				sep,
-				drop(&t.caseDD, gui.IconChangeCase, "", menuItems(caseChoices), 190, func(i int) { ed.ChangeCase(model.TextCase(i)) }),
+				drop(&t.caseDD, gui.IconChangeCase, "", gui.MenuItems(caseChoices), 190, func(i int) { ed.ChangeCase(model.TextCase(i)) }),
 				btn(&t.clear, gui.IconClearFormat, false),
 			),
 			row(
@@ -482,8 +392,8 @@ func (d *window) toolbar(gtx layout.Context) layout.Dimensions {
 				btn(&t.italic, gui.IconItalic, st.italic),
 				btn(&t.under, gui.IconUnderline, st.under),
 				btn(&t.strike, gui.IconStrike, st.strike),
-				text(&t.sub, "x₂", st.sub),
-				text(&t.super, "x²", st.super),
+				k.Glyph(&t.sub, "x₂", st.sub),
+				k.Glyph(&t.super, "x²", st.super),
 				sep,
 				split(&t.hl, &t.hlDD, gui.IconHighlight, hlBar, hlItems, 170, func(i int) {
 					if highlights[i].hex != "" {
@@ -491,11 +401,11 @@ func (d *window) toolbar(gtx layout.Context) layout.Dimensions {
 					}
 					ed.SetHighlight(highlights[i].name)
 				}),
-				split(&t.color, &t.colorDD, gui.IconTextColor, colors.HexOr(t.lastColor, colors.RGB(0)), colorItems, 170, func(i int) {
-					if palette[i].hex != "" {
-						t.lastColor = palette[i].hex
+				k.ColorSplit(&t.color, &t.colorCP, gui.IconTextColor, colors.HexOr(t.lastColor, colors.RGB(0)), "Automatic", func(c gui.ColorChoice) {
+					if !c.None {
+						t.lastColor = colors.Hex(c.Color)
 					}
-					ed.SetColor(palette[i].hex)
+					ed.SetColor(choiceHex(c))
 				}),
 			),
 		)},
@@ -506,6 +416,8 @@ func (d *window) toolbar(gtx layout.Context) layout.Dimensions {
 				sep,
 				btn(&t.indLess, gui.IconIndentLess, false),
 				btn(&t.indMore, gui.IconIndentMore, false),
+				sep,
+				k.Glyph(&t.marks, "¶", d.showMarks),
 			),
 			row(
 				btn(&t.alignL, gui.IconAlignLeft, st.align == model.AlignLeft),
@@ -543,7 +455,7 @@ func (d *window) toolbar(gtx layout.Context) layout.Dimensions {
 		{Caption: "Editing", Content: stack(
 			row(btn(&t.find, gui.IconSearch, d.find.open && d.find.mode == findOnly),
 				btn(&t.replace, gui.IconFindReplace, d.find.open && d.find.mode == findReplace)),
-			row(drop(&t.selectDD, gui.IconSelectAll, "Select", menuItems(selectItems), 140, func(i int) {
+			row(drop(&t.selectDD, gui.IconSelectAll, "Select", gui.MenuItems(selectItems), 140, func(i int) {
 				switch i {
 				case 0:
 					ed.SelectAll()
@@ -554,7 +466,7 @@ func (d *window) toolbar(gtx layout.Context) layout.Dimensions {
 		)},
 	}
 	dims := t.ribbon.Layout(gtx, th, groups...)
-	if did {
+	if k.Did {
 		d.edited()
 	}
 	return dims

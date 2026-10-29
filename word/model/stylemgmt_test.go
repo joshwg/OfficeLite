@@ -129,3 +129,29 @@ func TestHeadersFooters(t *testing.T) {
 		t.Errorf("FieldName")
 	}
 }
+
+// Undoing Delete Style gives header and footer paragraphs their style back.
+func TestDeleteStyleUndoHeaders(t *testing.T) {
+	d, e := newDoc("body")
+	id := "Mine"
+	d.Styles.Styles = append(d.Styles.Styles, &Style{ID: id, Name: id, Type: ParagraphStyle, Custom: true})
+	hf := d.NewHeaderFooter(HFDefault, false)
+	hp := hf.Blocks[0].(*Paragraph)
+	hp.Style = id
+	d.Body[0].(*Paragraph).Style = id
+	if err := e.DeleteStyle(id); err != nil {
+		t.Fatal(err)
+	}
+	if hp.Style == id {
+		t.Fatalf("header paragraph kept the deleted style")
+	}
+	e.Undo()
+	h := d.HF.Headers[HFDefault].Blocks[0].(*Paragraph)
+	if h.Style != id || d.Body[0].(*Paragraph).Style != id {
+		t.Fatalf("undo: header style %q, body style %q", h.Style, d.Body[0].(*Paragraph).Style)
+	}
+	e.Redo()
+	if h := d.HF.Headers[HFDefault].Blocks[0].(*Paragraph); h.Style == id {
+		t.Fatalf("redo: header style %q", h.Style)
+	}
+}

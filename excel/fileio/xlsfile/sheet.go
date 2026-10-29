@@ -7,6 +7,9 @@ import (
 )
 
 // readSheet reads one worksheet substream starting at its BOF record.
+// recSxView starts a PivotTable's records (SXVIEW).
+const recSxView = 0x00B0
+
 func (p *parser) readSheet(pos int, sh *model.Sheet) {
 	var (
 		depth      int
@@ -56,12 +59,19 @@ func (p *parser) readSheet(pos int, sh *model.Sheet) {
 			if depth == 1 && u16(b, 2) != bofTypeWorksheet {
 				return false
 			}
+			if depth == 2 && u16(b, 2) == bofTypeChart {
+				p.warnf("%s: charts can't be read from .xls files; they aren't shown and are dropped when saved", sh.Name)
+			}
 			return true
 		case recEOF:
 			depth--
 			return depth > 0
 		}
 		if depth != 1 {
+			return true
+		}
+		if r.id == recSxView {
+			p.warnf("%s: PivotTables are kept as plain cells (they can't be read from .xls files)", sh.Name)
 			return true
 		}
 		if r.id == recContinue && strSegs != nil {
@@ -78,6 +88,12 @@ func (p *parser) readSheet(pos int, sh *model.Sheet) {
 		}
 		if annots.record(r) {
 			return true // notes and hyperlinks
+		}
+		if p.flt.record(r) {
+			return true // the AutoFilter (filter.go)
+		}
+		if p.dv.record(r) {
+			return true // data validation (validation.go)
 		}
 		switch r.id {
 		case recString, recShrFmla, recArray, recTable:
@@ -168,7 +184,7 @@ func (p *parser) readSheet(pos int, sh *model.Sheet) {
 				strSegs = [][]byte{b}
 			}
 		case recShrFmla, recArray, recTable:
-			if lastRow < 0 {
+			if lastRow < 0 || len(b) < 6 {
 				break
 			}
 			sf := sharedFmla{kind: r.id, rng: model.Range{R1: u16(b, 0), R2: u16(b, 2), C1: int(b[4]), C2: int(b[5])}}
@@ -199,8 +215,9 @@ func (p *parser) readSheet(pos int, sh *model.Sheet) {
 				if o+8 > len(b) {
 					break
 				}
+				r1, r2, c1, c2 := u16(b, o), u16(b, o+2), u16(b, o+4), u16(b, o+6)
 				sh.Merges = append(sh.Merges, model.Range{
-					R1: u16(b, o), R2: u16(b, o+2), C1: u16(b, o+4), C2: u16(b, o+6),
+					R1: min(r1, r2), R2: max(r1, r2), C1: min(c1, c2), C2: max(c1, c2),
 				})
 			}
 		case recDefColWidth:
@@ -214,21 +231,57 @@ func (p *parser) readSheet(pos int, sh *model.Sheet) {
 		case recColInfo:
 			first, last, width := u16(b, 0), u16(b, 2), u16(b, 4)
 			w := float32(width) / 256
-			if u16(b, 8)&0x01 != 0 {
-				w = 0
-			}
+			opts := u16(b, 8)
+			level := opts >> 8 & 7
+			hidden := opts&0x01 != 0
+			// An outline column whose width wasn't set keeps the default.
+			deflt := (level > 0 || opts&0x1000 != 0) && !hidden && opts&0x02 == 0
 			for c := first; c <= min(last, xlsMaxCols-1); c++ { // COLINFO may run to column 257
-				sh.ColWidth[c] = w
+				if !deflt {
+					sh.ColWidth[c] = w
+				}
+				if hidden {
+					sh.ColWidth[c] = 0
+					if level > 0 && w > 0 && opts&0x02 != 0 {
+						// The width an outline column gets back when shown.
+						if sh.Outline.ColShowSize == nil {
+							sh.Outline.ColShowSize = map[int]float32{}
+						}
+						sh.Outline.ColShowSize[c] = w
+					}
+				}
+				sh.SetLevel(false, c, level)
+				if opts&0x1000 != 0 {
+					sh.SetCollapsedFlag(false, c, true)
+				}
 			}
 		case recRow:
 			height := u16(b, 6) & 0x7FFF
 			flags := u32(b, 12)
+			sh.SetLevel(true, row, int(flags&7))
+			if flags&0x10 != 0 {
+				sh.SetCollapsedFlag(true, row, true)
+			}
 			switch {
 			case flags&0x20 != 0:
 				sh.RowHeight[row] = 0
+				if flags&0x40 != 0 && height > 0 {
+					p.flt.hiddenHt[row] = model.PointsToPx(float64(height) / 20)
+					if flags&7 > 0 && height != defRowTw { // a height of its own to show it with
+						if sh.Outline.RowShowSize == nil {
+							sh.Outline.RowShowSize = map[int]float32{}
+						}
+						sh.Outline.RowShowSize[row] = model.PointsToPx(float64(height) / 20)
+					}
+				}
 			case flags&0x40 != 0 || (defRowTw >= 0 && height != defRowTw):
 				sh.RowHeight[row] = model.PointsToPx(float64(height) / 20)
 			}
+		case recWsBool:
+			// Summary rows below and summary columns right are Excel's
+			// default.
+			sh.Outline.SummaryAbove = u16(b, 0)&0x40 == 0
+			sh.Outline.SummaryLeft = u16(b, 0)&0x80 == 0
 		case recWindow2:
 			grbit := u16(b, 0)
 			sh.ShowGridLines = grbit&0x02 != 0
@@ -260,6 +313,7 @@ func (p *parser) readSheet(pos int, sh *model.Sheet) {
 	if sel, ok := selections[paneAct]; ok {
 		sh.ActiveRow, sh.ActiveCol = sel[0], sel[1]
 	}
+	sh.ClampView()
 	for _, e := range exps {
 		sf, ok := shared[[2]int{e.anchorRow, e.anchorCol}]
 		if !ok {

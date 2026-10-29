@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -82,6 +83,8 @@ var xlsFormulas = []string{
 	`DGET(A1:B3,2,A1:A2)+DMAX(A1:B3,2,A1:A2)+DMIN(A1:B3,2,A1:A2)+DPRODUCT(A1:B3,2,A1:A2)`,
 	`DSTDEV(A1:B3,2,A1:A2)+DSTDEVP(A1:B3,2,A1:A2)+DVAR(A1:B3,2,A1:A2)+DVARP(A1:B3,2,A1:A2)`,
 	"SUM(_xlfn.EXPAND(A1:A2,3,2,0))+SUM(_xlfn.WRAPROWS(_xlfn.TOROW(A1:A3,1),2,0))+SUM(_xlfn.WRAPCOLS(_xlfn.TOCOL(A1:B3,3,TRUE),4,0))",
+	`BIN2DEC(1010)+HEX2DEC("FF")+OCT2DEC(17)+LEN(DEC2BIN(9,8)&DEC2HEX(-1)&DEC2OCT(8,3))`,
+	`LEN(BIN2HEX(1110)&BIN2OCT(101)&HEX2BIN("F")&HEX2OCT("F")&OCT2BIN(7)&OCT2HEX(17))+CONVERT(1,"lbm","kg")`,
 }
 
 // buildXLSWorkbook makes a workbook with what a .xls file holds: values,
@@ -224,7 +227,11 @@ func TestXLSSamples(t *testing.T) {
 					t.Skip("dynamic arrays, which .xls cannot hold")
 				}
 			}
-			if fits := Fits(want, XLS); len(fits) != 0 {
+			fits := slices.DeleteFunc(Fits(want, XLS), func(s string) bool {
+				return strings.Contains(s, "PivotTables are saved as plain cells") || // expected
+					strings.Contains(s, "charts can't be saved") || strings.Contains(s, "chart sheets can't be saved")
+			})
+			if len(fits) != 0 {
 				t.Errorf("Fits = %q", fits)
 			}
 			compare(t, want, writeXLS(t, want))

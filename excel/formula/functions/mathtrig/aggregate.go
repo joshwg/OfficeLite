@@ -2,6 +2,7 @@ package mathtrig
 
 import (
 	f "officelite/excel/formula"
+	"officelite/excel/formula/functions/internal/stats"
 )
 
 func registerAggregate(r *f.Registry) {
@@ -101,30 +102,31 @@ func percentOf(e *f.Env, a []f.Value) f.Value {
 	if err != nil {
 		return err
 	}
-	t := sum(all)
+	t := stats.Sum(all)
 	if t == 0 {
 		return f.ErrDiv0
 	}
-	return f.NumberOrErr(sum(part) / t)
+	return f.NumberOrErr(stats.Sum(part) / t)
 }
 
 // SUBTOTAL(function_num, ref1, [ref2], ...): function_num 1-11 (AVERAGE,
 // COUNT, COUNTA, MAX, MIN, PRODUCT, STDEV, STDEVP, SUM, VAR, VARP), or
-// 101-111 to also ignore hidden rows. Cells that hold SUBTOTAL or
-// AGGREGATE formulas are skipped. The Context has no row visibility, so
-// 101-111 currently behave like 1-11.
+// 101-111 to also ignore rows hidden by hand. Rows the AutoFilter hid are
+// always left out, as are cells that hold SUBTOTAL or AGGREGATE formulas.
 func subtotal(e *f.Env, a []f.Value) f.Value {
 	fn, err := f.Int(a[0])
 	if err != nil {
 		return err
 	}
+	rows := skipFiltered
 	if fn > 100 {
 		fn -= 100
+		rows = skipHidden
 	}
 	if fn < 1 || fn > 11 {
 		return f.ErrValue
 	}
-	o := opts{k: kNum, skipNested: true}
+	o := opts{k: kNum, skipNested: true, skipRows: rows}
 	return aggregateRefs(e, fn, a[1:], o)
 }
 
@@ -148,7 +150,7 @@ func aggregateRefs(e *f.Env, fn int, refs []f.Value, o opts) f.Value {
 // SMALL, PERCENTILE.INC, QUARTILE.INC, PERCENTILE.EXC, QUARTILE.EXC).
 // Options: 0/1 ignore nested SUBTOTAL/AGGREGATE cells, 2/3 also errors,
 // 4/5 ignore nothing, 6/7 errors only. The odd options also ignore hidden
-// rows, which the Context cannot report, so they act like the even ones.
+// rows, whether hidden by hand or by the AutoFilter.
 func aggregate(e *f.Env, a []f.Value) f.Value {
 	fn, err := f.Int(a[0])
 	if err != nil {
@@ -162,6 +164,9 @@ func aggregate(e *f.Env, a []f.Value) f.Value {
 		return f.ErrValue
 	}
 	o := opts{k: kNum, skipNested: opt <= 3, skipErr: opt == 2 || opt == 3 || opt >= 6}
+	if opt%2 == 1 {
+		o.skipRows = skipHidden
+	}
 	if fn <= 13 {
 		return aggregateRefs(e, fn, a[2:], o)
 	}

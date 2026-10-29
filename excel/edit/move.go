@@ -37,7 +37,7 @@ func (b *Book) MoveOverwrites(sheet int, src model.Range, dRow, dCol int, copy b
 			if !copy && src.Contains(r, c) {
 				continue
 			}
-			if !isBlank(sh.Get(r, c)) {
+			if !sh.Get(r, c).IsBlank() {
 				return true
 			}
 		}
@@ -46,11 +46,12 @@ func (b *Book) MoveOverwrites(sheet int, src model.Range, dRow, dCol int, copy b
 }
 
 // MoveCells moves the cells of src by dRow, dCol (copy: copies them) on
-// sheet: contents, formats, notes, hyperlinks and the merged areas inside
-// src. Moved formulas keep their references, and formulas anywhere that
+// sheet: contents, formats, notes, hyperlinks, data validation and the merged
+// areas inside src. Moved formulas keep their references, and formulas anywhere that
 // point into src follow the cells; copied formulas shift their relative
 // references, as a paste does. It returns the destination.
 func (b *Book) MoveCells(sheet int, src model.Range, dRow, dCol int, copy bool) (model.Range, calc.Result, error) {
+	defer b.Op("Drag and Drop")()
 	dest, ok := MoveTarget(src, dRow, dCol)
 	if !ok {
 		return dest, calc.Result{}, ErrPasteSize
@@ -107,7 +108,7 @@ func (b *Book) MoveCells(sheet int, src model.Range, dRow, dCol int, copy bool) 
 	if du, ok := usedPart(sh, dest); ok {
 		for r := du.R1; r <= du.R2; r++ {
 			for c := du.C1; c <= min(du.C2, sh.RowLen(r)-1); c++ {
-				if !isBlank(sh.Get(r, c)) || sh.Get(r, c).Style != 0 {
+				if !sh.Get(r, c).IsBlank() || sh.Get(r, c).Style != 0 {
 					set(sheet, r, c, model.Cell{})
 				}
 			}
@@ -147,16 +148,64 @@ func (b *Book) MoveCells(sheet int, src model.Range, dRow, dCol int, copy bool) 
 	ch := &sheetChange{sheet: sheet, before: propsOf(sh)}
 	ch.after = ch.before
 	ch.after.merges = moveMerges(sh.Merges, src, dest, dRow, dCol, copy)
+	ch.after.valids = model.MoveValidations(sh.Validations, src, dRow, dCol, copy)
 
 	list := make([]cellChange, 0, len(order))
 	for _, k := range order {
 		list = append(list, *cells[k])
 	}
+	var names *namesChange
+	if !copy {
+		names = b.moveNames(sh.Name, src, dRow, dCol)
+	}
 	b.setAnnots(annots, true)
 	ch.set(b.WB, true)
 	res := b.setCells(list, true)
-	b.record(&change{where: Where{sheet, dest}, cells: list, annots: annots, sheet: ch})
+	if names != nil {
+		names.set(b.WB, true)
+		res = b.recalculateAll()
+	}
+	b.record(&change{where: Where{sheet, dest}, cells: list, annots: annots, sheet: ch, names: names})
 	return dest, res, nil
+}
+
+// namesChange is a change of the workbook's defined names.
+type namesChange struct {
+	before, after []model.DefinedName
+}
+
+func (c *namesChange) set(wb *model.Workbook, after bool) {
+	if after {
+		wb.Names = slices.Clone(c.after)
+	} else {
+		wb.Names = slices.Clone(c.before)
+	}
+}
+
+// moveNames is the change that re-points the defined names referring
+// into src on sheet target to where its cells moved (dRow, dCol), as
+// Excel does for cut and pasted (or dragged) cells; nil when no name
+// points there.
+func (b *Book) moveNames(target string, src model.Range, dRow, dCol int) *namesChange {
+	var after []model.DefinedName
+	for i, n := range b.WB.Names {
+		home := ""
+		if n.Sheet >= 0 && n.Sheet < len(b.WB.Sheets) {
+			home = b.WB.Sheets[n.Sheet].Name
+		}
+		f := formula.MoveRefs(n.Formula, home, target, src, dRow, dCol)
+		if f == n.Formula {
+			continue
+		}
+		if after == nil {
+			after = slices.Clone(b.WB.Names)
+		}
+		after[i].Formula = f
+	}
+	if after == nil {
+		return nil
+	}
+	return &namesChange{before: slices.Clone(b.WB.Names), after: after}
 }
 
 // moveMerges is merges after src's merged areas move (or are copied) to

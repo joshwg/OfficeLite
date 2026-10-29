@@ -39,3 +39,25 @@ func TestNotesLinksRoundTrip(t *testing.T) {
 		t.Errorf("cell text = %q", g.Get(0, 0).Text)
 	}
 }
+
+// A note without an author keeps none (excelize would make it "Author"),
+// and control characters in note text survive as _xHHHH_ escapes instead
+// of becoming U+FFFD.
+func TestNoteAuthorAndControlChars(t *testing.T) {
+	sh := model.NewSheet("Sheet1")
+	notes := map[[2]int]model.Note{
+		{0, 0}: {Text: "no author"},
+		{1, 0}: {Author: "Josh", Text: "a\x01b\tc\x1fd\ne"},
+		{2, 0}: {Text: "literal _x0041_ stays"},
+	}
+	for k, n := range notes {
+		sh.SetNote(k[0], k[1], &n)
+	}
+	wb := &model.Workbook{Sheets: []*model.Sheet{sh}, Styles: []model.Style{model.DefaultStyle()}}
+	got, _ := roundTrip(t, wb)
+	for k, want := range notes {
+		if n, _ := got.Sheets[0].NoteAt(k[0], k[1]); n != want {
+			t.Errorf("note %v = %+q, want %+q", k, n, want)
+		}
+	}
+}

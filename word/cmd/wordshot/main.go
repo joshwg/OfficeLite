@@ -1,13 +1,13 @@
 // Command wordshot renders a document page to a PNG without opening a
 // window, for checking rendering changes:
 //
-//	wordshot -o out.png [-page N] [-zoom 1] [file.docx]
+//	wordshot -o out.png [-page N] [-zoom 1] [-marks] [file.docx]
 //
 // Without a file it renders a built-in sample with headings, lists, tabs,
 // a table and character formatting. With -window the whole WordLite window
 // is drawn (-w, -h; -backstage names a File page, -menu N opens a menu,
 // -dialog style|close|context|colresize|dragtext|... shows a dialog or
-// a mouse interaction).
+// a mouse interaction; -dialog undo|redo opens the Undo or Redo list). -marks shows formatting marks (Show/Hide ¶).
 package main
 
 import (
@@ -43,7 +43,11 @@ func main() {
 	backstage := flag.String("backstage", "", "File page to show (-window)")
 	menu := flag.Int("menu", -1, "menu to open (-window)")
 	dialog := flag.String("dialog", "", "dialog to show: style or close (-window)")
+	marks := flag.Bool("marks", false, "show formatting marks (Show/Hide ¶)")
 	flag.Parse()
+	if *marks && *window && *dialog == "" {
+		*dialog = "marks"
+	}
 
 	var doc *model.Document
 	path := ""
@@ -86,6 +90,7 @@ func main() {
 			}
 		}
 		eng := wl.New(doc, fonts.Shaper(fams...))
+		eng.SetShowHidden(*marks)
 		eng.Layout()
 		log.Printf("%d pages, laid out in %v", len(eng.Pages), eng.LastDuration)
 		if *page < 1 || *page > len(eng.Pages) {
@@ -94,7 +99,7 @@ func main() {
 		pg := eng.Pages[*page-1]
 		scale := *zoom * 96 / 72
 		width, height = int(math.Ceil(pg.Width*scale)), int(math.Ceil(pg.Height*scale))
-		eng.DrawPage(&ops, pg, wl.DrawOptions{Scale: scale})
+		eng.DrawPage(&ops, pg, wl.DrawOptions{Scale: scale, ShowMarks: *marks})
 	}
 
 	win, err := headless.NewWindow(width, height)

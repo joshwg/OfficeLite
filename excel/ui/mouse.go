@@ -123,6 +123,10 @@ func (a *App) moveRelease(copy bool) {
 	if m.dRow == 0 && m.dCol == 0 || !a.readyToChange() {
 		return
 	}
+	dest := model.Range{R1: m.src.R1 + m.dRow, C1: m.src.C1 + m.dCol, R2: m.src.R2 + m.dRow, C2: m.src.C2 + m.dCol}
+	if !copy && a.pivotProtected(m.src) || a.pivotProtected(dest) {
+		return
+	}
 	run := func() {
 		dest, res, err := a.book.MoveCells(a.active, m.src, m.dRow, m.dCol, copy)
 		if err != nil {

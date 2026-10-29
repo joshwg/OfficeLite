@@ -60,11 +60,38 @@ func (e *Editor) FindAll(q string, o FindOptions) []Match {
 	qr := []rune(q)
 	var out []Match
 	for i, l := range e.locs {
-		for _, off := range findIn([]rune(l.P.Text()), qr, o) {
-			out = append(out, Match{Pos{i, off}, Pos{i, off + len(qr)}})
+		if l.Hidden {
+			continue
+		}
+		// Search the text without its invisible markers (bookmarks,
+		// comment ranges, field codes), so they neither break a match nor
+		// count as word boundaries; offs maps back to caret offsets.
+		text, offs := visibleText(l.P)
+		for _, at := range findIn(text, qr, o) {
+			out = append(out, Match{Pos{i, offs[at]}, Pos{i, offs[at+len(qr)-1] + 1}})
 		}
 	}
 	return out
+}
+
+// visibleText returns p's text without its invisible markers (see
+// invisible) and the caret offset of each character left.
+func visibleText(p *Paragraph) ([]rune, []int) {
+	all := []rune(p.Text())
+	text, offs := make([]rune, 0, len(all)), make([]int, 0, len(all))
+	off := 0
+	for i := range p.Runs {
+		r := &p.Runs[i]
+		n := RunLen(r)
+		if r.Kind != RunOpaque || r.Text != "" {
+			for k := off; k < off+n; k++ {
+				text = append(text, all[k])
+				offs = append(offs, k)
+			}
+		}
+		off += n
+	}
+	return text, offs
 }
 
 // MatchIndex returns the index of the first match at or after p (wrapping
@@ -91,7 +118,8 @@ func MatchIndex(ms []Match, p Pos, back bool) int {
 }
 
 // replaceAt replaces [a, b) of paragraph p with text in the formatting of
-// the first replaced character.
+// the first replaced character. Invisible markers in the range stay (after
+// the new text).
 func replaceAt(p *Paragraph, a, b int, text string) {
 	var fmtRun Run
 	if i := p.RunAt(a); i >= 0 {
@@ -100,7 +128,16 @@ func replaceAt(p *Paragraph, a, b int, text string) {
 	} else {
 		fmtRun = Run{Props: p.Mark}
 	}
-	deleteRunes(p, a, b)
+	for k := b - 1; k >= a; k-- {
+		if !invisible(p, k) {
+			j := k // delete each stretch of visible characters at once
+			for j > a && !invisible(p, j-1) {
+				j--
+			}
+			deleteRunes(p, j, k+1)
+			k = j
+		}
+	}
 	if text != "" {
 		fmtRun.Text = text
 		insertRuns(p, a, fmtRun)
@@ -110,6 +147,7 @@ func replaceAt(p *Paragraph, a, b int, text string) {
 // Replace replaces one match with text (one undoable step) and selects
 // the replacement.
 func (e *Editor) Replace(m Match, text string) {
+	defer e.Op("Replace")()
 	m.A, m.B = e.clamp(m.A), e.clamp(m.B)
 	if m.A.Para != m.B.Para || !m.A.Less(m.B) {
 		return
@@ -125,6 +163,7 @@ func (e *Editor) Replace(m Match, text string) {
 // ReplaceAll replaces every occurrence of q with text as one undoable
 // step and returns how many were replaced.
 func (e *Editor) ReplaceAll(q, text string, o FindOptions) int {
+	defer e.Op("Replace All")()
 	ms := e.FindAll(q, o)
 	if len(ms) == 0 {
 		return 0

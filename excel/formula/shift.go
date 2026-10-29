@@ -4,47 +4,46 @@ package formula
 
 import (
 	"strconv"
-	"strings"
 
 	"officelite/excel/model"
 )
 
 // Shift moves every relative A1 reference in f by dRow rows and dCol
 // columns, as Excel does when a formula is copied or a shared formula is
-// expanded. Absolute parts ($A, $1) stay put; string literals and quoted
-// sheet names are left alone.
+// expanded. Absolute parts ($A, $1) stay put; whole columns (A:A) move
+// only sideways and whole rows (1:1) only up or down; string literals and
+// quoted sheet names are left alone. A reference moved off the sheet
+// (any part of a range) becomes #REF!.
 func Shift(f string, dRow, dCol int) string {
 	if dRow == 0 && dCol == 0 {
 		return f
 	}
-	var b strings.Builder
-	b.Grow(len(f) + 8)
-	for i := 0; i < len(f); {
-		c := f[i]
-		switch {
-		case c == '"' || c == '\'':
-			j := skipQuoted(f, i)
-			b.WriteString(f[i:j])
-			i = j
-		case isRefStart(c) && (i == 0 || !isNameChar(f[i-1])):
-			if ref, n, ok := parseShiftRef(f[i:]); ok {
-				b.WriteString(ref.shift(dRow, dCol))
-				i += n
-				continue
-			}
-			// Not a reference: copy the whole identifier.
-			j := i + 1
-			for j < len(f) && isNameChar(f[j]) {
-				j++
-			}
-			b.WriteString(f[i:j])
-			i = j
-		default:
-			b.WriteByte(c)
-			i++
+	return rewriteRefs(f, func(t *refTok) string {
+		if t.name != "" {
+			return t.text
 		}
-	}
-	return b.String()
+		r := t.r
+		if r.kind != refRows {
+			if !r.ac1 {
+				r.c1 += dCol
+			}
+			if !r.ac2 {
+				r.c2 += dCol
+			}
+		}
+		if r.kind != refCols {
+			if !r.ar1 {
+				r.r1 += dRow
+			}
+			if !r.ar2 {
+				r.r2 += dRow
+			}
+		}
+		if min(r.r1, r.r2, r.c1, r.c2) < 0 || max(r.r1, r.r2) >= excelRows || max(r.c1, r.c2) >= excelCols {
+			return string(ErrRef)
+		}
+		return t.result(r, true)
+	})
 }
 
 // skipQuoted returns the index just past the quoted run starting at i; a
@@ -66,28 +65,6 @@ func skipQuoted(s string, i int) int {
 type cellRef struct {
 	colAbs, rowAbs bool
 	col, row       int // zero-based
-}
-
-func (r cellRef) shift(dRow, dCol int) string {
-	if !r.colAbs {
-		r.col += dCol
-	}
-	if !r.rowAbs {
-		r.row += dRow
-	}
-	if r.col < 0 || r.row < 0 {
-		return "#REF!"
-	}
-	var b strings.Builder
-	if r.colAbs {
-		b.WriteByte('$')
-	}
-	b.WriteString(model.ColName(r.col))
-	if r.rowAbs {
-		b.WriteByte('$')
-	}
-	b.WriteString(strconv.Itoa(r.row + 1))
-	return b.String()
 }
 
 // parseShiftRef parses [$]COL[$]ROW at the start of s and returns how many bytes
@@ -130,8 +107,7 @@ func parseShiftRef(s string) (cellRef, int, bool) {
 	return r, i, true
 }
 
-func isLetter(c byte) bool   { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') }
-func isRefStart(c byte) bool { return c == '$' || isLetter(c) }
+func isLetter(c byte) bool { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') }
 func isNameChar(c byte) bool {
 	return isLetter(c) || (c >= '0' && c <= '9') || c == '_' || c == '.' || c == '\\'
 }

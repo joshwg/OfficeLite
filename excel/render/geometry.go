@@ -57,8 +57,19 @@ func NewGeometry(sh *model.Sheet, mdw float64) *Geometry {
 	for c, w := range sh.ColWidth {
 		widths[c] = model.ColWidthToPx(float64(w), mdw)
 	}
+	heights := sh.RowHeight
+	if len(sh.Filtered) > 0 {
+		// Rows hidden by the AutoFilter take no space.
+		heights = make(map[int]float32, len(sh.RowHeight)+len(sh.Filtered))
+		for r, h := range sh.RowHeight {
+			heights[r] = h
+		}
+		for r := range sh.Filtered {
+			heights[r] = 0
+		}
+	}
 	return &Geometry{
-		Rows: NewAxis(model.MaxRows, sh.DefaultRowHeight, sh.RowHeight),
+		Rows: NewAxis(model.MaxRows, sh.DefaultRowHeight, heights),
 		Cols: NewAxis(model.MaxCols, sh.DefaultColWidthPx(mdw), widths),
 	}
 }

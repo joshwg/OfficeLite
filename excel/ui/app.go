@@ -24,8 +24,10 @@ import (
 	"gioui.org/widget/material"
 	"gioui.org/x/explorer"
 
+	"officelite/common/autorecover"
 	"officelite/common/doctype"
 	"officelite/common/gui"
+	"officelite/common/lockfile"
 	"officelite/common/recent"
 	"officelite/excel/calc"
 	"officelite/excel/edit"
@@ -38,11 +40,15 @@ import (
 const appName = "ExcelLite"
 
 // Extensions offered in the Open dialog.
-var openExtensions = []string{".xlsx", ".xlsm", ".xls", ".csv", ".tsv", ".txt"}
+var openExtensions = []string{".xlsx", ".xlsm", ".xls", ".csv", ".tsv", ".txt", ".numbers"}
 
 type sheetState struct {
 	view   render.View
 	selEnd render.Pos // moving corner when extending the selection
+	extent extent     // cells with content, for the scrollbars (scroll.go)
+	// circles are the cells Circle Invalid Data marks (validation.go);
+	// nil when it is off.
+	circles [][2]int
 }
 
 type loadResult struct {
@@ -50,6 +56,8 @@ type loadResult struct {
 	wb     *model.Workbook
 	shaper *text.Shaper
 	err    error
+	lock   lockfile.Status    // what openPath found about the file (lock.go)
+	rec    *autorecover.Entry // the recovery copy loaded (recover.go)
 }
 
 type App struct {
@@ -58,6 +66,7 @@ type App struct {
 	th     *material.Theme // ui.Theme
 	expl   *explorer.Explorer
 	files  gui.FileDialog // Open dialog with Excel/Word file-type filters
+	drop   gui.FileDrop   // files dragged onto the window (drop.go)
 	fonts  *gui.FontLibrary
 	recent *recent.List
 	launch func(kind doctype.Kind, path string)
@@ -67,6 +76,9 @@ type App struct {
 	path     string      // file the workbook was loaded from or saved to
 	fileInfo os.FileInfo // of path, when loaded
 	modified bool        // unsaved changes
+	lk       lockState   // the file's registration, owner file, read-only (lock.go)
+	ar       autoRecover // the AutoRecover copy of unsaved changes (recover.go)
+	as       autoSave    // AutoSave into the file itself (autosave.go)
 	shaper   *text.Shaper
 	active   int // index into wb.Sheets
 	states   map[int]*sheetState
@@ -81,6 +93,7 @@ type App struct {
 	bs                             backstageState
 	zoomInBtn, zoomOutBtn, zoomBtn widget.Clickable
 	tabBtns                        []widget.Clickable
+	newSheetBtn                    widget.Clickable // the + after the sheet tabs
 	tabList                        layout.List
 	vbar                           gui.Scrollbar
 	hbar                           gui.Scrollbar
@@ -100,14 +113,20 @@ type App struct {
 	answer   func(int) // handles the dialog's button
 
 	results chan loadResult
-	calls   chan func() // work posted to the UI goroutine
+	calls   *gui.CallQueue // work posted to the UI goroutine
 	stats   statsCache
 
 	home   homeRibbon   // the Home ribbon (ribbon.go)
+	data   dataRibbon   // the Data ribbon (data.go)
+	tab    int          // the ribbon showing: tabHome or tabData
+	filt   filterMenu   // an AutoFilter drop-down (filter.go)
+	vlist  validList    // a data validation list's drop-down (validation.go)
 	fmtDlg formatDialog // Format Cells (formatdialog.go)
 	askDlg askDialog    // Row Height, Column Width, ... prompts
 	ins    insertState  // Insert, Find & Select and Sort dialogs, fill handle (dialogs.go)
 	cm     ctxMenus     // right-click menus (ctxmenu.go)
+	pv     pivotUI      // PivotTables: field list, drop-downs, dialogs (pivot.go)
+	ch     chartUI      // charts: dragging, title editing, ribbons, dialogs (chart.go)
 	// fmtRange is the range a formatting command is working on: each of
 	// a multiple selection's in turn (format.go).
 	fmtRange model.Range
@@ -124,6 +143,9 @@ type Config struct {
 	// opens spreadsheet windows in this process without tracking them.
 	Launch func(kind doctype.Kind, path string)
 	Recent *recent.List // nil uses recent.Default()
+	// Recovered is a recovery copy to open (Document Recovery), instead
+	// of Path.
+	Recovered *autorecover.Entry
 }
 
 // Run drives a spreadsheet window until it is closed.
@@ -150,13 +172,23 @@ func Run(w *app.Window, cfg Config) error {
 		launch:  cfg.Launch,
 		zoom:    1,
 		results: make(chan loadResult, 1),
-		calls:   make(chan func(), 8),
+		calls:   gui.NewCallQueue(w.Invalidate),
 		states:  map[int]*sheetState{},
 	}
 	a.th = a.ui.Theme
+	a.drop.Window = w
 	a.vbar.Vertical = true
 	a.shaper = a.th.Shaper
-	if cfg.Path != "" {
+	a.lk.doc = lockfile.NewDoc(a.raise)
+	defer a.lk.doc.Close()
+	a.startAutoRecover()
+	defer a.ar.saver.Close() // a normal close: the copy goes
+	a.startAutoSave()
+	defer a.as.saver.Close()
+	if cfg.Recovered != nil {
+		a.openRecovered(*cfg.Recovered)
+	} else if cfg.Path != "" {
+		a.lk.closeOnCancel = true
 		a.setWorkbook(&model.Workbook{
 			Name:   filepath.Base(cfg.Path),
 			Sheets: []*model.Sheet{model.NewSheet("Sheet1")},
@@ -172,11 +204,12 @@ func Run(w *app.Window, cfg Config) error {
 		e := w.Event()
 		a.expl.ListenEvents(e)
 		a.files.ListenEvents(e)
+		a.drop.Event(e)
 		switch e := e.(type) {
 		case *app.ClosingEvent:
 			// Gio lets a window refuse to close (WM_CLOSE on Windows):
 			// ask about unsaved changes first.
-			if a.modified && !a.mayClose {
+			if a.askBeforeClose() {
 				e.Abort()
 				a.askSaveBeforeClose()
 				w.Invalidate()
@@ -184,28 +217,11 @@ func Run(w *app.Window, cfg Config) error {
 		case app.DestroyEvent:
 			return e.Err
 		case app.FrameEvent:
-			a.runCalls()
+			a.calls.Run()
 			a.takeResult()
 			gtx := app.NewContext(&ops, e)
 			a.layout(gtx)
 			e.Frame(gtx.Ops)
-		}
-	}
-}
-
-// post runs f on the UI goroutine at the next frame.
-func (a *App) post(f func()) {
-	a.calls <- f
-	a.win.Invalidate()
-}
-
-func (a *App) runCalls() {
-	for {
-		select {
-		case f := <-a.calls:
-			f()
-		default:
-			return
 		}
 	}
 }
@@ -220,9 +236,14 @@ func emptyWorkbook() *model.Workbook {
 
 func (a *App) openPath(path string) {
 	a.loading.Store(true)
+	a.lk.doc.Set(path, false) // opening it again raises this window
 	go func() {
+		st := lockfile.Check(path)
 		wb, err := fileio.Open(path)
-		a.finishLoad(path, wb, err)
+		if err == nil && !st.Locked() {
+			a.lk.doc.Set(path, true) // an owner file, on a network share
+		}
+		a.finishLoadLock(path, wb, err, st)
 	}()
 }
 
@@ -235,7 +256,7 @@ func (a *App) openDialog() {
 		path, err := a.files.Open(gui.ExcelFilter, gui.WordFilter, gui.AllFilter)
 		switch {
 		case err == nil:
-			a.post(func() { a.openFile(path) })
+			a.calls.Post(func() { a.openFile(path) })
 			return
 		case errors.Is(err, gui.ErrCancelled):
 			return
@@ -251,7 +272,7 @@ func (a *App) openDialog() {
 		defer rc.Close()
 		if f, ok := rc.(*os.File); ok && filepath.IsAbs(f.Name()) {
 			path := f.Name()
-			a.post(func() { a.openFile(path) })
+			a.calls.Post(func() { a.openFile(path) })
 			return
 		}
 		a.loading.Store(true)
@@ -269,8 +290,17 @@ func (a *App) openDialog() {
 // finishLoad runs on the loader goroutine. Fonts for the workbook are
 // resolved here so the UI thread never blocks on disk.
 func (a *App) finishLoad(path string, wb *model.Workbook, err error) {
-	res := loadResult{path: path, wb: wb, err: err}
-	if wb != nil {
+	a.finishLoadLock(path, wb, err, lockfile.Status{})
+}
+
+// finishLoadLock is finishLoad for a file lockfile.Check found st about.
+func (a *App) finishLoadLock(path string, wb *model.Workbook, err error, st lockfile.Status) {
+	a.finishLoadResult(loadResult{path: path, wb: wb, err: err, lock: st})
+}
+
+// finishLoadResult hands a loaded workbook to the UI goroutine.
+func (a *App) finishLoadResult(res loadResult) {
+	if wb := res.wb; wb != nil {
 		// Show stored results as Excel does, calculating only formulas
 		// that have none (CSV formulas, files from non-calculating tools).
 		r := calc.Recalculate(wb, functions.Default(), calc.Missing, time.Now())
@@ -284,7 +314,9 @@ func (a *App) finishLoad(path string, wb *model.Workbook, err error) {
 		res.shaper = a.fonts.Shaper(fams...)
 	}
 	a.results <- res
-	a.win.Invalidate()
+	if a.win != nil {
+		a.win.Invalidate()
+	}
 }
 
 func circularWarning(r calc.Result) []string {
@@ -317,19 +349,35 @@ func (a *App) takeResult() {
 		a.loading.Store(false)
 		if r.err != nil {
 			a.errMsg = r.err.Error()
+			a.lk.doc.Set(a.path, !a.lk.readOnly) // back to the file shown
 			return
 		}
-		a.errMsg = ""
-		a.shaper = r.shaper
-		a.th.Shaper = r.shaper
-		a.path, a.fileInfo, a.modified = r.path, nil, false
-		if r.path != "" {
-			a.fileInfo, _ = os.Stat(r.path)
-			a.recent.Add(r.path, recent.Spreadsheet)
+		if r.lock.Locked() {
+			a.askLocked(r) // lock.go
+			return
 		}
-		a.setWorkbook(r.wb)
+		a.applyLoad(r, false)
 	default:
 	}
+}
+
+// applyLoad shows a loaded workbook, read-only or not.
+func (a *App) applyLoad(r loadResult, readOnly bool) {
+	a.errMsg = ""
+	a.shaper = r.shaper
+	a.th.Shaper = r.shaper
+	a.path, a.fileInfo, a.modified = r.path, nil, false
+	a.lk.readOnly, a.lk.closeOnCancel = readOnly, false
+	if r.path != "" {
+		a.fileInfo, _ = os.Stat(r.path)
+		a.recent.Add(r.path, recent.Spreadsheet)
+	}
+	a.setWorkbook(r.wb)
+	if r.rec != nil {
+		a.adoptRecovered(*r.rec) // recover.go
+	}
+	a.as.elsewhere = r.lock.Locked() && !readOnly // Open Anyway
+	a.autoSaveLoaded()                            // autosave.go
 }
 
 func (a *App) setWorkbook(wb *model.Workbook) {
@@ -357,10 +405,15 @@ func (a *App) setWorkbook(wb *model.Workbook) {
 	a.notice = ""
 	a.bs.info = infoCache{}
 	a.home = homeRibbon{}
+	a.data = dataRibbon{}
+	a.filt = filterMenu{}
+	a.vlist = validList{}
+	a.pv = pivotUI{}
+	a.ch = chartUI{}
 	a.fmtDlg.open, a.askDlg.open = false, false
 	a.ins = insertState{}
 	if a.win != nil {
-		a.win.Option(windowTitle(wb.Name))
+		a.win.Option(windowTitle(a.docName()))
 	}
 	a.grid.focusPending = true
 }
@@ -377,6 +430,7 @@ func (a *App) state() *sheetState {
 			Styles:     a.wb.Styles,
 			Geo:        render.NewGeometry(sh, mdw),
 			DigitWidth: mdw,
+			Book:       a.wb,
 			TopRow:     max(sh.TopRow, sh.FreezeRows),
 			LeftCol:    max(sh.LeftCol, sh.FreezeCols),
 		}

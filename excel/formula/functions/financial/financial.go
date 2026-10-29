@@ -26,10 +26,10 @@ func Register(r *f.Registry) {
 		f.Spec{Name: "PMT", Min: 3, Max: 5, Fn: pmt, Format: currency},
 		f.Spec{Name: "NPER", Min: 3, Max: 5, Fn: nper},
 		f.Spec{Name: "RATE", Min: 3, Max: 6, Fn: rate, Format: percent},
-		f.Spec{Name: "IPMT", Min: 4, Max: 6, Fn: func(_ *f.Env, a []f.Value) f.Value { return ipmtFn(a, false) }, Format: currency},
-		f.Spec{Name: "PPMT", Min: 4, Max: 6, Fn: func(_ *f.Env, a []f.Value) f.Value { return ipmtFn(a, true) }, Format: currency},
-		f.Spec{Name: "CUMIPMT", Min: 6, Max: 6, Fn: func(_ *f.Env, a []f.Value) f.Value { return cumipmt(a, false) }},
-		f.Spec{Name: "CUMPRINC", Min: 6, Max: 6, Fn: func(_ *f.Env, a []f.Value) f.Value { return cumipmt(a, true) }},
+		f.Spec{Name: "IPMT", Min: 4, Max: 6, Fn: func(e *f.Env, a []f.Value) f.Value { return ipmtFn(e, a, false) }, Format: currency},
+		f.Spec{Name: "PPMT", Min: 4, Max: 6, Fn: func(e *f.Env, a []f.Value) f.Value { return ipmtFn(e, a, true) }, Format: currency},
+		f.Spec{Name: "CUMIPMT", Min: 6, Max: 6, Fn: func(e *f.Env, a []f.Value) f.Value { return cumipmt(e, a, false) }},
+		f.Spec{Name: "CUMPRINC", Min: 6, Max: 6, Fn: func(e *f.Env, a []f.Value) f.Value { return cumipmt(e, a, true) }},
 		f.Spec{Name: "ISPMT", Min: 4, Max: 4, Fn: ispmt},
 		f.Spec{Name: "NPV", Min: 2, Max: f.Variadic, Refs: f.From(1), Arrays: f.From(1), Fn: npv, Format: currency},
 	)
@@ -38,11 +38,12 @@ func Register(r *f.Registry) {
 	registerSecurities(r)
 }
 
-// nums coerces the arguments to numbers; omitted optional ones are 0.
-func nums(a []f.Value, n int) ([]float64, f.Value) {
+// nums coerces the arguments to numbers (date text in the workbook's
+// date system); omitted optional ones are 0.
+func nums(e *f.Env, a []f.Value, n int) ([]float64, f.Value) {
 	out := make([]float64, n)
 	for i := range a {
-		x, err := f.Num(a[i])
+		x, err := e.Num(a[i])
 		if err != nil {
 			return nil, err
 		}
@@ -62,8 +63,8 @@ func given(a []f.Value, i int) bool {
 
 // numSpec is a function of numeric arguments only.
 func numSpec(name string, min, max int, fn func(x []float64) f.Value) f.Spec {
-	return f.Spec{Name: name, Min: min, Max: max, Fn: func(_ *f.Env, a []f.Value) f.Value {
-		x, err := nums(a, max)
+	return f.Spec{Name: name, Min: min, Max: max, Fn: func(e *f.Env, a []f.Value) f.Value {
+		x, err := nums(e, a, max)
 		if err != nil {
 			return err
 		}
@@ -109,8 +110,8 @@ func pmtOf(rate, nper, pv, fv, typ float64) float64 {
 }
 
 // FV(rate, nper, pmt, [pv], [type])
-func fv(_ *f.Env, a []f.Value) f.Value {
-	x, err := nums(a, 5)
+func fv(e *f.Env, a []f.Value) f.Value {
+	x, err := nums(e, a, 5)
 	if err != nil {
 		return err
 	}
@@ -118,8 +119,8 @@ func fv(_ *f.Env, a []f.Value) f.Value {
 }
 
 // PV(rate, nper, pmt, [fv], [type])
-func pv(_ *f.Env, a []f.Value) f.Value {
-	x, err := nums(a, 5)
+func pv(e *f.Env, a []f.Value) f.Value {
+	x, err := nums(e, a, 5)
 	if err != nil {
 		return err
 	}
@@ -132,8 +133,8 @@ func pv(_ *f.Env, a []f.Value) f.Value {
 }
 
 // PMT(rate, nper, pv, [fv], [type])
-func pmt(_ *f.Env, a []f.Value) f.Value {
-	x, err := nums(a, 5)
+func pmt(e *f.Env, a []f.Value) f.Value {
+	x, err := nums(e, a, 5)
 	if err != nil {
 		return err
 	}
@@ -144,8 +145,8 @@ func pmt(_ *f.Env, a []f.Value) f.Value {
 }
 
 // NPER(rate, pmt, pv, [fv], [type])
-func nper(_ *f.Env, a []f.Value) f.Value {
-	x, err := nums(a, 5)
+func nper(e *f.Env, a []f.Value) f.Value {
+	x, err := nums(e, a, 5)
 	if err != nil {
 		return err
 	}
@@ -170,8 +171,8 @@ func nper(_ *f.Env, a []f.Value) f.Value {
 // RATE(nper, pmt, pv, [fv], [type], [guess]) solves the annuity equation
 // by Newton's method from guess (10%); like Excel it gives up with #NUM!
 // when 20 steps don't bring successive results within 1e-7.
-func rate(_ *f.Env, a []f.Value) f.Value {
-	x, err := nums(a, 6)
+func rate(e *f.Env, a []f.Value) f.Value {
+	x, err := nums(e, a, 6)
 	if err != nil {
 		return err
 	}
@@ -240,8 +241,8 @@ func ipmtOf(rate, per, nper, pv, fv, typ float64) float64 {
 
 // IPMT / PPMT(rate, per, nper, pv, [fv], [type]): the interest or the
 // principal part of payment per (truncated), which must be in 1..nper.
-func ipmtFn(a []f.Value, principal bool) f.Value {
-	x, err := nums(a, 6)
+func ipmtFn(e *f.Env, a []f.Value, principal bool) f.Value {
+	x, err := nums(e, a, 6)
 	if err != nil {
 		return err
 	}
@@ -259,8 +260,8 @@ func ipmtFn(a []f.Value, principal bool) f.Value {
 // CUMIPMT / CUMPRINC(rate, nper, pv, start_period, end_period, type): the
 // interest or principal paid over periods start..end (truncated). These
 // insist on rate, nper and pv > 0 and type 0 or 1.
-func cumipmt(a []f.Value, principal bool) f.Value {
-	x, err := nums(a, 6)
+func cumipmt(e *f.Env, a []f.Value, principal bool) f.Value {
+	x, err := nums(e, a, 6)
 	if err != nil {
 		return err
 	}
@@ -283,8 +284,8 @@ func cumipmt(a []f.Value, principal bool) f.Value {
 
 // ISPMT(rate, per, nper, pv): interest paid in period per (counted from 0)
 // of a loan repaid in even principal installments.
-func ispmt(_ *f.Env, a []f.Value) f.Value {
-	x, err := nums(a, 4)
+func ispmt(e *f.Env, a []f.Value) f.Value {
+	x, err := nums(e, a, 4)
 	if err != nil {
 		return err
 	}
@@ -299,7 +300,7 @@ func ispmt(_ *f.Env, a []f.Value) f.Value {
 // in order. Numbers in ranges and arrays count while their text, logical
 // values and blank cells are skipped; values typed directly are coerced.
 func npv(e *f.Env, a []f.Value) f.Value {
-	rate, err := f.Num(a[0])
+	rate, err := e.Num(a[0])
 	if err != nil {
 		return err
 	}
@@ -312,7 +313,7 @@ func npv(e *f.Env, a []f.Value) f.Value {
 		e.Each(v, func(x f.Value, direct bool) bool {
 			var n float64
 			if direct {
-				if n, bad = f.Num(x); bad != nil {
+				if n, bad = e.Num(x); bad != nil {
 					return false
 				}
 			} else {

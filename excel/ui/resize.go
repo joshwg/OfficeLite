@@ -39,14 +39,15 @@ type dividerID struct {
 // dividerCursors shows the resize cursor over the header dividers.
 func (a *App) dividerCursors(gtx layout.Context, v *render.View) {
 	hw, hh := v.HeaderSize()
+	gw, gh := v.Gutters()
 	slop := v.EdgeSlop()
 	for _, e := range v.ColEdges() {
-		r := clip.Rect{Min: image.Pt(max(e.Pos-slop, hw), 0), Max: image.Pt(e.Pos+slop+1, hh)}.Push(gtx.Ops)
+		r := clip.Rect{Min: image.Pt(max(e.Pos-slop, hw), gh), Max: image.Pt(e.Pos+slop+1, hh)}.Push(gtx.Ops)
 		pointer.CursorColResize.Add(gtx.Ops)
 		r.Pop()
 	}
 	for _, e := range v.RowEdges() {
-		r := clip.Rect{Min: image.Pt(0, max(e.Pos-slop, hh)), Max: image.Pt(hw, e.Pos+slop+1)}.Push(gtx.Ops)
+		r := clip.Rect{Min: image.Pt(gw, max(e.Pos-slop, hh)), Max: image.Pt(hw, e.Pos+slop+1)}.Push(gtx.Ops)
 		pointer.CursorRowResize.Add(gtx.Ops)
 		r.Pop()
 	}
@@ -58,9 +59,12 @@ func (a *App) dividerCursors(gtx layout.Context, v *render.View) {
 func (a *App) beginResize(st *sheetState, p f32.Point) bool {
 	v := &st.view
 	hw, hh := v.HeaderSize()
+	gw, gh := v.Gutters()
 	sel := v.Sel.Range
 	var d resizeDrag
 	switch {
+	case p.Y < float32(gh) || p.X < float32(gw):
+		return false // the outline's gutters
 	case p.Y < float32(hh) && p.X >= float32(hw):
 		c, ok := v.ColEdgeAt(p.X)
 		if !ok {
@@ -156,7 +160,11 @@ func (a *App) endResize(st *sheetState, commit bool) {
 		}
 	}
 	a.notice = ""
-	if commit && d.size >= 0 {
+	if commit && d.size == 0 {
+		// Hidden by dragging: each keeps its size for Unhide.
+		a.book.Hide(a.active, !d.cols, d.targets)
+		a.changed(calc.Result{})
+	} else if commit && d.size > 0 {
 		if d.cols {
 			a.book.ResizeCols(a.active, d.targets, d.size)
 		} else {

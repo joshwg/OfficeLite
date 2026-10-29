@@ -10,7 +10,6 @@ import (
 	"gioui.org/font"
 	"gioui.org/io/event"
 	"gioui.org/io/key"
-	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
@@ -63,10 +62,11 @@ type formatDialog struct {
 	key        int // Enter (1) or Esc (-1) pressed, from dialogInput
 	ok, cancel widget.Clickable
 
-	numDD, hDD, vDD, fontDD, sizeDD, colorDD, borderDD, fillDD gui.DropDown
-	decLess, decMore, indLess, indMore                         widget.Clickable
-	wrap, bold, italic, under, strike                          widget.Bool
-	block                                                      int // absorbs clicks outside the box
+	numDD, hDD, vDD, fontDD, sizeDD, borderDD gui.DropDown
+	colorCP, fillCP                           gui.ColorPicker
+	decLess, decMore, indLess, indMore        widget.Clickable
+	wrap, bold, italic, under, strike         widget.Bool
+	block                                     int // absorbs clicks outside the box
 }
 
 func (a *App) openFormatCells(tab fmtTab) {
@@ -135,59 +135,9 @@ func (a *App) applyFormatCells() {
 	}
 }
 
-// modal draws a dialog box centered over the window, dimming and
-// blocking what is behind it.
-func (a *App) modal(gtx layout.Context, block any, title string, width unit.Dp, body layout.Widget, buttons ...layout.Widget) {
-	size := gtx.Constraints.Max
-	area := clip.Rect{Max: size}.Push(gtx.Ops)
-	event.Op(gtx.Ops, block)
-	area.Pop()
-	for {
-		if _, ok := gtx.Event(pointer.Filter{Target: block, Kinds: pointer.Press}); !ok {
-			break
-		}
-	}
-	gui.FillRect(gtx.Ops, image.Rectangle{Max: size}, colors.RGBA(0, 0, 0, 0x30))
-	w := min(gtx.Dp(width), size.X-gtx.Dp(16))
-	g := gtx
-	g.Constraints = layout.Constraints{Min: image.Pt(w, 0), Max: image.Pt(w, size.Y)}
-	m := op.Record(gtx.Ops)
-	dims := layout.UniformInset(18).Layout(g, func(gtx layout.Context) layout.Dimensions {
-		btns := []layout.FlexChild{layout.Flexed(1, layout.Spacer{}.Layout)}
-		for _, b := range buttons {
-			btns = append(btns, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Left: 8}.Layout(gtx, b)
-			}))
-		}
-		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-			layout.Rigid(a.ui.Label(16, title, chromeText, font.SemiBold).Layout),
-			layout.Rigid(layout.Spacer{Height: 12}.Layout),
-			layout.Rigid(body),
-			layout.Rigid(layout.Spacer{Height: 16}.Layout),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return layout.Flex{Alignment: layout.Middle}.Layout(gtx, btns...)
-			}),
-		)
-	})
-	call := m.Stop()
-	pos := image.Pt((size.X-dims.Size.X)/2, max((size.Y-dims.Size.Y)/4, 0))
-	off := op.Offset(pos).Push(gtx.Ops)
-	box := image.Rectangle{Max: dims.Size}
-	gui.FillRect(gtx.Ops, box.Add(image.Pt(3, 3)), colors.RGBA(0, 0, 0, 0x28))
-	gui.FillRect(gtx.Ops, box.Inset(-1), chromeLine)
-	gui.FillRect(gtx.Ops, box, colors.White)
-	call.Add(gtx.Ops)
-	off.Pop()
-}
-
 // plainButton is a dialog's secondary button.
 func (a *App) plainButton(btn *widget.Clickable, label string) layout.Widget {
-	return func(gtx layout.Context) layout.Dimensions {
-		gtx.Constraints.Min = image.Point{}
-		return gui.Hoverable(gtx, btn, chromeBG, gui.HoverBG, func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Top: 8, Bottom: 8, Left: 18, Right: 18}.Layout(gtx, a.ui.Label(14, label, chromeText, font.Normal).Layout)
-		})
-	}
+	return func(gtx layout.Context) layout.Dimensions { return a.ui.SecondaryButton(gtx, btn, label) }
 }
 
 func (a *App) accentButton(btn *widget.Clickable, label string) layout.Widget {
@@ -277,23 +227,22 @@ func (a *App) layoutFormatCells(gtx layout.Context) {
 	}
 	c := &d.cur
 
-	label := func(s string) layout.Widget {
-		return func(gtx layout.Context) layout.Dimensions {
-			gtx.Constraints.Min.X = gtx.Dp(130)
-			return layout.Inset{Top: 4}.Layout(gtx, th.Label(13, s, chromeText, font.Normal).Layout)
-		}
-	}
+	form := gui.Form{Th: th, LabelW: 130}
 	field := func(name string, w layout.Widget) layout.FlexChild {
-		return layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Bottom: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layout.Flex{Alignment: layout.Middle}.Layout(gtx, layout.Rigid(label(name)), layout.Rigid(w))
-			})
-		})
+		return form.Row(form.Label(name), layout.Rigid(w))
 	}
 	combo := func(dd *gui.DropDown, cur string, items []gui.DropItem, apply func(int)) layout.Widget {
 		return func(gtx layout.Context) layout.Dimensions {
 			if i := dd.Layout(gtx, th, 200, cur, items); i >= 0 {
 				apply(i)
+			}
+			return layout.Dimensions{Size: image.Pt(gtx.Dp(200), gtx.Dp(24))}
+		}
+	}
+	colorCombo := func(cp *gui.ColorPicker, cur gui.ColorChoice, none string, apply func(gui.ColorChoice)) layout.Widget {
+		return func(gtx layout.Context) layout.Dimensions {
+			if p, ok, _ := cp.Combo(gtx, th, 200, cur, none); ok {
+				apply(p)
 			}
 			return layout.Dimensions{Size: image.Pt(gtx.Dp(200), gtx.Dp(24))}
 		}
@@ -312,11 +261,7 @@ func (a *App) layoutFormatCells(gtx layout.Context) {
 			if b.Update(gtx) {
 				*v = b.Value
 			}
-			cb := material.CheckBox(th.Theme, b, s)
-			cb.Font = gui.UIFont
-			cb.TextSize = 13
-			cb.IconColor = th.Accent
-			return layout.Inset{Bottom: 4}.Layout(gtx, cb.Layout)
+			return layout.Inset{Bottom: 4}.Layout(gtx, th.CheckBox(b, s))
 		})
 	}
 	text := func(s string) layout.FlexChild {
@@ -333,7 +278,7 @@ func (a *App) layoutFormatCells(gtx layout.Context) {
 			names[i] = f.Name
 		}
 		page = append(page,
-			field("Category:", combo(&d.numDD, edit.NumberFormatName(c.NumFmtID, c.NumFmtCode), menuItems(names), func(i int) {
+			field("Category:", combo(&d.numDD, edit.NumberFormatName(c.NumFmtID, c.NumFmtCode), gui.MenuItems(names), func(i int) {
 				f := edit.NumberFormats[i]
 				c.NumFmtID, c.NumFmtCode = f.ID, f.Code
 			})),
@@ -366,10 +311,10 @@ func (a *App) layoutFormatCells(gtx layout.Context) {
 			vNames[i] = v.name
 		}
 		page = append(page,
-			field("Horizontal:", combo(&d.hDD, hAlignNames[min(int(c.HAlign), len(hAlignNames)-1)], menuItems(hAlignNames), func(i int) {
+			field("Horizontal:", combo(&d.hDD, hAlignNames[min(int(c.HAlign), len(hAlignNames)-1)], gui.MenuItems(hAlignNames), func(i int) {
 				c.HAlign = model.HAlign(i)
 			})),
-			field("Vertical:", combo(&d.vDD, vName, menuItems(vNames), func(i int) { c.VAlign = vAlignChoices[i].v })),
+			field("Vertical:", combo(&d.vDD, vName, gui.MenuItems(vNames), func(i int) { c.VAlign = vAlignChoices[i].v })),
 			field("Indent:", func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 					layout.Rigid(small(&d.indLess, "−", func() { c.Indent = max(c.Indent-1, 0) })),
@@ -390,23 +335,14 @@ func (a *App) layoutFormatCells(gtx layout.Context) {
 		}
 		sizes := make([]string, len(fontSizes))
 		for i, s := range fontSizes {
-			sizes[i] = fmtSize(s)
-		}
-		colorName := "Custom"
-		for i, p := range palette {
-			if i > 0 && p.c == c.Font.Color {
-				colorName = p.name
-			}
-		}
-		if c.Font.Color == a.wb.Styles[0].Font.Color {
-			colorName = "Automatic"
+			sizes[i] = gui.FormatPt(float64(s))
 		}
 		page = append(page,
-			field("Font:", combo(&d.fontDD, c.Font.Family, menuItems(fonts), func(i int) { c.Font.Family = fonts[i] })),
-			field("Size:", combo(&d.sizeDD, fmtSize(c.Font.SizePt), menuItems(sizes), func(i int) { c.Font.SizePt = fontSizes[i] })),
-			field("Color:", combo(&d.colorDD, colorName, colorItems("Automatic"), func(i int) {
-				c.Font.Color = palette[i].c
-				if i == 0 {
+			field("Font:", combo(&d.fontDD, c.Font.Family, gui.MenuItems(fonts), func(i int) { c.Font.Family = fonts[i] })),
+			field("Size:", combo(&d.sizeDD, gui.FormatPt(float64(c.Font.SizePt)), gui.MenuItems(sizes), func(i int) { c.Font.SizePt = fontSizes[i] })),
+			field("Color:", colorCombo(&d.colorCP, gui.ColorChoice{Color: c.Font.Color, None: c.Font.Color == a.wb.Styles[0].Font.Color}, "Automatic", func(p gui.ColorChoice) {
+				c.Font.Color = p.Color
+				if p.None {
 					c.Font.Color = a.wb.Styles[0].Font.Color
 				}
 			})),
@@ -434,21 +370,12 @@ func (a *App) layoutFormatCells(gtx layout.Context) {
 			cur = edit.BorderNames[d.border]
 		}
 		page = append(page,
-			field("Border:", combo(&d.borderDD, cur, menuItems(edit.BorderNames), func(i int) { d.border = i })),
+			field("Border:", combo(&d.borderDD, cur, gui.MenuItems(edit.BorderNames), func(i int) { d.border = i })),
 			text("The border is applied to the selected cells as a whole."),
 		)
 	case tabFill:
-		name := "Custom"
-		for i, p := range palette {
-			if p.c == c.Fill {
-				name = p.name
-				if i == 0 {
-					name = "No Fill"
-				}
-			}
-		}
 		page = append(page,
-			field("Background color:", combo(&d.fillDD, name, colorItems("No Fill"), func(i int) { c.Fill = palette[i].c })),
+			field("Background color:", colorCombo(&d.fillCP, gui.ColorChoice{Color: c.Fill, None: c.Fill.A == 0}, "No Fill", func(p gui.ColorChoice) { c.Fill = choiceColor(p) })),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				r := image.Rect(0, 0, gtx.Dp(200), gtx.Dp(40))
 				gui.FillRect(gtx.Ops, r, colors.White)
@@ -484,7 +411,7 @@ func (a *App) layoutFormatCells(gtx layout.Context) {
 	area := clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops)
 	event.Op(gtx.Ops, d)
 	area.Pop()
-	a.modal(gtx, &d.block, "Format Cells", 440, body, a.accentButton(&d.ok, "OK"), a.plainButton(&d.cancel, "Cancel"))
+	a.ui.ModalDialog(gtx, &d.block, "Format Cells", 440, body, a.accentButton(&d.ok, "OK"), a.plainButton(&d.cancel, "Cancel"))
 }
 
 // askDialog is a one-value prompt: a number (Row Height, Column Width)
@@ -580,7 +507,7 @@ func (a *App) layoutAsk(gtx layout.Context) {
 		}
 		if d.choices != nil {
 			children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				if i := d.dd.Layout(gtx, th, 240, d.choices[d.choice], menuItems(d.choices)); i >= 0 {
+				if i := d.dd.Layout(gtx, th, 240, d.choices[d.choice], gui.MenuItems(d.choices)); i >= 0 {
 					d.choice = i
 				}
 				return layout.Dimensions{Size: image.Pt(gtx.Dp(240), gtx.Dp(24))}
@@ -611,5 +538,5 @@ func (a *App) layoutAsk(gtx layout.Context) {
 		event.Op(gtx.Ops, d)
 		area.Pop()
 	}
-	a.modal(gtx, &d.block, d.title, 320, body, a.accentButton(&d.ok, "OK"), a.plainButton(&d.cancel, "Cancel"))
+	a.ui.ModalDialog(gtx, &d.block, d.title, 320, body, a.accentButton(&d.ok, "OK"), a.plainButton(&d.cancel, "Cancel"))
 }

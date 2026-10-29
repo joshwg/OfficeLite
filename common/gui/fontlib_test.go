@@ -3,8 +3,11 @@ package gui
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
+	"time"
+	"weak"
 
 	"gioui.org/font/gofont"
 )
@@ -57,5 +60,29 @@ func TestPrepareFontHidesBitmaps(t *testing.T) {
 	}
 	if string(b[12:16]) != "EBDT" {
 		t.Fatal("input was modified")
+	}
+}
+
+// TestShaperFacesWeak checks that registering a shaper's faces doesn't
+// keep the shaper alive.
+func TestShaperFacesWeak(t *testing.T) {
+	sh := NewFontLibrary().Shaper()
+	if len(faceFiles(sh)) == 0 {
+		t.Fatal("no faces registered for the shaper")
+	}
+	k := weak.Make(sh)
+	held := func() bool {
+		shaperFacesMu.RLock()
+		defer shaperFacesMu.RUnlock()
+		_, ok := shaperFaces[k]
+		return ok
+	}
+	sh = nil
+	for deadline := time.Now().Add(5 * time.Second); held(); {
+		if time.Now().After(deadline) {
+			t.Fatal("shaper's faces kept after it was dropped")
+		}
+		runtime.GC()
+		time.Sleep(10 * time.Millisecond)
 	}
 }

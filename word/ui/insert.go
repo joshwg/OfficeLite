@@ -380,7 +380,7 @@ func (s *insertState) buttons(th *gui.Theme, okLabel string, extra layout.Widget
 				kids = append(kids, layout.Rigid(extra), layout.Rigid(layout.Spacer{Width: 8}.Layout))
 			}
 			kids = append(kids, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return plainButton(gtx, th, &s.cancel, "Cancel")
+				return th.SecondaryButton(gtx, &s.cancel, "Cancel")
 			}))
 			return layout.Flex{}.Layout(gtx, kids...)
 		})
@@ -410,7 +410,7 @@ func (s *insertState) tableDialog(gtx layout.Context, d *window) {
 		s.close(d)
 		return
 	}
-	modal(gtx, &s.tag, 380, func(gtx layout.Context) layout.Dimensions {
+	gui.Modal(gtx, &s.tag, 380, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			dialogTitle(th, "Insert Table"),
 			field(th, "Number of columns", &s.cols, 80),
@@ -467,9 +467,9 @@ func (s *insertState) linkDialog(gtx layout.Context, d *window) {
 	var extra layout.Widget
 	if s.editing {
 		title = "Edit Hyperlink"
-		extra = func(gtx layout.Context) layout.Dimensions { return plainButton(gtx, th, &s.remove, "Remove Link") }
+		extra = func(gtx layout.Context) layout.Dimensions { return th.SecondaryButton(gtx, &s.remove, "Remove Link") }
 	}
-	modal(gtx, &s.tag, 520, func(gtx layout.Context) layout.Dimensions {
+	gui.Modal(gtx, &s.tag, 520, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			dialogTitle(th, title),
 			field(th, "Text to display", &s.text, 340),
@@ -508,7 +508,7 @@ func (s *insertState) symbolDialog(gtx layout.Context, d *window) {
 		return
 	}
 	const perRow = 16
-	modal(gtx, &s.tag, unit.Dp(perRow*32+40), func(gtx layout.Context) layout.Dimensions {
+	gui.Modal(gtx, &s.tag, unit.Dp(perRow*32+40), func(gtx layout.Context) layout.Dimensions {
 		var rows []layout.FlexChild
 		rows = append(rows, dialogTitle(th, "Symbol"))
 		for start := 0; start < len(symbolSet); start += perRow {
@@ -535,7 +535,7 @@ func (s *insertState) symbolDialog(gtx layout.Context, d *window) {
 			layout.Rigid(th.Label(12, "Click a symbol to insert it at the cursor.", gui.MutedText, font.Normal).Layout),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Top: 10}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return plainButton(gtx, th, &s.cancel, "Close")
+					return th.SecondaryButton(gtx, &s.cancel, "Close")
 				})
 			}))
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, rows...)
@@ -616,7 +616,7 @@ func (s *insertState) dateDialog(gtx layout.Context, d *window) {
 		s.close(d)
 		return
 	}
-	modal(gtx, &s.tag, 360, func(gtx layout.Context) layout.Dimensions {
+	gui.Modal(gtx, &s.tag, 360, func(gtx layout.Context) layout.Dimensions {
 		event.Op(gtx.Ops, &s.dateTag)
 		gtx.Execute(key.FocusCmd{Tag: &s.dateTag})
 		kids := []layout.FlexChild{dialogTitle(th, "Date and Time"),
@@ -671,7 +671,7 @@ func (d *window) choosePicture() {
 				rc.Close()
 			}
 		}
-		d.post(func() { d.insertPictureData(path, data, err) })
+		d.calls.Post(func() { d.insertPictureData(path, data, err) })
 	}()
 }
 
@@ -690,7 +690,7 @@ func (d *window) insertPictureData(path string, data []byte, err error) {
 		}
 		err = errors.New("not a picture WordLite can show (PNG, JPEG, GIF, BMP, TIFF or WebP)")
 	}
-	d.errMsg = "Can't insert " + orNone(filepath.Base(path), "the picture") + ": " + err.Error()
+	d.errMsg = "Can't insert " + gui.OrNone(filepath.Base(path), "the picture") + ": " + err.Error()
 }
 
 // previewInsert opens an Insert dialog for the wordshot tool.

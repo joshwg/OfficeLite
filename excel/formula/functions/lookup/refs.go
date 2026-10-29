@@ -2,7 +2,6 @@ package lookup
 
 import (
 	"strconv"
-	"strings"
 
 	f "officelite/excel/formula"
 	"officelite/excel/model"
@@ -242,7 +241,7 @@ func address(e *f.Env, a []f.Value) f.Value {
 		if err != nil {
 			return err
 		}
-		s = sheetPrefix(sheet) + s
+		s = f.QuoteSheet(sheet) + "!" + s
 	}
 	return f.String(s)
 }
@@ -259,21 +258,6 @@ func bracket(n int, abs bool) string {
 		return strconv.Itoa(n)
 	}
 	return "[" + strconv.Itoa(n) + "]"
-}
-
-// sheetPrefix is name followed by '!', quoted when it contains characters
-// other than letters, digits, '_' and '.' or starts with a digit.
-func sheetPrefix(name string) string {
-	quote := name != "" && name[0] >= '0' && name[0] <= '9'
-	for _, c := range name {
-		if !(c == '_' || c == '.' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c > 127) {
-			quote = true
-		}
-	}
-	if quote {
-		return "'" + strings.ReplaceAll(name, "'", "''") + "'!"
-	}
-	return name + "!"
 }
 
 // TRANSPOSE(array)
@@ -347,4 +331,57 @@ func indirect(e *f.Env, a []f.Value) f.Value {
 		return err
 	}
 	return e.Reference(text, a1)
+}
+
+// AREAS(reference): the number of areas in a reference. Multi-area
+// references (unions) are not supported, so a reference is one area.
+func areas(e *f.Env, a []f.Value) f.Value {
+	switch v := a[0].(type) {
+	case f.Ref:
+		return f.Number(1)
+	case f.Error:
+		return v
+	}
+	return f.ErrValue
+}
+
+// FORMULATEXT(reference): the formula of the reference's cell as text
+// ("=A1*2"), #N/A for a cell without one; a range gives each cell's.
+func formulaText(e *f.Env, a []f.Value) f.Value {
+	r, ok := a[0].(f.Ref)
+	if !ok {
+		if err, isErr := a[0].(f.Error); isErr {
+			return err
+		}
+		return f.ErrNA
+	}
+	text := func(row, col int) f.Value {
+		if s := e.Ctx.CellFormula(r.Sheet, row, col); s != "" {
+			return f.String("=" + s)
+		}
+		return f.ErrNA
+	}
+	if r.Single() {
+		return text(r.R1, r.C1)
+	}
+	r = e.Trim(r)
+	out := &f.Array{Rows: r.Rows(), Cols: r.Cols(), V: make([]f.Value, 0, r.Rows()*r.Cols())}
+	for row := r.R1; row <= r.R2; row++ {
+		for col := r.C1; col <= r.C2; col++ {
+			out.V = append(out.V, text(row, col))
+		}
+	}
+	return out
+}
+
+// HYPERLINK(link_location, [friendly_name]): the value the cell shows,
+// friendly_name or else the link itself (following the link is up to the
+// user interface).
+func hyperlink(e *f.Env, a []f.Value) f.Value {
+	if len(a) > 1 {
+		if _, ok := a[1].(f.Missing); !ok {
+			return a[1]
+		}
+	}
+	return a[0]
 }

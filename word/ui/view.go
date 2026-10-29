@@ -4,6 +4,7 @@ import (
 	"image"
 	"io"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -53,6 +54,15 @@ type docView struct {
 	scale        float64 // pixels per point
 	skipSpace    bool    // Ctrl+Space also types a space; drop it
 
+	// eol is the caret's end-of-line affinity, set by End (and Up/Down)
+	// on a line wrapped after a hyphen or inside a word: the caret at the
+	// line's end shows there, not at the next line's start. It holds
+	// while the caret stays at eolAt in eolEd's document version eolVer.
+	eol    bool
+	eolAt  model.Pos
+	eolVer int
+	eolEd  *model.Editor
+
 	m                              mouseState // mouse.go
 	vbar                           gui.Scrollbar
 	zoomInBtn, zoomOutBtn, zoomBtn widget.Clickable
@@ -60,10 +70,11 @@ type docView struct {
 
 func (v *docView) resetBlink() { v.blinkStart = time.Now() }
 
-// pageX is the left edge of the pages in view pixels.
+// pageX is the left edge of the widest page in view pixels (narrower
+// pages are centered under it; see wl.Page.X).
 func (d *window) pageX() int {
 	v := &d.v
-	pw := int(math.Round(d.eng.Pages[0].Width * v.scale))
+	pw := int(math.Round(d.eng.Width * v.scale))
 	if pw+16 <= v.size.X {
 		return (v.size.X - pw) / 2
 	}
@@ -105,7 +116,8 @@ func (d *window) layoutDoc(gtx layout.Context) layout.Dimensions {
 		if top+h < 0 || top > float64(size.Y) {
 			continue
 		}
-		r := image.Rect(px, int(math.Round(top)), px+int(math.Round(pg.Width*v.scale)), int(math.Round(top+h)))
+		x0 := px + int(math.Round(pg.X*v.scale))
+		r := image.Rect(x0, int(math.Round(top)), x0+int(math.Round(pg.Width*v.scale)), int(math.Round(top+h)))
 		gui.FillRect(gtx.Ops, r.Add(image.Pt(2, 2)), pageShadow)
 		off := op.Offset(r.Min).Push(gtx.Ops)
 		sel := d.ed.Sel
@@ -113,13 +125,14 @@ func (d *window) layoutDoc(gtx layout.Context) layout.Dimensions {
 			sel = model.Selection{} // drawn by drawPageExtras
 		}
 		d.eng.DrawPage(gtx.Ops, pg, wl.DrawOptions{
-			Scale:    v.scale,
-			Sel:      sel,
-			SelColor: selColor,
-			Y0:       max(-top/v.scale, 0),
-			Y1:       (float64(size.Y) - top) / v.scale,
-			HFDim:    !d.hf.on,
-			BodyDim:  d.hf.on,
+			Scale:     v.scale,
+			Sel:       sel,
+			SelColor:  selColor,
+			Y0:        max(-top/v.scale, 0),
+			Y1:        (float64(size.Y) - top) / v.scale,
+			HFDim:     !d.hf.on,
+			BodyDim:   d.hf.on,
+			ShowMarks: d.showMarks,
 		})
 		d.drawPageExtras(gtx, pg)
 		off.Pop()
@@ -143,12 +156,12 @@ func (d *window) drawCaret(gtx layout.Context, px int) {
 	if phase%2 == 1 {
 		return
 	}
-	c, ok := d.ceng().CaretAt(d.ed.Sel.Caret)
+	c, ok := d.caret()
 	if !ok {
 		return
 	}
 	pg := d.ceng().Pages[c.Page]
-	x := px + int(math.Round(c.X*v.scale))
+	x := px + int(math.Round((pg.X+c.X)*v.scale))
 	y := (pg.Top + c.Y - v.scrollY) * v.scale
 	w := max(1, gtx.Dp(1))
 	gui.FillRect(gtx.Ops, image.Rect(x, int(math.Round(y)), x+w, int(math.Round(y+c.H*v.scale))), caretColor)
@@ -157,7 +170,7 @@ func (d *window) drawCaret(gtx layout.Context, px int) {
 // scrollToCaret scrolls the least amount that shows the caret.
 func (d *window) scrollToCaret() {
 	v := &d.v
-	c, ok := d.ceng().CaretAt(d.ed.Sel.Caret)
+	c, ok := d.caret()
 	if !ok || v.scale == 0 {
 		return
 	}
@@ -169,8 +182,8 @@ func (d *window) scrollToCaret() {
 	} else if top+c.H+margin > v.scrollY+viewH {
 		v.scrollY = top + c.H + margin - viewH
 	}
-	if pw := int(d.eng.Pages[0].Width * v.scale); pw+16 > v.size.X {
-		x := int(c.X*v.scale) + 8
+	if pw := int(d.eng.Width * v.scale); pw+16 > v.size.X {
+		x := int((d.ceng().Pages[c.Page].X+c.X)*v.scale) + 8
 		if x-v.scrollX < 16 {
 			v.scrollX = max(x-16, 0)
 		} else if x-v.scrollX > v.size.X-16 {
@@ -225,6 +238,7 @@ func (d *window) docPointer(gtx layout.Context) {
 				v.clicks = 1
 			}
 			v.lastClick, v.lastPos = now, e.Position
+			v.eol = false // a click puts the caret where it shows
 			if d.hfPress(e.Position, v.clicks) {
 				v.dragging, v.hasGoal = false, false
 				v.resetBlink()
@@ -312,11 +326,11 @@ func (d *window) wheel(gtx layout.Context, e pointer.Event) {
 		step := float32(gtx.Dp(40))
 		for v.wheelZoom >= step {
 			v.wheelZoom -= step
-			d.v.zoom = max(d.v.zoom-0.1, 0.1)
+			d.setZoom(v.zoom - 0.1)
 		}
 		for v.wheelZoom <= -step {
 			v.wheelZoom += step
-			d.v.zoom = min(d.v.zoom+0.1, 5)
+			d.setZoom(v.zoom + 0.1)
 		}
 		return
 	}
@@ -411,6 +425,7 @@ func (d *window) key(gtx layout.Context, e key.Event) {
 	shift := e.Modifiers.Contain(key.ModShift)
 	ctrl := e.Modifiers.Contain(key.ModShortcut)
 	keepGoal := false
+	endEOL := false // the caret's new end-of-line affinity
 	switch e.Name {
 	case key.NameLeftArrow:
 		ed.Move(-1, ctrl, shift)
@@ -425,7 +440,7 @@ func (d *window) key(gtx layout.Context, e key.Event) {
 			d.paragraphMove(dir, shift)
 			break
 		}
-		d.verticalMove(dir, shift)
+		endEOL = d.verticalMove(dir, shift)
 		keepGoal = true
 	case key.NameHome, key.NameEnd:
 		var to model.Pos
@@ -436,10 +451,10 @@ func (d *window) key(gtx layout.Context, e key.Event) {
 			last := ed.NumParas() - 1
 			to = model.Pos{Para: last, Off: ed.Para(last).Len()}
 		default:
-			a, b := d.ceng().LineBounds(ed.Sel.Caret)
+			a, b, eol := d.ceng().LineBounds(ed.Sel.Caret, d.caretEOL())
 			to = a
 			if e.Name == key.NameEnd {
-				to = b
+				to, endEOL = b, eol
 			}
 		}
 		ed.SetCaret(to, shift)
@@ -521,19 +536,39 @@ func (d *window) key(gtx layout.Context, e key.Event) {
 		d.v.hasGoal = false
 	}
 	d.edited()
+	d.setEOL(endEOL)
 }
 
-func (d *window) verticalMove(dir int, extend bool) {
+// caretEOL reports whether the caret has end-of-line affinity (see
+// docView.eol).
+func (d *window) caretEOL() bool {
+	v := &d.v
+	return v.eol && v.eolEd == d.ed && v.eolVer == d.ed.Version && v.eolAt == d.ed.Sel.Caret
+}
+
+// setEOL sets the caret's end-of-line affinity.
+func (d *window) setEOL(on bool) {
+	d.v.eol, d.v.eolAt, d.v.eolVer, d.v.eolEd = on, d.ed.Sel.Caret, d.ed.Version, d.ed
+}
+
+// caret returns where the caret shows.
+func (d *window) caret() (wl.Caret, bool) {
+	return d.ceng().CaretAtEOL(d.ed.Sel.Caret, d.caretEOL())
+}
+
+// verticalMove is Up/Down; it returns the caret's new end-of-line
+// affinity.
+func (d *window) verticalMove(dir int, extend bool) bool {
 	d.relayout()
 	ed := d.ed
-	c, ok := d.ceng().CaretAt(ed.Sel.Caret)
+	c, ok := d.caret()
 	if !ok {
-		return
+		return false
 	}
 	if !d.v.hasGoal {
 		d.v.goalX, d.v.hasGoal = c.X, true
 	}
-	to, ok := d.ceng().Vertical(ed.Sel.Caret, dir, d.v.goalX)
+	to, eol, ok := d.ceng().Vertical(ed.Sel.Caret, dir, d.v.goalX, d.caretEOL())
 	if !ok {
 		if dir < 0 {
 			to = model.Pos{}
@@ -543,6 +578,7 @@ func (d *window) verticalMove(dir int, extend bool) {
 		}
 	}
 	ed.SetCaret(to, extend)
+	return eol
 }
 
 // paragraphMove is Ctrl+Up/Down: to the start of this or the previous
@@ -568,7 +604,7 @@ func (d *window) paragraphMove(dir int, extend bool) {
 func (d *window) pageMove(down bool, extend bool) {
 	d.relayout()
 	v := &d.v
-	c, ok := d.ceng().CaretAt(d.ed.Sel.Caret)
+	c, ok := d.caret()
 	if !ok || v.scale == 0 {
 		return
 	}
@@ -635,7 +671,7 @@ func (d *window) applyHeading(n int) {
 	if d.doc.Styles.Find(id) == nil {
 		// Documents without the style get Word's built-in definition.
 		for _, st := range model.DefaultStyles().Styles {
-			if st.ID == "Heading"+itoa(n) {
+			if st.ID == "Heading"+strconv.Itoa(n) {
 				c := *st
 				c.BasedOn = d.normalID()
 				c.Next = d.normalID()
@@ -650,13 +686,13 @@ func (d *window) applyHeading(n int) {
 // headingID finds the style for "heading n" by name, as documents may use
 // other IDs (localized or renamed).
 func headingID(doc *model.Document, n int) string {
-	want := "heading " + itoa(n)
+	want := "heading " + strconv.Itoa(n)
 	for _, st := range doc.Styles.Styles {
 		if st.Type == model.ParagraphStyle && strings.EqualFold(st.Name, want) {
 			return st.ID
 		}
 	}
-	return "Heading" + itoa(n)
+	return "Heading" + strconv.Itoa(n)
 }
 
 func (d *window) applyStyle(id string) {

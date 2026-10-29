@@ -130,7 +130,7 @@ func (c *Calculator) add(k key, cell *model.Cell) {
 
 // volatileExtra are functions whose result depends on more than their
 // arguments, besides those marked Volatile in the registry.
-var volatileExtra = map[string]bool{"CELL": true, "INFO": true}
+var volatileExtra = map[string]bool{"CELL": true, "INFO": true, "SUBTOTAL": true, "AGGREGATE": true}
 
 // resolve turns a formula's dependencies into areas: sheet names become
 // indexes and defined names are followed (to a limited depth). always is
@@ -322,7 +322,9 @@ func (c *Calculator) Update(changed []Area, now time.Time) Result {
 	}
 	var res Result
 	var from []key // the anchor whose spill changed each queued area
-	for round := 0; round < 8 && len(queue) > 0; round++ {
+	// The first round runs even with nothing edited: an update after rows
+	// were hidden or shown recalculates the always-recalculated formulas.
+	for round := 0; round < 8 && (round == 0 || len(queue) > 0); round++ {
 		dirty := c.propagate(queue, from)
 		old := map[key]model.Range{}
 		for k := range dirty {

@@ -132,3 +132,22 @@ func TestExportPDFSamples(t *testing.T) {
 		}
 	}
 }
+
+// A border whose color is transparent isn't drawn on screen (drawEdge),
+// so it isn't drawn in the PDF either.
+func TestExportPDFTransparentBorder(t *testing.T) {
+	for _, c := range []struct {
+		edge   model.Edge
+		stroke bool
+	}{
+		{model.Edge{Style: model.BorderThin, Color: colors.RGB(0)}, true},
+		{model.Edge{Style: model.BorderThin}, false},
+	} {
+		wb := testBook(2, 2)
+		wb.Styles[1].Border[model.Bottom] = c.edge
+		_, out := exportPages(t, wb, PDFOptions{Sheets: []int{0}, DigitWidth: 7})
+		if got := strings.Contains(string(out), " l S\n"); got != c.stroke {
+			t.Errorf("border %+v: stroked %v, want %v", c.edge, got, c.stroke)
+		}
+	}
+}

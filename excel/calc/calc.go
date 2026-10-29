@@ -12,6 +12,7 @@ import (
 	"officelite/excel/formula"
 	"officelite/excel/model"
 	"officelite/excel/numfmt"
+	"officelite/excel/pivot"
 )
 
 // Mode selects which formulas are calculated.
@@ -157,6 +158,7 @@ func (e *engine) compute(k key) {
 		res.Value = formula.ErrName
 	} else {
 		env := formula.NewEnv(e, e.funcs, k.sheet, k.row, k.col)
+		env.Legacy = !cell.Dynamic
 		res = env.Evaluate(node)
 	}
 	e.state[k] = done
@@ -174,7 +176,9 @@ func (e *engine) store(k key, res formula.Result) {
 		return
 	}
 	if !cell.Dynamic {
-		// A legacy (non-array) formula shows only the first element.
+		// A legacy (non-array) formula shows only the first element (its
+		// ranges were implicitly intersected; this is an array constant
+		// or a function's array result).
 		e.setValue(sh, k.row, k.col, arr.V[0], res.Format)
 		return
 	}
@@ -188,6 +192,10 @@ func (e *engine) store(k key, res formula.Result) {
 		return
 	}
 	sh.Spills[anchor] = rng
+	if u, ok := e.used[k.sheet]; ok {
+		// Whole columns read from now on reach the new values.
+		e.used[k.sheet] = [2]int{max(u[0], rng.R2+1), max(u[1], rng.C2+1)}
+	}
 	for r := 0; r < arr.Rows; r++ {
 		for c := 0; c < arr.Cols; c++ {
 			v := arr.At(r, c)
@@ -275,7 +283,7 @@ func (e *engine) CellValue(sheet, row, col int) formula.Value {
 		return formula.Number(0)
 	}
 	c := e.wb.Sheets[sheet].Get(row, col)
-	if c.Kind == model.KindEmpty && c.Formula == "" && e.spillPending(sheet, row, col) {
+	if c.IsBlank() && e.spillPending(sheet, row, col) {
 		c = e.wb.Sheets[sheet].Get(row, col)
 	}
 	return cellValue(c)
@@ -294,6 +302,9 @@ func (e *engine) spillPending(sheet, row, col int) bool {
 	}
 	return ran
 }
+
+// CellValue is a stored cell's value as formulas see it.
+func CellValue(c *model.Cell) formula.Value { return cellValue(c) }
 
 func cellValue(c *model.Cell) formula.Value {
 	switch c.Kind {
@@ -344,6 +355,31 @@ func (e *engine) UsedSize(sheet int) (rows, cols int) {
 	return rows, cols
 }
 
+// UsedSizeFor is UsedSize after calculating the dynamic arrays that could
+// spill into r (a whole-column or whole-row reference about to be
+// trimmed to the used area): =SUM(B:B) above B1's =SEQUENCE(10).
+func (e *engine) UsedSizeFor(r formula.Ref) (rows, cols int) {
+	if r.Sheet < 0 || r.Sheet >= len(e.wb.Sheets) {
+		return 1, 1
+	}
+	list := e.dynamic[r.Sheet]
+	for _, k := range list {
+		if e.state[k] == pending && k.row <= r.R2 && k.col <= r.C2 {
+			e.compute(k)
+		}
+	}
+	// Drop the calculated ones so whole columns read later skip them (a new
+	// slice: a nested call may be iterating the old one).
+	var still []key
+	for _, k := range list {
+		if e.state[k] == pending {
+			still = append(still, k)
+		}
+	}
+	e.dynamic[r.Sheet] = still
+	return e.UsedSize(r.Sheet)
+}
+
 func (e *engine) Name(name string, sheet int) (string, bool) {
 	var global string
 	found := false
@@ -377,5 +413,74 @@ func (e *engine) Spill(sheet, row, col int) (formula.Ref, bool) {
 }
 
 func (e *engine) Now() time.Time { return e.now }
+
+// RowHidden reports whether a row is hidden, by its height or by the
+// AutoFilter, and RowFiltered whether the AutoFilter hid it: what
+// SUBTOTAL and AGGREGATE need to skip hidden rows (not part of
+// formula.Context; functions find them by a type assertion).
+func (e *engine) RowHidden(sheet, row int) bool {
+	return sheet >= 0 && sheet < len(e.wb.Sheets) && e.wb.Sheets[sheet].RowHidden(row)
+}
+
+func (e *engine) RowFiltered(sheet, row int) bool {
+	return sheet >= 0 && sheet < len(e.wb.Sheets) && e.wb.Sheets[sheet].RowFiltered(row)
+}
+
+// PivotData is GETPIVOTDATA's lookup: the value of the report covering
+// row, col for dataField and the field/item pairs (not part of
+// formula.Context; the function finds it by a type assertion).
+func (e *engine) PivotData(sheet, row, col int, dataField string, pairs []formula.Value) formula.Value {
+	if sheet < 0 || sheet >= len(e.wb.Sheets) {
+		return formula.ErrRef
+	}
+	pt, _ := e.wb.Sheets[sheet].PivotAt(row, col)
+	if pt == nil {
+		return formula.ErrRef
+	}
+	r, c, ok := pivot.GetData(pt, dataField, pairs)
+	if !ok {
+		return formula.ErrRef
+	}
+	return e.CellValue(sheet, r, c)
+}
+
 func (e *engine) Date1904() bool { return e.wb.Date1904 }
 func (e *engine) Rand() float64  { return e.rnd.Float64() }
+
+// Override stands in a value for one cell while a formula is evaluated:
+// the entry being checked by a data validation rule.
+type Override struct {
+	Sheet, Row, Col int
+	Value           formula.Value
+}
+
+type overrideCtx struct {
+	*engine
+	o *Override
+}
+
+func (c overrideCtx) CellValue(sheet, row, col int) formula.Value {
+	if o := c.o; o != nil && o.Sheet == sheet && o.Row == row && o.Col == col {
+		return o.Value
+	}
+	return c.engine.CellValue(sheet, row, col)
+}
+
+// Evaluate calculates formula text (without '=') as if it were in the cell
+// at sheet, row, col, reading the workbook's current values without
+// recalculating anything (data validation formulas); o, when set, stands
+// in one cell's value. ref is the range the formula refers to when its
+// result is a reference.
+func Evaluate(wb *model.Workbook, funcs *formula.Registry, src string, sheet, row, col int, now time.Time, o *Override) (v formula.Value, ref *formula.Ref) {
+	n, err := formula.Parse(src)
+	if err != nil {
+		return formula.ErrName, nil
+	}
+	e := newEngine(wb, funcs, now)
+	defer e.nf.Close()
+	env := formula.NewEnv(overrideCtx{e, o}, funcs, sheet, row, col)
+	if r, ok := env.Eval(n).(formula.Ref); ok {
+		ref = &r
+	}
+	return env.Evaluate(n).Value, ref
+}

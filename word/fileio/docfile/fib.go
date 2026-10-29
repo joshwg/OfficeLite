@@ -11,6 +11,7 @@ const (
 	fcStshfOrig   = 0
 	fcStshf       = 1
 	fcPlcffndRef  = 2
+	fcPlcffndTxt  = 3
 	fcPlcfandRef  = 4
 	fcPlcfSed     = 6
 	fcPlcfHdd     = 11
@@ -18,10 +19,14 @@ const (
 	fcPlcfBtePapx = 13
 	fcSttbfFfn    = 15
 	fcPlcfFldMom  = 16
+	fcPlcfFldHdr  = 17
+	fcPlcfFldFtn  = 18
 	fcDop         = 31
 	fcClx         = 33
 	fcPlcSpaMom   = 40
 	fcPlcfendRef  = 46
+	fcPlcfendTxt  = 47
+	fcPlcfFldEdn  = 48
 	fcDggInfo     = 50
 	fcPlcftxbxTxt = 56
 	fcPlfLst      = 73

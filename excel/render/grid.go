@@ -4,6 +4,7 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"strconv"
 	"strings"
 
 	"gioui.org/f32"
@@ -18,6 +19,7 @@ import (
 	"officelite/common/colors"
 	"officelite/common/gui"
 	"officelite/excel/model"
+	"officelite/excel/numfmt"
 )
 
 var (
@@ -107,6 +109,7 @@ const (
 	AreaColHeader
 	AreaRowHeader
 	AreaCorner
+	AreaOutline // the outline's gutters (outline.go)
 )
 
 type Hit struct {
@@ -126,15 +129,26 @@ type View struct {
 	Zoom            float32
 	DigitWidth      float64 // of the default font; see DigitWidth
 	Sel             Selection
+	// Book is the workbook, which charts read their data from (nil: the
+	// values cached in the file); SelChart the selected chart, if any.
+	Book     *model.Workbook
+	SelChart *model.Chart
+	// SelElem is the selected part of the selected chart (ElemNone or
+	// ElemChartArea for the chart as a whole).
+	SelElem ChartElem
 
 	// Layout from the last Draw, used by HitTest and the scroll helpers.
 	scale            float64
 	size             image.Point
-	hdrW, hdrH       int
+	hdrW, hdrH       int // where the cells start: the gutters plus the headers
+	gutW, gutH       int // the outline's gutters (outline.go)
+	outlineBtns      []OutlineButton
 	frozenX, frozenY int
 	fr, fc           int
 	pxPerDp          float32
-	widthFactor      map[model.Font]float64 // see excelWidthFactor; per zoom
+	widthFactor      map[model.Font]float64  // see excelWidthFactor; per zoom
+	chartCache       map[*model.Chart][]prim // charts laid out in this Draw
+	chartFmt         *numfmt.Formatter       // formats charts' numbers
 }
 
 // pane is one of up to four regions (frozen/scrolling rows × columns).
@@ -161,9 +175,10 @@ func (v *View) layoutGeometry(gtx layout.Context) {
 
 	// Row header wide enough for the largest visible row number.
 	last := v.Geo.Rows.Index(v.Geo.Rows.Start(v.TopRow)+float64(v.size.Y)/v.scale) + 1
-	digits := len(itoa(last))
-	v.hdrW = v.px(float64(max(26, digits*8+12)))
-	v.hdrH = v.px(20)
+	digits := len(strconv.Itoa(last))
+	v.gutW, v.gutH = v.gutterSize(true), v.gutterSize(false)
+	v.hdrW = v.gutW + v.px(float64(max(26, digits*8+12)))
+	v.hdrH = v.gutH + v.px(20)
 	v.frozenX = v.hdrW + v.px(v.Geo.Cols.Start(v.fc))
 	v.frozenY = v.hdrH + v.px(v.Geo.Rows.Start(v.fr))
 }
@@ -222,6 +237,10 @@ func (v *View) style(c *model.Cell) *model.Style {
 // Draw paints the grid, headers and selection into gtx.Constraints.Max.
 func (v *View) Draw(gtx layout.Context) layout.Dimensions {
 	v.layoutGeometry(gtx)
+	clear(v.chartCache)
+	if v.Sheet.IsChartSheet() {
+		return v.drawChartSheet(gtx)
+	}
 	gui.FillRect(gtx.Ops, image.Rectangle{Max: v.size}, colors.White)
 	panes := v.panes()
 	for _, p := range panes {
@@ -238,7 +257,12 @@ func (v *View) Draw(gtx layout.Context) layout.Dimensions {
 		v.drawSelection(gtx, &p)
 		st.Pop()
 	}
+	// Charts float over the cells and the selection.
+	for _, p := range panes {
+		v.drawCharts(gtx, &p)
+	}
 	v.drawHeaders(gtx)
+	v.drawOutline(gtx)
 	if v.fr > 0 {
 		gui.HLine(gtx.Ops, 0, v.size.X, v.frozenY-1, 1, freezeLine)
 	}
@@ -368,6 +392,10 @@ func (v *View) drawPane(gtx layout.Context, p *pane) {
 			}
 		}
 	}
+
+	// 6. The AutoFilter's drop-down buttons (filter.go).
+	v.drawFilterButtons(ops, p)
+	v.drawPivotButtons(ops, p) // and the PivotTables' (pivot.go)
 
 }
 
@@ -759,9 +787,11 @@ func (v *View) drawHeaders(gtx layout.Context) {
 	g := v.Geo
 	hdrStyle := &model.Style{Font: model.Font{Family: "Segoe UI", SizePt: headerFontSize, Color: headerText}}
 	selStyle := &model.Style{Font: model.Font{Family: "Segoe UI", SizePt: headerFontSize, Color: accent, Bold: true}}
+	filtStyle := &model.Style{Font: model.Font{Family: "Segoe UI", SizePt: headerFontSize, Color: filterRowText}}
 
-	gui.FillRect(ops, image.Rect(0, 0, v.size.X, v.hdrH), headerBG)
-	gui.FillRect(ops, image.Rect(0, 0, v.hdrW, v.size.Y), headerBG)
+	gx, gy := v.gutW, v.gutH // the headers start after the outline's gutters
+	gui.FillRect(ops, image.Rect(gx, gy, v.size.X, v.hdrH), headerBG)
+	gui.FillRect(ops, image.Rect(gx, gy, v.hdrW, v.size.Y), headerBG)
 
 	// Each column span (frozen, scrolling) appears in two panes when rows
 	// are frozen too; draw its headers once.
@@ -769,13 +799,13 @@ func (v *View) drawHeaders(gtx layout.Context) {
 	for _, p := range v.panes() {
 		if !doneCols[p.c0] {
 			doneCols[p.c0] = true
-			cs := clip.Rect(image.Rect(p.clip.Min.X, 0, p.clip.Max.X, v.hdrH)).Push(ops)
+			cs := clip.Rect(image.Rect(p.clip.Min.X, gy, p.clip.Max.X, v.hdrH)).Push(ops)
 			for c := p.c0; c < p.c1; c++ {
 				if g.Cols.Hidden(c) {
 					continue
 				}
 				rc := v.cellRect(&p, p.r0, c)
-				rc.Min.Y, rc.Max.Y = 0, v.hdrH
+				rc.Min.Y, rc.Max.Y = gy, v.hdrH
 				on := v.Sel.coversCol(c)
 				st := hdrStyle
 				if on {
@@ -783,7 +813,7 @@ func (v *View) drawHeaders(gtx layout.Context) {
 					gui.FillRect(ops, rc, headerSelBG)
 				}
 				v.headerLabel(gtx, model.ColName(c), st, rc)
-				gui.VLine(ops, rc.Max.X-1, 0, v.hdrH, 1, headerLine)
+				gui.VLine(ops, rc.Max.X-1, gy, v.hdrH, 1, headerLine)
 				if on {
 					gui.HLine(ops, rc.Min.X-1, rc.Max.X, v.hdrH-v.px(2), v.px(2), accent)
 				}
@@ -792,21 +822,24 @@ func (v *View) drawHeaders(gtx layout.Context) {
 		}
 		if !doneRows[p.r0] {
 			doneRows[p.r0] = true
-			cs := clip.Rect(image.Rect(0, p.clip.Min.Y, v.hdrW, p.clip.Max.Y)).Push(ops)
+			cs := clip.Rect(image.Rect(gx, p.clip.Min.Y, v.hdrW, p.clip.Max.Y)).Push(ops)
 			for r := p.r0; r < p.r1; r++ {
 				if g.Rows.Hidden(r) {
 					continue
 				}
 				rc := v.cellRect(&p, r, p.c0)
-				rc.Min.X, rc.Max.X = 0, v.hdrW
+				rc.Min.X, rc.Max.X = gx, v.hdrW
 				on := v.Sel.coversRow(r)
 				st := hdrStyle
+				if v.filteredRow(r) {
+					st = filtStyle // rows of a filtered range, as Excel numbers them
+				}
 				if on {
 					st = selStyle
 					gui.FillRect(ops, rc, headerSelBG)
 				}
-				v.headerLabel(gtx, itoa(r+1), st, rc)
-				gui.HLine(ops, 0, v.hdrW, rc.Max.Y-1, 1, headerLine)
+				v.headerLabel(gtx, strconv.Itoa(r+1), st, rc)
+				gui.HLine(ops, gx, v.hdrW, rc.Max.Y-1, 1, headerLine)
 				if on {
 					gui.VLine(ops, v.hdrW-v.px(2), rc.Min.Y-1, rc.Max.Y, v.px(2), accent)
 				}
@@ -814,8 +847,8 @@ func (v *View) drawHeaders(gtx layout.Context) {
 			cs.Pop()
 		}
 	}
-	gui.HLine(ops, 0, v.size.X, v.hdrH-1, 1, headerLine)
-	gui.VLine(ops, v.hdrW-1, 0, v.size.Y, 1, headerLine)
+	gui.HLine(ops, gx, v.size.X, v.hdrH-1, 1, headerLine)
+	gui.VLine(ops, v.hdrW-1, gy, v.size.Y, 1, headerLine)
 	// Select-all corner triangle.
 	tri := v.px(10)
 	for i := 0; i < tri; i++ {
@@ -849,6 +882,8 @@ func (v *View) HitTest(x, y float32) Hit {
 		return g.Rows.Index(g.Rows.Start(v.TopRow) + float64(y-float32(v.frozenY))/v.scale)
 	}
 	switch {
+	case int(x) < v.gutW || int(y) < v.gutH:
+		return Hit{Area: AreaOutline}
 	case int(x) < v.hdrW && int(y) < v.hdrH:
 		return Hit{Area: AreaCorner}
 	case int(y) < v.hdrH:
@@ -902,19 +937,6 @@ func (v *View) EnsureVisible(row, col int) {
 			v.LeftCol = min(cols.Index(cols.End(col)-avail)+1, col)
 		}
 	}
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var b [12]byte
-	i := len(b)
-	for ; n > 0; n /= 10 {
-		i--
-		b[i] = byte('0' + n%10)
-	}
-	return string(b[i:])
 }
 
 // CellRect returns the on-screen rectangle (grid coordinates, from the

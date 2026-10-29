@@ -30,7 +30,8 @@ func (h *barHarness) frame() {
 		Source:      h.r.Source(),
 		Now:         h.now,
 	}
-	h.pos = h.s.Layout(gtx, h.pos, 100, 1000)
+	// Like ExcelLite, the extent grows to take in a position past it.
+	h.pos = h.s.Layout(gtx, h.pos, 100, max(1000, h.pos+100))
 	h.r.Frame(gtx.Ops)
 }
 
@@ -122,4 +123,22 @@ func TestScrollbarShiftClickJumpsAndDrags(t *testing.T) {
 		t.Fatalf("snap back: pos %v, want %v", h.pos, want)
 	}
 	h.send(pointer.Release, 400, 200, 0)
+}
+
+func TestScrollbarOpenEnded(t *testing.T) {
+	h := newBar()
+	h.s.OpenEnded = true
+	h.pos = 900 // the end: 1000 total, 100 visible
+	h.frame()
+	h.send(pointer.Press, 7, 293, 0)
+	h.send(pointer.Release, 7, 293, 0)
+	if h.pos != 901 {
+		t.Fatalf("forward arrow at the end: pos %v, want 901", h.pos)
+	}
+	h.send(pointer.Press, 7, 150, key.ModShift) // a drag stays within the range
+	h.send(pointer.Drag, 7, 299, 0)
+	h.send(pointer.Release, 7, 299, 0)
+	if h.pos > 900 {
+		t.Fatalf("dragging: pos %v, want at most 900", h.pos)
+	}
 }

@@ -43,7 +43,7 @@ func writeText(doc *model.Document, w io.Writer) error {
 		for _, b := range bs {
 			switch b := b.(type) {
 			case *model.Paragraph:
-				bw.WriteString(strings.NewReplacer("\n", "\r\n", "\f", "\r\n", "￼", "").Replace(b.Text()))
+				bw.WriteString(strings.NewReplacer("\n", "\r\n", "\f", "\r\n").Replace(plainText(b)))
 				bw.WriteString("\r\n")
 			case *model.Table:
 				for _, row := range b.Rows {
@@ -53,7 +53,7 @@ func writeText(doc *model.Document, w io.Writer) error {
 						}
 						var parts []string
 						model.WalkBlocks(c.Blocks, func(p *model.Paragraph) bool {
-							parts = append(parts, p.Text())
+							parts = append(parts, plainText(p))
 							return true
 						})
 						bw.WriteString(strings.Join(parts, " "))
@@ -65,4 +65,31 @@ func writeText(doc *model.Document, w io.Writer) error {
 	}
 	blocks(doc.Body)
 	return bw.Flush()
+}
+
+// plainText is a paragraph's text for a .txt file: fields and hyperlinks
+// read from a .doc are opaque runs whose Text is what they show, while
+// pictures, shapes and the like have only a "[picture]" placeholder,
+// which is left out.
+func plainText(p *model.Paragraph) string {
+	var b strings.Builder
+	for _, r := range p.Runs {
+		switch r.Kind {
+		case model.RunText:
+			b.WriteString(r.Text)
+		case model.RunTab:
+			b.WriteByte('\t')
+		case model.RunBreak:
+			b.WriteByte('\n')
+		case model.RunPageBreak:
+			b.WriteByte('\f')
+		case model.RunOpaque:
+			placeholder := strings.HasPrefix(r.Text, "[") && strings.HasSuffix(r.Text, "]") &&
+				(r.Opaque == nil || r.Opaque.Field == "")
+			if !placeholder && (r.Opaque == nil || r.Opaque.Picture == nil) {
+				b.WriteString(r.Text)
+			}
+		}
+	}
+	return b.String()
 }

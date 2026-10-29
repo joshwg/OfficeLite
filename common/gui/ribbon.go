@@ -3,6 +3,7 @@ package gui
 import (
 	"image"
 	"image/color"
+	"strings"
 
 	"gioui.org/font"
 	"gioui.org/io/event"
@@ -10,6 +11,7 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
+	"gioui.org/text"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"golang.org/x/exp/shiny/materialdesign/icons"
@@ -116,7 +118,7 @@ func (r *Ribbon) Layout(gtx layout.Context, th *Theme, groups ...RibbonGroup) la
 		return r.group(gtx, th, groups[i])
 	})
 	// Scroll buttons at the ends that have more groups beyond them.
-	arrow := func(btn *widget.Clickable, ic *widget.Icon, x int) {
+	arrow := func(btn *widget.Clickable, ic *Icon, x int) {
 		bw := gtx.Dp(18)
 		o := op.Offset(image.Pt(x, 0)).Push(gtx.Ops)
 		g := gtx
@@ -239,14 +241,14 @@ func RibbonSide(gap unit.Dp, items ...layout.Widget) layout.Widget {
 // BigButton is a tall ribbon button: a large icon over its label, with a
 // drop arrow under the label when arrow is set. It fills the group's
 // height.
-func BigButton(gtx layout.Context, th *Theme, btn *widget.Clickable, icon *widget.Icon, label string, arrow, checked bool) layout.Dimensions {
+func BigButton(gtx layout.Context, th *Theme, btn *widget.Clickable, icon *Icon, label string, arrow, checked bool) layout.Dimensions {
 	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return bigFace(gtx, th, btn, icon, label, arrow, checked)
 	})
 }
 
 // bigFace draws a BigButton for btn (which handles the clicks).
-func bigFace(gtx layout.Context, th *Theme, btn *widget.Clickable, icon *widget.Icon, label string, arrow, checked bool) layout.Dimensions {
+func bigFace(gtx layout.Context, th *Theme, btn *widget.Clickable, icon *Icon, label string, arrow, checked bool) layout.Dimensions {
 	h := gtx.Constraints.Min.Y
 	if h == 0 {
 		h = RibbonContentHeight(gtx)
@@ -258,10 +260,19 @@ func bigFace(gtx layout.Context, th *Theme, btn *widget.Clickable, icon *widget.
 	m := op.Record(gtx.Ops)
 	lg := gtx
 	lg.Constraints = layout.Constraints{Max: image.Pt(gtx.Dp(90), h)}
-	ld := th.Label(11, label, fg, font.Normal).Layout(lg)
+	l := th.Label(11, label, fg, font.Normal)
+	if strings.Contains(label, "\n") {
+		l.MaxLines, l.Alignment = 2, text.Middle // a long label on two lines, as Office's
+	}
+	ld := l.Layout(lg)
 	lcall := m.Stop()
 	is := gtx.Dp(26)
-	w := max(ld.Size.X+gtx.Dp(10), gtx.Dp(44))
+	// On two lines, the arrow follows the second, as in Office.
+	beside := 0
+	if arrow && l.MaxLines == 2 {
+		beside = gtx.Dp(12)
+	}
+	w := max(ld.Size.X+beside+gtx.Dp(10), gtx.Dp(44))
 	paintFace(gtx, th, btn, image.Pt(w, h), checked)
 	ic := gtx
 	ic.Constraints = layout.Exact(image.Pt(is, is))
@@ -269,14 +280,18 @@ func bigFace(gtx layout.Context, th *Theme, btn *widget.Clickable, icon *widget.
 	icon.Layout(ic, fg)
 	o.Pop()
 	y := gtx.Dp(3) + is + gtx.Dp(2)
-	o = op.Offset(image.Pt((w-ld.Size.X)/2, y)).Push(gtx.Ops)
+	o = op.Offset(image.Pt((w-ld.Size.X-beside)/2, y)).Push(gtx.Ops)
 	lcall.Add(gtx.Ops)
 	o.Pop()
 	if arrow {
 		s := gtx.Dp(14)
 		ag := gtx
 		ag.Constraints = layout.Exact(image.Pt(s, s))
-		o = op.Offset(image.Pt((w-s)/2, min(y+ld.Size.Y-gtx.Dp(2), h-s))).Push(gtx.Ops)
+		at := image.Pt((w-s)/2, min(y+ld.Size.Y-gtx.Dp(2), h-s))
+		if beside > 0 {
+			at = image.Pt((w+ld.Size.X-beside)/2, y+ld.Size.Y-s+gtx.Dp(1))
+		}
+		o = op.Offset(at).Push(gtx.Ops)
 		IconDropArrow.Layout(ag, MutedText)
 		o.Pop()
 	}
@@ -307,7 +322,7 @@ func paintFace(gtx layout.Context, th *Theme, btn *widget.Clickable, size image.
 // DropButton is a small ribbon button (icon and/or label plus a drop
 // arrow) that opens dd's list. It returns the item chosen (or -1) and
 // the button's size.
-func DropButton(gtx layout.Context, th *Theme, dd *DropDown, icon *widget.Icon, label string, bar color.NRGBA, items []DropItem, listWidth unit.Dp) (int, layout.Dimensions) {
+func DropButton(gtx layout.Context, th *Theme, dd *DropDown, icon *Icon, label string, bar color.NRGBA, items []DropItem, listWidth unit.Dp) (int, layout.Dimensions) {
 	i := dd.LayoutButton(gtx, th, listWidth, items, func(gtx layout.Context) layout.Dimensions {
 		return dropFace(gtx, th, &dd.btn, icon, label, bar, dd.IsOpen(), false)
 	})
@@ -315,7 +330,7 @@ func DropButton(gtx layout.Context, th *Theme, dd *DropDown, icon *widget.Icon, 
 }
 
 // BigDropButton is BigButton opening dd's list.
-func BigDropButton(gtx layout.Context, th *Theme, dd *DropDown, icon *widget.Icon, label string, items []DropItem, listWidth unit.Dp) (int, layout.Dimensions) {
+func BigDropButton(gtx layout.Context, th *Theme, dd *DropDown, icon *Icon, label string, items []DropItem, listWidth unit.Dp) (int, layout.Dimensions) {
 	i := dd.LayoutButton(gtx, th, listWidth, items, func(gtx layout.Context) layout.Dimensions {
 		return bigFace(gtx, th, &dd.btn, icon, label, true, dd.IsOpen())
 	})
@@ -325,7 +340,7 @@ func BigDropButton(gtx layout.Context, th *Theme, dd *DropDown, icon *widget.Ico
 // SplitButton is a small button whose main part runs an action (btn) and
 // whose arrow opens dd's list, like Excel's Borders and Font Color
 // buttons. It returns the item chosen (or -1) and the button's size.
-func SplitButton(gtx layout.Context, th *Theme, btn *widget.Clickable, dd *DropDown, icon *widget.Icon, bar color.NRGBA, items []DropItem, listWidth unit.Dp) (int, layout.Dimensions) {
+func SplitButton(gtx layout.Context, th *Theme, btn *widget.Clickable, dd *DropDown, icon *Icon, bar color.NRGBA, items []DropItem, listWidth unit.Dp) (int, layout.Dimensions) {
 	chosen := -1
 	dims := layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -343,7 +358,7 @@ func SplitButton(gtx layout.Context, th *Theme, btn *widget.Clickable, dd *DropD
 
 // dropFace draws a drop button: [icon] [label] ▾. arrowOnly draws just a
 // narrow arrow (a split button's second half).
-func dropFace(gtx layout.Context, th *Theme, btn *widget.Clickable, icon *widget.Icon, label string, bar color.NRGBA, open, arrowOnly bool) layout.Dimensions {
+func dropFace(gtx layout.Context, th *Theme, btn *widget.Clickable, icon *Icon, label string, bar color.NRGBA, open, arrowOnly bool) layout.Dimensions {
 	size := gtx.Dp(RibbonRowHeight)
 	fg := ChromeText
 	m := op.Record(gtx.Ops)
@@ -396,4 +411,40 @@ func dropFace(gtx layout.Context, th *Theme, btn *widget.Clickable, icon *widget
 	paintFace(gtx, th, btn, image.Pt(w, size), open)
 	call.Add(gtx.Ops)
 	return layout.Dimensions{Size: image.Pt(w, size)}
+}
+
+// SmallButton is a ribbon-row button with a small icon and a label, like
+// Excel's Clear and Reapply.
+func SmallButton(gtx layout.Context, th *Theme, btn *widget.Clickable, icon *Icon, label string) layout.Dimensions {
+	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		size := gtx.Dp(RibbonRowHeight)
+		fg := ChromeText
+		if !gtx.Enabled() {
+			fg = colors.Mix(ChromeText, ChromeBG, 0.6)
+		}
+		m := op.Record(gtx.Ops)
+		x := gtx.Dp(4)
+		if icon != nil {
+			is := gtx.Dp(18)
+			ic := gtx
+			ic.Constraints = layout.Exact(image.Pt(is, is))
+			o := op.Offset(image.Pt(x, (size-is)/2)).Push(gtx.Ops)
+			icon.Layout(ic, fg)
+			o.Pop()
+			x += is + gtx.Dp(4)
+		}
+		lg := gtx
+		lg.Constraints = layout.Constraints{Max: image.Pt(gtx.Dp(140), size)}
+		mm := op.Record(gtx.Ops)
+		d := th.Label(12, label, fg, font.Normal).Layout(lg)
+		lcall := mm.Stop()
+		o := op.Offset(image.Pt(x, (size-d.Size.Y)/2)).Push(gtx.Ops)
+		lcall.Add(gtx.Ops)
+		o.Pop()
+		w := x + d.Size.X + gtx.Dp(6)
+		call := m.Stop()
+		paintFace(gtx, th, btn, image.Pt(w, size), false)
+		call.Add(gtx.Ops)
+		return layout.Dimensions{Size: image.Pt(w, size)}
+	})
 }

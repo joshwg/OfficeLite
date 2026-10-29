@@ -127,3 +127,33 @@ func TestCellsAndEditingMenus(t *testing.T) {
 		t.Errorf("unhide: hidden %v active %d", a.wb.Sheets[0].Hidden, a.active)
 	}
 }
+
+// Hide keeps a row's height and a column's width; Unhide on the whole
+// sheet finds them far past the used area and gives them back.
+func TestHideUnhideSizes(t *testing.T) {
+	h := newHarness(t)
+	a := h.a
+	sh := a.wb.Sheets[0]
+	h.typeText("x")
+	h.press(key.NameReturn, 0)
+	a.book.ResizeRows(0, []int{199}, 40)
+	a.book.ResizeCols(0, []int{60}, 25)
+	a.selectRange(0, model.Range{R1: 199, R2: 199, C2: model.MaxCols - 1})
+	a.formatMenu(a.gtx, fmtHideRows)
+	a.selectRange(0, model.Range{C1: 60, C2: 60, R2: model.MaxRows - 1})
+	a.formatMenu(a.gtx, fmtHideCols)
+	if !sh.RowHidden(199) || !sh.IndexHidden(false, 60) {
+		t.Fatalf("not hidden: %v %v", sh.RowHeight, sh.ColWidth)
+	}
+	a.selectRange(0, model.Range{R2: model.MaxRows - 1, C2: model.MaxCols - 1}) // Select All
+	a.formatMenu(a.gtx, fmtUnhideRows)
+	a.formatMenu(a.gtx, fmtUnhideCols)
+	if sh.RowHeight[199] != 40 || sh.ColWidth[60] != 25 {
+		t.Errorf("unhidden: row 200 %v, column BI %v", sh.RowHeight[199], sh.ColWidth[60])
+	}
+	a.undo()
+	a.undo()
+	if !sh.RowHidden(199) || !sh.IndexHidden(false, 60) {
+		t.Errorf("undo unhide: %v %v", sh.RowHeight[199], sh.ColWidth[60])
+	}
+}

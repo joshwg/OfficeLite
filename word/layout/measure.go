@@ -38,6 +38,8 @@ type TextStyle struct {
 	Highlight color.NRGBA // A == 0: none
 	Shift     float64     // baseline shift in points, up positive
 	Hidden    bool
+	// Revealed is hidden text laid out and shown (SetShowHidden).
+	Revealed bool
 }
 
 type measureKey struct {
@@ -47,10 +49,13 @@ type measureKey struct {
 }
 
 // measured is the shaped width of a string: one advance per rune (a
-// cluster's advance is shared by its runes) and the font's line metrics.
+// cluster's advance is shared by its runes) and the font's line metrics:
+// Gio's, and Word's (wasc, wdesc; see gui.WordMetrics), which decide how
+// tall a line mixing fonts is.
 type measured struct {
 	adv           []float32
 	ascent, desc  float64
+	wasc, wdesc   float64
 	width         float64
 	trailingSpace float64
 }
@@ -58,6 +63,7 @@ type measured struct {
 type measurer struct {
 	shaper *text.Shaper
 	cache  map[measureKey]*measured
+	covers map[measureKey]bool
 }
 
 func (m *measurer) measure(st *TextStyle, s string) *measured {
@@ -90,6 +96,9 @@ func (m *measurer) measure(st *TextStyle, s string) *measured {
 			r.desc = float64(g.Descent) / 64 / measureScale
 			first = false
 		}
+		if a, d, ok := gui.WordMetrics(m.shaper, g.ID); ok {
+			r.wasc, r.wdesc = max(r.wasc, a*st.Size), max(r.wdesc, d*st.Size)
+		}
 		cluster += float64(g.Advance) / 64 / measureScale
 		if g.Flags&text.FlagClusterBreak != 0 && g.Runes > 0 {
 			per := cluster / float64(g.Runes)
@@ -99,6 +108,9 @@ func (m *measurer) measure(st *TextStyle, s string) *measured {
 			}
 			cluster = 0
 		}
+	}
+	if r.wasc == 0 && r.wdesc == 0 {
+		r.wasc, r.wdesc = r.ascent, r.desc
 	}
 	rs := []rune(s)
 	for _, a := range r.adv {
@@ -112,6 +124,32 @@ func (m *measurer) measure(st *TextStyle, s string) *measured {
 	}
 	m.cache[k] = r
 	return r
+}
+
+// has reports whether the font family itself (not a fallback face) has a
+// glyph for every rune of s. Without a FontLibrary shaper (tests) nothing
+// is known and it reports false.
+func (m *measurer) has(st *TextStyle, family string, s string) bool {
+	k := measureKey{st.Font, 0, family + "\x00" + s}
+	if v, ok := m.covers[k]; ok {
+		return v
+	}
+	m.shaper.LayoutString(text.Parameters{Font: st.Font, PxPerEm: fixed.I(16), MaxWidth: 1 << 24, MaxLines: 1}, s)
+	ok := true
+	for {
+		g, more := m.shaper.NextGlyph()
+		if !more {
+			break
+		}
+		if g.Flags&text.FlagParagraphBreak == 0 && (uint32(g.ID) == 0 || !strings.EqualFold(gui.GlyphFamily(m.shaper, g.ID), family)) {
+			ok = false
+		}
+	}
+	if m.covers == nil {
+		m.covers = map[measureKey]bool{}
+	}
+	m.covers[k] = ok
+	return ok
 }
 
 // highlightColors are Word's named highlight colors.
@@ -155,7 +193,8 @@ func styleOf(rp model.RunProps) *TextStyle {
 }
 
 // symbolMap translates the private-use characters of the Symbol and
-// Wingdings fonts used for bullets into Unicode.
+// Wingdings fonts used for bullets into Unicode, for when the font isn't
+// there (or the text isn't in it).
 var symbolMap = map[rune]rune{
 	0xF0B7: '•', 0xF0A7: '▪', 0xF06F: '○', 0xF0D8: '➢', 0xF0FC: '✓',
 	0xF076: '❖', 0xF0E8: '➔', 0xF0A8: '□', 0xF06E: '■', 0xF071: '❑',

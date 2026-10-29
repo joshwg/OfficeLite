@@ -168,6 +168,18 @@ func (a *App) ensureFont(name string) {
 
 // formatKeys handles the formatting shortcuts while the grid has the
 // keyboard: Ctrl+B/I/U/5, Ctrl+1 and Excel's Ctrl+Shift number formats.
+// shortcutLabel names the undo step of a formatting shortcut, as
+// Excel's Undo list does.
+func shortcutLabel(name string, shift bool) string {
+	switch {
+	case shift || name == "`":
+		return "Number Format"
+	case name == "5":
+		return "Strikethrough"
+	}
+	return map[string]string{"B": "Bold", "I": "Italic", "U": "Underline"}[name]
+}
+
 func (a *App) formatKeys(gtx layout.Context) {
 	tag := &a.grid
 	filters := []event.Filter{
@@ -195,6 +207,7 @@ func (a *App) formatKeys(gtx layout.Context) {
 		}
 		st := a.activeStyle()
 		shift := e.Modifiers.Contain(key.ModShift)
+		named := a.book.Op(shortcutLabel(string(e.Name), shift))
 		switch {
 		case e.Name == key.NameEscape:
 			a.stopPainter()
@@ -221,6 +234,7 @@ func (a *App) formatKeys(gtx layout.Context) {
 		case e.Name == "1": // !
 			a.setNumFmt(0, "#,##0.00")
 		}
+		named()
 	}
 }
 
@@ -236,19 +250,21 @@ func (a *App) pasteSpecial(mode edit.PasteMode) {
 		a.requestPaste(a.gtx)
 		return
 	}
-	if !a.readyToChange() {
+	if !a.readyToChange() || a.pivotProtected(a.state().view.Sel.Range) {
 		return
 	}
 	if a.clip == nil || a.clip.WB != a.wb {
 		a.errMsg = "Copy cells in this window first"
 		return
 	}
+	keep := a.clip
 	dest, res, err := a.book.PasteSpecial(a.clip, a.active, a.state().view.Sel.Range, mode)
 	if err != nil {
 		a.errMsg = err.Error()
 		return
 	}
 	a.changed(res)
+	a.clip = keep // still on the clipboard, as after Paste
 	a.selectRange(a.active, dest)
 }
 
@@ -387,7 +403,11 @@ func (a *App) formatMenu(gtx layout.Context, i int) {
 			if x < 0 || x > 409 {
 				return false
 			}
-			a.book.ResizeRows(a.active, a.selRows(), model.PointsToPx(x))
+			if x == 0 {
+				a.book.Hide(a.active, true, a.selRows()) // keeping the heights
+			} else {
+				a.book.ResizeRows(a.active, a.selRows(), model.PointsToPx(x))
+			}
 			a.afterResize()
 			return true
 		})
@@ -399,7 +419,11 @@ func (a *App) formatMenu(gtx layout.Context, i int) {
 			if x < 0 || x > 255 {
 				return false
 			}
-			a.book.ResizeCols(a.active, a.selCols(), widthChars(x, mdw))
+			if x == 0 {
+				a.book.Hide(a.active, false, a.selCols()) // keeping the widths
+			} else {
+				a.book.ResizeCols(a.active, a.selCols(), widthChars(x, mdw))
+			}
 			a.afterResize()
 			return true
 		})
@@ -419,31 +443,22 @@ func (a *App) formatMenu(gtx layout.Context, i int) {
 			return true
 		})
 	case fmtHideRows:
-		a.book.ResizeRows(a.active, a.selRows(), 0)
-		a.afterResize()
-	case fmtHideCols:
-		a.book.ResizeCols(a.active, a.selCols(), 0)
-		a.afterResize()
-	case fmtUnhideRows:
-		var idx []int
-		for _, r := range a.selRows() {
-			if h, ok := sh.RowHeight[r]; ok && h == 0 {
-				idx = append(idx, r)
-			}
-		}
-		if len(idx) > 0 {
-			a.book.ResizeRows(a.active, idx, sh.DefaultRowHeight)
+		if a.book.Hide(a.active, true, a.selRows()) {
 			a.afterResize()
 		}
-	case fmtUnhideCols:
-		var idx []int
-		for _, c := range a.selCols() {
-			if w, ok := sh.ColWidth[c]; ok && w == 0 {
-				idx = append(idx, c)
-			}
+	case fmtHideCols:
+		if a.book.Hide(a.active, false, a.selCols()) {
+			a.afterResize()
 		}
-		if len(idx) > 0 {
-			a.book.ResizeCols(a.active, idx, model.PxToColWidth(float64(sh.DefaultColWidthPx(mdw)), mdw))
+	case fmtUnhideRows, fmtUnhideCols:
+		// Every hidden row (column) of the selection, also past the used
+		// area, with the size it had.
+		r := v.Sel.Range
+		lo, hi := r.R1, r.R2
+		if i == fmtUnhideCols {
+			lo, hi = r.C1, r.C2
+		}
+		if a.book.Unhide(a.active, i == fmtUnhideRows, lo, hi) {
 			a.afterResize()
 		}
 	case fmtHideSheet:
@@ -603,6 +618,12 @@ func (a *App) sortMenu(i int) {
 		a.sortDescending()
 	case 2:
 		a.customSortDialog()
+	case 4:
+		a.toggleFilter()
+	case 5:
+		a.clearFilter()
+	case 6:
+		a.reapplyFilter()
 	}
 }
 

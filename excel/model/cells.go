@@ -120,6 +120,7 @@ func (s *Sheet) ShiftCells(r Range, vertical, insert bool) {
 	s.Spills = spills
 	s.Notes = shiftCellMap(s.Notes, move)
 	s.Links = shiftCellMap(s.Links, move)
+	s.shiftStripValidations(strip, vertical, at, n)
 }
 
 // clearStripSpills empties the spilled values of formulas in the strip

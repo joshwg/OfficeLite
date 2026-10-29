@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -134,6 +135,16 @@ func compare(t *testing.T, want, got *model.Workbook) {
 		}
 		if len(gs.Spills) != len(ws.Spills) {
 			report("spills = %v, want %v", gs.Spills, ws.Spills)
+		}
+		for _, rows := range []bool{true, false} {
+			wg, gg := ws.Groups(rows), gs.Groups(rows)
+			if !slices.Equal(wg, gg) {
+				report("outline groups (rows %v) = %+v, want %+v", rows, gg, wg)
+			}
+		}
+		if gs.Outline.SummaryAbove != ws.Outline.SummaryAbove || gs.Outline.SummaryLeft != ws.Outline.SummaryLeft {
+			report("summary above %v left %v, want %v %v", gs.Outline.SummaryAbove, gs.Outline.SummaryLeft,
+				ws.Outline.SummaryAbove, ws.Outline.SummaryLeft)
 		}
 	}
 }

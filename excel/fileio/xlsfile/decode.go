@@ -550,10 +550,10 @@ func (d *decoder) sheetPrefix(ixti int) (string, error) {
 		return "", nil
 	}
 	s := names[x.first]
-	quote := quoteSheet(s) != s
+	quote := formula.QuoteSheet(s) != s
 	if x.last != x.first {
 		s += ":" + names[x.last]
-		quote = quote || quoteSheet(names[x.last]) != names[x.last]
+		quote = quote || formula.QuoteSheet(names[x.last]) != names[x.last]
 	}
 	if sb.kind == supExternal {
 		s = "[" + strconv.Itoa(sb.ext) + "]" + s
@@ -692,64 +692,4 @@ func numberText(v float64) string {
 		return strconv.FormatFloat(v, 'f', -1, 64)
 	}
 	return strconv.FormatFloat(v, 'G', -1, 64)
-}
-
-// quoteSheet quotes a sheet name for use in a formula when it is not a
-// plain identifier: 'My Sheet', '2024', 'A1'.
-func quoteSheet(name string) string {
-	plain := name != ""
-	for i, c := range name {
-		switch {
-		case c == '_' || c == '.' || c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= 0x80:
-		case c >= '0' && c <= '9':
-			if i == 0 {
-				plain = false
-			}
-		default:
-			plain = false
-		}
-	}
-	if plain {
-		up := strings.ToUpper(name)
-		if up == "TRUE" || up == "FALSE" || looksLikeCell(up) || looksLikeR1C1(up) {
-			plain = false
-		}
-	}
-	if plain {
-		return name
-	}
-	return "'" + strings.ReplaceAll(name, "'", "''") + "'"
-}
-
-// looksLikeCell reports whether s is a cell reference such as A1 or XFD9.
-func looksLikeCell(s string) bool {
-	i := 0
-	for i < len(s) && s[i] >= 'A' && s[i] <= 'Z' {
-		i++
-	}
-	if i == 0 || i > 3 || i == len(s) {
-		return false
-	}
-	for _, c := range s[i:] {
-		if c < '0' || c > '9' {
-			return false
-		}
-	}
-	return true
-}
-
-// looksLikeR1C1 reports whether s is an R1C1-style reference (R, C, R1C2).
-func looksLikeR1C1(s string) bool {
-	if s == "R" || s == "C" {
-		return true
-	}
-	if s == "" || s[0] != 'R' && s[0] != 'C' {
-		return false
-	}
-	for _, c := range s[1:] {
-		if (c < '0' || c > '9') && c != 'R' && c != 'C' {
-			return false
-		}
-	}
-	return true
 }

@@ -11,6 +11,7 @@ import (
 // at its natural size w × h points scaled down to fit the text column
 // (and the page height). The picture ends up selected, as in Word.
 func (e *Editor) InsertPicture(pic *Picture, w, h float64) {
+	defer e.Op("Insert Picture")()
 	if pic == nil {
 		return
 	}
@@ -63,6 +64,7 @@ func (e *Editor) SelectedPicture() *Run {
 
 // ResizePicture sets the size of the picture just after p (undoable).
 func (e *Editor) ResizePicture(p Pos, w, h float64) {
+	defer e.Op("Picture Size")()
 	if e.PictureAt(p) == nil || w <= 0 || h <= 0 {
 		return
 	}
@@ -227,6 +229,7 @@ func (e *Editor) hyperlinkStyle(add bool) (id string, missing bool) {
 // link; otherwise the selection becomes the link when its text is text,
 // else text replaces the selection.
 func (e *Editor) InsertLink(text, addr string) {
+	defer e.Op("Insert Hyperlink")()
 	url := LinkTarget(addr)
 	if url == "" {
 		return
@@ -326,6 +329,7 @@ func (e *Editor) editLink(l Link, nsp *Span, text string) {
 
 // RemoveLink turns the link at the caret back into plain text.
 func (e *Editor) RemoveLink() {
+	defer e.Op("Remove Hyperlink")()
 	l, ok := e.SelectionLink()
 	if !ok {
 		return

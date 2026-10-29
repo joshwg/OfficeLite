@@ -6,21 +6,19 @@ import (
 	"gioui.org/font"
 	"gioui.org/io/event"
 	"gioui.org/io/key"
-	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
 	"gioui.org/unit"
 	"gioui.org/widget"
-	"gioui.org/widget/material"
 
-	"officelite/common/colors"
 	"officelite/common/gui"
 )
 
-// The dialogs of the Insert menu, Find & Select and Sort: their shared
-// state, keys and drawing helpers. Each dialog lives in its own file
-// (insert.go, find.go, sort.go, notes.go).
+// The dialogs of the Insert menu, Find & Select, Sort and the AutoFilter:
+// their shared state, keys and drawing helpers. Each dialog lives in its
+// own file (insert.go, find.go, sort.go, notes.go, filterdlg.go,
+// datatools.go, validation.go, outline.go).
 
 type dlgKind int
 
@@ -35,6 +33,13 @@ const (
 	dlgFind
 	dlgGoTo
 	dlgSort
+	dlgCustomFilter
+	dlgTop10
+	dlgTextToCols
+	dlgRemoveDups
+	dlgValidation
+	dlgGroup
+	dlgSubtotal
 )
 
 // insertState is the open dialog (at most one) and the fill handle and
@@ -58,6 +63,13 @@ type insertState struct {
 	find findDialog
 	gt   gotoDialog
 	sort sortDialog
+	cf   customFilterDialog // filterdlg.go
+	top  top10Dialog
+	ttc  textToColsDialog // datatools.go
+	dup  dupsDialog
+	dv   validDialog // validation.go
+	grp  groupDialog // outline.go
+	sub  subtotalDialog
 
 	fill  fillDrag
 	hover hoverNote
@@ -67,6 +79,15 @@ type insertState struct {
 func (a *App) showDialog(k dlgKind) {
 	a.menu.Close()
 	a.ins.kind, a.ins.focus, a.ins.err, a.ins.key = k, true, "", 0
+}
+
+// modalOpen reports whether a modal dialog is open: the message box,
+// Format Cells and the other dialogs of formatdialog.go, the PivotTable
+// dialogs and every dialog of this file but Find & Replace, which (as in
+// Excel) leaves the window usable. The window's shortcuts wait for it.
+func (a *App) modalOpen() bool {
+	return a.dialog.Visible || a.fmtDlg.open || a.askDlg.open || a.pv.dlg.open || a.ch.dlg.kind != cdNone ||
+		(a.ins.kind != dlgNone && a.ins.kind != dlgFind)
 }
 
 // closeDialog hides the open dialog and gives the keyboard back to the
@@ -97,6 +118,14 @@ func (a *App) dialogFocusTags() []any {
 		return []any{&d.gt.ref, &d.tag}
 	case dlgNote:
 		return nil // Enter types a line break; Esc is handled by the note editor
+	case dlgCustomFilter:
+		return []any{&d.cf.val[0], &d.cf.val[1], &d.tag}
+	case dlgTop10:
+		return []any{&d.top.n, &d.tag}
+	case dlgTextToCols:
+		return []any{&d.ttc.dest, &d.ttc.other, &d.ttc.breaksEd, &d.tag}
+	case dlgValidation:
+		return d.dv.focusTags(&d.tag)
 	}
 	return []any{&d.tag}
 }
@@ -163,6 +192,20 @@ func (a *App) layoutInsertDialogs(gtx layout.Context) {
 		a.layoutGoToDialog(gtx, k)
 	case dlgSort:
 		a.layoutSortDialog(gtx, k)
+	case dlgCustomFilter:
+		a.layoutCustomFilterDialog(gtx, k)
+	case dlgTop10:
+		a.layoutTop10Dialog(gtx, k)
+	case dlgTextToCols:
+		a.layoutTextToColsDialog(gtx, k)
+	case dlgRemoveDups:
+		a.layoutRemoveDupsDialog(gtx, k)
+	case dlgValidation:
+		a.layoutValidationDialog(gtx, k)
+	case dlgGroup:
+		a.layoutGroupDialog(gtx, k)
+	case dlgSubtotal:
+		a.layoutSubtotalDialog(gtx, k)
 	}
 }
 
@@ -193,61 +236,19 @@ func (a *App) panel(gtx layout.Context, title string, width unit.Dp, body layout
 	pos := image.Pt(size.X-dims.Size.X-gtx.Dp(28), gtx.Dp(150))
 	pos.Y = max(min(pos.Y, size.Y-dims.Size.Y), 0)
 	off := op.Offset(pos).Push(gtx.Ops)
+	gui.PanelBox(gtx.Ops, dims.Size)
 	box := image.Rectangle{Max: dims.Size}
-	gui.FillRect(gtx.Ops, box.Add(image.Pt(3, 3)), colors.RGBA(0, 0, 0, 0x28))
-	gui.FillRect(gtx.Ops, box.Inset(-1), chromeLine)
-	gui.FillRect(gtx.Ops, box, colors.White)
 	// The box itself takes clicks, so they don't reach the grid below.
 	area := clip.Rect(box).Push(gtx.Ops)
 	event.Op(gtx.Ops, &a.ins.block)
 	area.Pop()
 	for {
-		if _, ok := gtx.Event(pointer.Filter{Target: &a.ins.block, Kinds: pointer.Press}); !ok {
+		if _, ok := gtx.Event(gui.BlockFilter(&a.ins.block)); !ok {
 			break
 		}
 	}
 	call.Add(gtx.Ops)
 	off.Pop()
-}
-
-// textField draws an editor in a box w dp wide (lines tall).
-func (a *App) textField(gtx layout.Context, ed *widget.Editor, w unit.Dp, lines int, hint string) layout.Dimensions {
-	pw := min(gtx.Dp(w), gtx.Constraints.Max.X)
-	h := gtx.Dp(unit.Dp(8 + 18*lines))
-	border := chromeLine
-	if gtx.Focused(ed) {
-		border = accent
-	}
-	gui.FillRect(gtx.Ops, image.Rect(0, 0, pw, h), border)
-	gui.FillRect(gtx.Ops, image.Rect(1, 1, pw-1, h-1), colors.White)
-	g := gtx
-	g.Constraints = layout.Constraints{Min: image.Pt(pw-gtx.Dp(12), 0), Max: image.Pt(pw-gtx.Dp(12), h-gtx.Dp(8))}
-	cs := clip.Rect{Max: image.Pt(pw, h)}.Push(gtx.Ops)
-	off := op.Offset(image.Pt(gtx.Dp(6), gtx.Dp(4))).Push(gtx.Ops)
-	e := material.Editor(a.th, ed, hint)
-	e.Font = gui.UIFont
-	e.TextSize = 13
-	e.HintColor = mutedText
-	e.Layout(g)
-	off.Pop()
-	cs.Pop()
-	return layout.Dimensions{Size: image.Pt(pw, h)}
-}
-
-// labeled is a "label  field" row with the label in a column lw dp wide.
-func (a *App) labeled(label string, lw unit.Dp, field layout.Widget) layout.FlexChild {
-	return layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-		return layout.Inset{Bottom: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					gtx.Constraints.Min.X = gtx.Dp(lw)
-					gtx.Constraints.Max.X = gtx.Constraints.Min.X
-					return a.ui.Label(13, label, chromeText, font.Normal).Layout(gtx)
-				}),
-				layout.Flexed(1, field),
-			)
-		})
-	})
 }
 
 // dropItems turns labels into drop-down items.
@@ -257,30 +258,6 @@ func dropItems(labels []string) []gui.DropItem {
 		out[i] = gui.DropItem{Label: l}
 	}
 	return out
-}
-
-// checkBox is a check box with a label.
-func (a *App) checkBox(b *widget.Bool, label string) layout.Widget {
-	return func(gtx layout.Context) layout.Dimensions {
-		cb := material.CheckBox(a.th, b, label)
-		cb.Font = gui.UIFont
-		cb.TextSize = 13
-		cb.Color = chromeText
-		cb.IconColor = accent
-		return cb.Layout(gtx)
-	}
-}
-
-// radio is a radio button of group e.
-func (a *App) radio(e *widget.Enum, k, label string) layout.Widget {
-	return func(gtx layout.Context) layout.Dimensions {
-		rb := material.RadioButton(a.th, e, k, label)
-		rb.Font = gui.UIFont
-		rb.TextSize = 13
-		rb.Color = chromeText
-		rb.IconColor = accent
-		return rb.Layout(gtx)
-	}
 }
 
 // errorLine shows the dialog's error, if any.

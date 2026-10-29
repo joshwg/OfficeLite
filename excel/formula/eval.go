@@ -62,6 +62,17 @@ type Env struct {
 
 	// Volatile is set when a volatile function was called.
 	Volatile bool
+
+	// Legacy marks an ordinary (not dynamic-array, not array) formula:
+	// Excel 2019 and earlier semantics, where a range given in place of
+	// one value is implicitly intersected with the formula's row or
+	// column (=B1:B3*2 in row 2 is B2*2). Arguments of functions that
+	// take arrays (SUMPRODUCT ...) are still evaluated as arrays.
+	Legacy bool
+	arrays int // > 0 while evaluating such an argument
+
+	root   Node // the formula being evaluated
+	extent *[2]int
 }
 
 // NewEnv returns an environment for calculating the cell at sheet, row, col.
@@ -72,6 +83,18 @@ func NewEnv(ctx Context, funcs *Registry, sheet, row, col int) *Env {
 func (e *Env) Now() time.Time { return e.Ctx.Now() }
 func (e *Env) Date1904() bool { return e.Ctx.Date1904() }
 func (e *Env) Rand() float64  { return e.Ctx.Rand() }
+
+// Num coerces v like the package-level Num, but parses date text in the
+// workbook's date system (Num always reads date text as a 1900-system
+// serial).
+func (e *Env) Num(v Value) (float64, Value) {
+	if s, ok := v.(String); ok && e.Date1904() {
+		if d, ok := ParseDateTime(string(s), true); ok {
+			return d, nil
+		}
+	}
+	return Num(v)
+}
 
 // Result is a top-level formula result.
 type Result struct {
@@ -88,7 +111,15 @@ func (e *Env) Evaluate(n Node) Result {
 			res.Format = s.Format
 		}
 	}
-	v := e.Deref(e.Eval(n))
+	e.root, e.extent = n, nil
+	var v Value
+	if b, ok := n.(binaryNode); ok && (b.op == "+" || b.op == "-") {
+		// Excel sets a final addition or subtraction whose result is only
+		// rounding noise to 0: =1-0.9-0.1 is 0, not -2.8E-17.
+		v = e.binary(b.op, e.operand(b.l), e.operand(b.r), true)
+	} else {
+		v = e.operand(n)
+	}
 	switch x := v.(type) {
 	case *Lambda:
 		v = ErrCalc
@@ -153,7 +184,7 @@ func (e *Env) Eval(n Node) Value {
 		if n.op == ":" {
 			return e.rangeOp(n)
 		}
-		return e.binary(n.op, e.Deref(e.Eval(n.l)), e.Deref(e.Eval(n.r)))
+		return e.binary(n.op, e.operand(n.l), e.operand(n.r), false)
 	case spillNode:
 		v := e.Eval(n.x)
 		r, ok := v.(Ref)
@@ -201,9 +232,17 @@ func normRef(r Ref) Ref {
 }
 
 func (e *Env) rangeOp(n binaryNode) Value {
-	a, ok1 := e.Eval(n.l).(Ref)
-	b, ok2 := e.Eval(n.r).(Ref)
+	l, r := e.Eval(n.l), e.Eval(n.r)
+	a, ok1 := l.(Ref)
+	b, ok2 := r.(Ref)
 	if !ok1 || !ok2 {
+		// #REF!:B1 (a reference shifted off the sheet) is #REF!.
+		if err, ok := l.(Error); ok {
+			return err
+		}
+		if err, ok := r.(Error); ok {
+			return err
+		}
 		return ErrValue
 	}
 	if a.Sheet != b.Sheet {
@@ -278,16 +317,82 @@ func (e *Env) Deref(v Value) Value {
 }
 
 // trim shrinks whole-column/whole-row references to the sheet's used area
-// so they can be materialized.
+// so they can be materialized. When a formula has whole columns (rows) on
+// more than one sheet they are all trimmed to the tallest (widest) of
+// those sheets, so they still combine element by element:
+// =SUMPRODUCT((Sheet2!A:A>1)*B:B).
 func (e *Env) trim(r Ref) Ref {
-	rows, cols := e.Ctx.UsedSize(r.Sheet)
-	if r.R2 >= model.MaxRows-1 {
-		r.R2 = max(r.R1, min(r.R2, rows-1))
+	wholeCols, wholeRows := r.R2 >= model.MaxRows-1, r.C2 >= model.MaxCols-1
+	if !wholeCols && !wholeRows {
+		return r
 	}
-	if r.C2 >= model.MaxCols-1 {
-		r.C2 = max(r.C1, min(r.C2, cols-1))
+	rows, cols := e.usedSize(r)
+	ext := e.commonExtent()
+	if wholeCols {
+		r.R2 = max(r.R1, min(r.R2, max(rows, ext[0])-1))
+	}
+	if wholeRows {
+		r.C2 = max(r.C1, min(r.C2, max(cols, ext[1])-1))
 	}
 	return r
+}
+
+// RangeSizer is implemented by contexts in which formulas not calculated
+// yet can change a sheet's used area (dynamic arrays spilling into a
+// whole column read before them). UsedSizeFor is UsedSize after
+// calculating whatever could spill into r.
+type RangeSizer interface {
+	UsedSizeFor(r Ref) (rows, cols int)
+}
+
+func (e *Env) usedSize(r Ref) (rows, cols int) {
+	if rs, ok := e.Ctx.(RangeSizer); ok {
+		return rs.UsedSizeFor(r)
+	}
+	return e.Ctx.UsedSize(r.Sheet)
+}
+
+// commonExtent is the height (and width) that whole columns (rows) of the
+// formula being evaluated are trimmed to when they span several sheets;
+// zero otherwise.
+func (e *Env) commonExtent() [2]int {
+	if e.extent != nil {
+		return *e.extent
+	}
+	e.extent = new([2]int)
+	if e.root == nil {
+		return *e.extent
+	}
+	var colRefs, rowRefs []Ref
+	colSheets, rowSheets := map[int]bool{}, map[int]bool{}
+	for _, d := range Dependencies(e.root).Refs {
+		si := e.sheetIndex(d.Sheet)
+		if si < 0 {
+			continue
+		}
+		r := Ref{Sheet: si, R1: d.R1, C1: d.C1, R2: d.R2, C2: d.C2}
+		if r.R2 >= model.MaxRows-1 {
+			colRefs, colSheets[si] = append(colRefs, r), true
+		}
+		if r.C2 >= model.MaxCols-1 {
+			rowRefs, rowSheets[si] = append(rowRefs, r), true
+		}
+	}
+	var ext [2]int
+	if len(colSheets) > 1 {
+		for _, r := range colRefs {
+			rows, _ := e.usedSize(r)
+			ext[0] = max(ext[0], rows)
+		}
+	}
+	if len(rowSheets) > 1 {
+		for _, r := range rowRefs {
+			_, cols := e.usedSize(r)
+			ext[1] = max(ext[1], cols)
+		}
+	}
+	*e.extent = ext
+	return ext
 }
 
 // Trim is the reference r limited to the used area when it spans whole
@@ -306,6 +411,48 @@ func (e *Env) Scalar(v Value) Value {
 		return a.V[0]
 	}
 	return v
+}
+
+// implicit reports whether a range in place of a single value is
+// implicitly intersected (see Legacy).
+func (e *Env) implicit() bool { return e.Legacy && e.arrays == 0 }
+
+// operand evaluates an operator's operand (or a whole formula): its value,
+// with a range implicitly intersected in a legacy formula.
+func (e *Env) operand(n Node) Value {
+	v := e.Eval(n)
+	if r, ok := v.(Ref); ok && !r.Single() && e.implicit() {
+		return e.intersect(r)
+	}
+	return e.Deref(v)
+}
+
+// EvalArg evaluates a function argument that expects a single value (IF's
+// condition ...): a range is implicitly intersected in a legacy formula,
+// otherwise left as is for the caller to lift over.
+func (e *Env) EvalArg(n Node) Value {
+	v := e.Eval(n)
+	if r, ok := v.(Ref); ok && !r.Single() && e.implicit() {
+		return e.intersect(r)
+	}
+	return v
+}
+
+// legacyArrays lists the arguments that legacy Excel evaluates as arrays
+// without Ctrl+Shift+Enter: the array-class parameters of the BIFF
+// function table ([MS-XLS] 2.5.198.17), their Excel 2010 renamings, and
+// the arrays of INDEX, LOOKUP, AGGREGATE and the regression functions
+// (the usual ways around array formulas: LOOKUP(2,1/(A1:A9="x"),B1:B9)).
+var legacyArrays = map[string]func(int) bool{
+	"SUMPRODUCT": All, "MMULT": All, "MDETERM": All, "MINVERSE": All, "TRANSPOSE": All,
+	"SUMXMY2": All, "SUMX2MY2": All, "SUMX2PY2": All,
+	"CHITEST": All, "CHISQ.TEST": All, "CORREL": All, "COVAR": All, "COVARIANCE.P": All,
+	"COVARIANCE.S": All, "FTEST": All, "F.TEST": All, "INTERCEPT": All, "PEARSON": All,
+	"RSQ": All, "STEYX": All, "SLOPE": All, "MODE": All, "MODE.SNGL": All, "MODE.MULT": All,
+	"FORECAST": From(1), "FORECAST.LINEAR": From(1),
+	"TTEST": Only(0, 1), "T.TEST": Only(0, 1), "PROB": Only(0, 1),
+	"LINEST": Only(0, 1), "LOGEST": Only(0, 1), "TREND": Only(0, 1, 2), "GROWTH": Only(0, 1, 2),
+	"INDEX": Only(0), "LOOKUP": Only(1, 2), "AGGREGATE": From(2),
 }
 
 // ToArray dereferences v and wraps a scalar in a 1×1 array.
@@ -371,7 +518,14 @@ func (e *Env) call(n callNode) Value {
 		return e.nested(func() Value { return s.Lazy(e, n.args) })
 	}
 	args := make([]Value, len(n.args))
+	arrays := legacyArrays[s.Name]
 	for i, a := range n.args {
+		if arrays != nil && arrays(i) && e.Legacy {
+			e.arrays++
+			args[i] = e.Eval(a)
+			e.arrays--
+			continue
+		}
 		args[i] = e.Eval(a)
 	}
 	return e.nested(func() Value { return e.Apply(s, args) })
@@ -386,6 +540,9 @@ func (e *Env) Apply(s *Spec, args []Value) Value {
 		if r, ok := v.(Ref); ok && s.Refs != nil && s.Refs(i) {
 			args[i] = r
 			continue
+		}
+		if r, ok := v.(Ref); ok && !r.Single() && e.implicit() && !(s.Arrays != nil && s.Arrays(i)) {
+			v = e.intersect(r)
 		}
 		v = e.Deref(v)
 		if a, ok := v.(*Array); ok {
@@ -510,7 +667,7 @@ func (e *Env) unary(n unaryNode) Value {
 	if n.op == "@" {
 		return e.intersect(e.Eval(n.x))
 	}
-	v := e.Deref(e.Eval(n.x))
+	v := e.operand(n.x)
 	f := func(x Value) Value {
 		switch n.op {
 		case "+":
@@ -541,17 +698,21 @@ func (e *Env) unary(n unaryNode) Value {
 }
 
 // intersect implements '@' (implicit intersection): the cell of a range in
-// the formula's row or column, or the first element of an array.
+// the formula's row or column (on whatever sheet the range is), or the
+// first element of an array.
 func (e *Env) intersect(v Value) Value {
 	switch x := v.(type) {
 	case Ref:
+		inRows, inCols := e.Row >= x.R1 && e.Row <= x.R2, e.Col >= x.C1 && e.Col <= x.C2
 		switch {
 		case x.Single():
 			return e.Deref(x)
-		case x.Cols() == 1 && e.Row >= x.R1 && e.Row <= x.R2 && x.Sheet == e.Sheet:
+		case x.Cols() == 1 && inRows:
 			return e.Ctx.CellValue(x.Sheet, e.Row, x.C1)
-		case x.Rows() == 1 && e.Col >= x.C1 && e.Col <= x.C2 && x.Sheet == e.Sheet:
+		case x.Rows() == 1 && inCols:
 			return e.Ctx.CellValue(x.Sheet, x.R1, e.Col)
+		case inRows && inCols:
+			return e.Ctx.CellValue(x.Sheet, e.Row, e.Col)
 		}
 		return ErrValue
 	case *Array:
@@ -563,12 +724,11 @@ func (e *Env) intersect(v Value) Value {
 	return v
 }
 
-func (e *Env) binary(op string, l, r Value) Value {
+// binary applies an operator, element by element to arrays. snap applies
+// Excel's rounding of a near-zero sum or difference (see snapZero).
+func (e *Env) binary(op string, l, r Value, snap bool) Value {
 	la, lok := l.(*Array)
 	ra, rok := r.(*Array)
-	if !lok && !rok {
-		return scalarOp(op, l, r)
-	}
 	if lok && la.Single() {
 		l, lok = la.V[0], false
 	}
@@ -576,6 +736,9 @@ func (e *Env) binary(op string, l, r Value) Value {
 		r, rok = ra.V[0], false
 	}
 	if !lok && !rok {
+		if snap {
+			return snapZero(l, r, scalarOp(op, l, r))
+		}
 		return scalarOp(op, l, r)
 	}
 	rows, cols := 1, 1
@@ -595,10 +758,34 @@ func (e *Env) binary(op string, l, r Value) Value {
 			if rok {
 				y = ra.Broadcast(i, j)
 			}
-			out.V = append(out.V, scalarOp(op, x, y))
+			v := scalarOp(op, x, y)
+			if snap {
+				v = snapZero(x, y, v)
+			}
+			out.V = append(out.V, v)
 		}
 	}
 	return out
+}
+
+// snapZero returns 0 instead of the sum or difference v of l and r when v
+// is only floating-point noise: under 2^-48 of the operands' magnitude,
+// which Excel (and LibreOffice, rtl::math::approxSub) does for a formula's
+// final addition or subtraction (Microsoft KB 78113).
+func snapZero(l, r, v Value) Value {
+	n, ok := v.(Number)
+	if !ok || n == 0 {
+		return v
+	}
+	a, err1 := Num(l)
+	b, err2 := Num(r)
+	if err1 != nil || err2 != nil {
+		return v
+	}
+	if math.Abs(float64(n)) < max(math.Abs(a), math.Abs(b))*0x1p-48 {
+		return Number(0)
+	}
+	return v
 }
 
 func scalarOp(op string, l, r Value) Value {

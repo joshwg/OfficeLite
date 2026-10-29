@@ -1,13 +1,10 @@
 package ui
 
 import (
-	"image"
 	"image/color"
 	"slices"
-	"strconv"
 
 	"gioui.org/layout"
-	"gioui.org/unit"
 	"gioui.org/widget"
 
 	"officelite/common/colors"
@@ -16,7 +13,7 @@ import (
 	"officelite/excel/model"
 )
 
-// The Home ribbon under the menu bar, as Excel's Home tab: Clipboard,
+// The Home ribbon under the menu bar, as Excel's Home tab: Undo, Clipboard,
 // Font, Alignment, Number, Styles, Cells and Editing groups. The controls
 // show the active cell's format; the commands are in format.go.
 
@@ -28,21 +25,6 @@ var commonFonts = []string{
 }
 
 var fontSizes = []float32{8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72}
-
-// palette is the color menus' choices: name and color (zero = automatic
-// font color or no fill).
-var palette = []struct {
-	name string
-	c    color.NRGBA
-}{
-	{"", color.NRGBA{}}, {"Black", colors.RGB(0x000000)}, {"White", colors.RGB(0xFFFFFF)},
-	{"Dark Gray", colors.RGB(0x595959)}, {"Gray", colors.RGB(0xA6A6A6)}, {"Light Gray", colors.RGB(0xD9D9D9)},
-	{"Dark Red", colors.RGB(0xC00000)}, {"Red", colors.RGB(0xFF0000)}, {"Orange", colors.RGB(0xFFC000)},
-	{"Yellow", colors.RGB(0xFFFF00)}, {"Light Green", colors.RGB(0x92D050)}, {"Green", colors.RGB(0x00B050)},
-	{"Light Blue", colors.RGB(0x00B0F0)}, {"Blue", colors.RGB(0x0070C0)}, {"Dark Blue", colors.RGB(0x002060)},
-	{"Purple", colors.RGB(0x7030A0)}, {"Blue Accent", colors.RGB(0xDDEBF7)}, {"Orange Accent", colors.RGB(0xFCE4D6)},
-	{"Gold Accent", colors.RGB(0xFFF2CC)}, {"Green Accent", colors.RGB(0xE2EFDA)},
-}
 
 // Menus of the drop-down buttons.
 var (
@@ -56,7 +38,7 @@ var (
 	sumItems   = []string{"Sum", "Average", "Count Numbers", "Max", "Min"}
 	fillItems  = []string{"Down", "Right"}
 	clearItems = []string{"Clear All", "Clear Formats", "Clear Contents", "Clear Notes", "Clear Hyperlinks"}
-	sortItems  = []string{"Sort A to Z", "Sort Z to A", "Custom Sort…"}
+	sortItems  = []string{"Sort A to Z", "Sort Z to A", "Custom Sort…", "", "Filter", "Clear", "Reapply"}
 	findItems  = []string{"Find…", "Replace…", "Go To…"}
 )
 
@@ -64,12 +46,15 @@ var (
 type homeRibbon struct {
 	ribbon gui.Ribbon
 
+	undo, redo                       widget.Clickable
+	undoHL, redoHL                   gui.HistoryList
 	pasteDD                          gui.DropDown
 	cut, copy, painter               widget.Clickable
 	fontDD, sizeDD                   gui.DropDown
 	bold, italic, under, strike      widget.Clickable
 	border, fill, color              widget.Clickable
-	borderDD, fillDD, colorDD        gui.DropDown
+	borderDD                         gui.DropDown
+	fillCP, colorCP                  gui.ColorPicker
 	vTop, vMid, vBot, wrap           widget.Clickable
 	left, center, right              widget.Clickable
 	indLess, indMore, merge          widget.Clickable
@@ -116,9 +101,9 @@ func (h *homeRibbon) setTips() {
 	tip(&h.border, "Borders", "", "Apply the last border to the selected cells.")
 	tip(&h.borderDD, "Borders", "", "Choose borders for the selected cells.")
 	tip(&h.fill, "Fill Color", "", "Color the background of the cells.")
-	tip(&h.fillDD, "Fill Color", "", "Choose a background color for the cells.")
+	tip(&h.fillCP, "Fill Color", "", "Choose a background color for the cells.")
 	tip(&h.color, "Font Color", "", "Change the color of your text.")
-	tip(&h.colorDD, "Font Color", "", "Choose a color for your text.")
+	tip(&h.colorCP, "Font Color", "", "Choose a color for your text.")
 	tip(&h.fontLaunch, "Format Cells: Font", "", "Show the Font tab of the Format Cells dialog.")
 	tip(&h.vTop, "Top Align", "", "Align text to the top.")
 	tip(&h.vMid, "Middle Align", "", "Align text so that it is centered between the top and bottom.")
@@ -149,36 +134,20 @@ func (h *homeRibbon) setTips() {
 	tip(&h.findDD, "Find & Select", "", "Find, replace or go to specific cells.")
 }
 
-func menuItems(labels []string) []gui.DropItem {
-	items := make([]gui.DropItem, len(labels))
-	for i, l := range labels {
-		if l == "" {
-			items[i] = gui.DropItem{Separator: true}
-		} else {
-			items[i] = gui.DropItem{Label: l}
-		}
+// choiceColor is a picked color as a style stores it: zero for "No Fill"
+// and "Automatic".
+func choiceColor(c gui.ColorChoice) color.NRGBA {
+	if c.None {
+		return color.NRGBA{}
 	}
-	return items
+	return c.Color
 }
-
-func colorItems(none string) []gui.DropItem {
-	items := make([]gui.DropItem, len(palette))
-	for i, p := range palette {
-		items[i] = gui.DropItem{Label: p.name, Swatch: p.c}
-		if i == 0 {
-			items[i].Label = none
-			items[i].Swatch = color.NRGBA{}
-		}
-	}
-	return items
-}
-
-func fmtSize(s float32) string { return strconv.FormatFloat(float64(s), 'f', -1, 32) }
 
 // ribbonHeight is the ribbon's height in dp, for tests.
 const ribbonHeight = int(gui.RibbonHeight)
 
-// layoutRibbon draws the Home ribbon and runs its commands.
+// layoutRibbon draws the Home ribbon (or the Data ribbon, data.go) and
+// runs its commands.
 func (a *App) layoutRibbon(gtx layout.Context) layout.Dimensions {
 	h := &a.home
 	if !h.tipsSet {
@@ -187,19 +156,24 @@ func (a *App) layoutRibbon(gtx layout.Context) layout.Dimensions {
 	}
 	a.painterUpdate(gtx)
 	a.formatKeys(gtx)
+	a.dataKeys(gtx)
+	if a.tab == tabData {
+		return a.layoutDataRibbon(gtx)
+	}
+	if a.tab >= tabChartDesign {
+		return a.layoutChartRibbon(gtx) // chartribbon.go
+	}
+	if a.tab >= tabPivotAnalyze {
+		return a.layoutPivotRibbon(gtx) // pivot.go
+	}
 	st := a.activeStyle()
 	sh := a.wb.Sheets[a.active]
 	act := a.state().view.Sel.Active
 	_, merged := sh.MergeAt(act.Row, act.Col)
 	th := a.ui
 
-	did := false // a command ran: give the keyboard back to the grid
-	click := func(b *widget.Clickable, f func()) {
-		for b.Clicked(gtx) {
-			f()
-			did = true
-		}
-	}
+	k := &gui.RibbonKit{Th: th, Op: a.book.Op} // k.Did: a command ran, give the keyboard back to the grid; Op: commands' undo steps take their buttons' names
+	click := func(b *widget.Clickable, f func()) { k.Click(gtx, b, f) }
 	click(&h.cut, func() { a.copy(gtx, true) })
 	click(&h.copy, func() { a.copy(gtx, false) })
 	for {
@@ -255,7 +229,7 @@ func (a *App) layoutRibbon(gtx layout.Context) layout.Dimensions {
 	}
 	sizeItems := make([]gui.DropItem, len(fontSizes))
 	for i, s := range fontSizes {
-		sizeItems[i] = gui.DropItem{Label: fmtSize(s)}
+		sizeItems[i] = gui.DropItem{Label: gui.FormatPt(float64(s))}
 	}
 	numItems := make([]gui.DropItem, len(edit.NumberFormats))
 	for i, f := range edit.NumberFormats {
@@ -272,60 +246,8 @@ func (a *App) layoutRibbon(gtx layout.Context) layout.Dimensions {
 	}
 
 	// Layout helpers.
-	row := gui.RibbonRow
-	stack := gui.RibbonStack
-	btn := func(b *widget.Clickable, ic *widget.Icon, checked bool) layout.Widget {
-		return func(gtx layout.Context) layout.Dimensions {
-			return gui.ToolButton(gtx, th, b, ic, "", checked, color.NRGBA{})
-		}
-	}
-	text := func(b *widget.Clickable, label string) layout.Widget {
-		return func(gtx layout.Context) layout.Dimensions {
-			return gui.ToolButton(gtx, th, b, nil, label, false, color.NRGBA{})
-		}
-	}
-	gap := func(w unit.Dp) layout.Widget { return layout.Spacer{Width: w}.Layout }
-	sep := gui.ToolSeparator
-	chosen := func(i int, f func(int)) {
-		if i >= 0 {
-			f(i)
-			did = true
-		}
-	}
-	combo := func(dd *gui.DropDown, width unit.Dp, cur string, items []gui.DropItem, listW unit.Dp, apply func(int)) layout.Widget {
-		return func(gtx layout.Context) layout.Dimensions {
-			dd.ListWidth = listW
-			gtx.Constraints.Min.Y = gtx.Dp(gui.RibbonRowHeight)
-			var i int
-			d := gui.Middle(gtx, func(gtx layout.Context) layout.Dimensions {
-				i = dd.Layout(gtx, th, width, cur, items)
-				return layout.Dimensions{Size: image.Pt(gtx.Dp(width), gtx.Dp(24))}
-			})
-			chosen(i, apply)
-			return d
-		}
-	}
-	drop := func(dd *gui.DropDown, ic *widget.Icon, label string, items []gui.DropItem, listW unit.Dp, apply func(int)) layout.Widget {
-		return func(gtx layout.Context) layout.Dimensions {
-			i, d := gui.DropButton(gtx, th, dd, ic, label, color.NRGBA{}, items, listW)
-			chosen(i, apply)
-			return d
-		}
-	}
-	split := func(b *widget.Clickable, dd *gui.DropDown, ic *widget.Icon, bar color.NRGBA, items []gui.DropItem, listW unit.Dp, apply func(int)) layout.Widget {
-		return func(gtx layout.Context) layout.Dimensions {
-			i, d := gui.SplitButton(gtx, th, b, dd, ic, bar, items, listW)
-			chosen(i, apply)
-			return d
-		}
-	}
-	big := func(dd *gui.DropDown, ic *widget.Icon, label string, items []gui.DropItem, listW unit.Dp, apply func(int)) layout.Widget {
-		return func(gtx layout.Context) layout.Dimensions {
-			i, d := gui.BigDropButton(gtx, th, dd, ic, label, items, listW)
-			chosen(i, apply)
-			return d
-		}
-	}
+	row, stack, sep, gap := gui.RibbonRow, gui.RibbonStack, gui.ToolSeparator, gui.Gap
+	btn, text, combo, drop, split, colorSplit, big := k.Btn, k.Text, k.Combo, k.Drop, k.Split, k.ColorSplit, k.BigDrop
 
 	numName := edit.NumberFormatName(st.NumFmtID, st.NumFmtCode)
 	family := st.Font.Family
@@ -341,8 +263,12 @@ func (a *App) layoutRibbon(gtx layout.Context) layout.Dimensions {
 	}
 
 	groups := []gui.RibbonGroup{
+		{Caption: "Undo", Content: stack(
+			row(k.History(&h.undo, &h.undoHL, gui.IconUndo, "Undo", "Ctrl+Z", a.undoLabels(), a.undoN)),
+			row(k.History(&h.redo, &h.redoHL, gui.IconRedo, "Redo", "Ctrl+Y", a.redoLabels(), a.redoN)),
+		)},
 		{Caption: "Clipboard", Content: gui.RibbonSide(2,
-			big(&h.pasteDD, gui.IconContentPaste, "Paste", menuItems(pasteItems), 170, func(i int) { a.pasteSpecial(edit.PasteMode(i)) }),
+			big(&h.pasteDD, gui.IconContentPaste, "Paste", gui.MenuItems(pasteItems), 170, func(i int) { a.pasteSpecial(edit.PasteMode(i)) }),
 			stack(
 				row(btn(&h.cut, gui.IconContentCut, false), btn(&h.copy, gui.IconContentCopy, false)),
 				row(btn(&h.painter, gui.IconPainter, h.painterClip != nil)),
@@ -352,7 +278,7 @@ func (a *App) layoutRibbon(gtx layout.Context) layout.Dimensions {
 			row(
 				combo(&h.fontDD, 130, family, fontItems, 190, func(i int) { a.setFont(fonts[i]) }),
 				gap(4),
-				combo(&h.sizeDD, 48, fmtSize(st.Font.SizePt), sizeItems, 60, func(i int) {
+				combo(&h.sizeDD, 48, gui.FormatPt(float64(st.Font.SizePt)), sizeItems, 60, func(i int) {
 					a.formatGrow(func(s *model.Style) { s.Font.SizePt = fontSizes[i] })
 				}),
 			),
@@ -362,21 +288,21 @@ func (a *App) layoutRibbon(gtx layout.Context) layout.Dimensions {
 				btn(&h.under, gui.IconUnderline, st.Font.Underline),
 				btn(&h.strike, gui.IconStrike, st.Font.Strike),
 				sep,
-				split(&h.border, &h.borderDD, gui.IconBorderAll, color.NRGBA{}, menuItems(edit.BorderNames), 190, func(i int) {
+				split(&h.border, &h.borderDD, gui.IconBorderAll, color.NRGBA{}, gui.MenuItems(edit.BorderNames), 190, func(i int) {
 					h.lastBorder = edit.BorderKind(i)
 					a.borders(h.lastBorder)
 				}),
-				split(&h.fill, &h.fillDD, gui.IconFill, fillBar, colorItems("No Fill"), 170, func(i int) {
-					if i > 0 {
-						h.lastFill = palette[i].c
+				colorSplit(&h.fill, &h.fillCP, gui.IconFill, fillBar, "No Fill", func(c gui.ColorChoice) {
+					if !c.None {
+						h.lastFill = c.Color
 					}
-					a.format(func(s *model.Style) { s.Fill = palette[i].c })
+					a.format(func(s *model.Style) { s.Fill = choiceColor(c) })
 				}),
-				split(&h.color, &h.colorDD, gui.IconTextColor, colorBar, colorItems("Automatic"), 170, func(i int) {
-					if i > 0 {
-						h.lastColor = palette[i].c
+				colorSplit(&h.color, &h.colorCP, gui.IconTextColor, colorBar, "Automatic", func(c gui.ColorChoice) {
+					if !c.None {
+						h.lastColor = c.Color
 					}
-					a.setFontColor(palette[i].c)
+					a.setFontColor(choiceColor(c))
 				}),
 			),
 		)},
@@ -396,7 +322,7 @@ func (a *App) layoutRibbon(gtx layout.Context) layout.Dimensions {
 				btn(&h.indLess, gui.IconIndentLess, false),
 				btn(&h.indMore, gui.IconIndentMore, false),
 				sep,
-				split(&h.merge, &h.mergeDD, gui.IconMerge, color.NRGBA{}, menuItems(mergeItems), 160, func(i int) {
+				split(&h.merge, &h.mergeDD, gui.IconMerge, color.NRGBA{}, gui.MenuItems(mergeItems), 160, func(i int) {
 					a.merge(edit.MergeKind(i))
 				}),
 			),
@@ -407,9 +333,9 @@ func (a *App) layoutRibbon(gtx layout.Context) layout.Dimensions {
 				a.setNumFmt(f.ID, f.Code)
 			})),
 			row(
-				text(&h.acct, "$"), text(&h.pct, "%"), text(&h.comma, ","),
+				text(&h.acct, "$", false), text(&h.pct, "%", false), text(&h.comma, ",", false),
 				sep,
-				text(&h.decMore, ".0→.00"), text(&h.decLs, ".00→.0"),
+				text(&h.decMore, ".0→.00", false), text(&h.decLs, ".00→.0", false),
 			),
 		)},
 		{Caption: "Styles", Content: big(&h.stylesDD, gui.IconStyles, "Cell Styles", styleItems, 170, func(i int) {
@@ -422,25 +348,25 @@ func (a *App) layoutRibbon(gtx layout.Context) layout.Dimensions {
 		})},
 		{Caption: "Cells", Content: stack(
 			row(
-				drop(&h.insertDD, gui.IconInsertCells, "Insert", menuItems(insertItems), 180, a.insertMenu),
-				drop(&h.deleteDD, gui.IconDeleteCells, "Delete", menuItems(deleteItems), 180, a.deleteMenu),
+				drop(&h.insertDD, gui.IconInsertCells, "Insert", gui.MenuItems(insertItems), 180, a.insertMenu),
+				drop(&h.deleteDD, gui.IconDeleteCells, "Delete", gui.MenuItems(deleteItems), 180, a.deleteMenu),
 			),
-			row(drop(&h.formatDD, gui.IconFormatCells, "Format", menuItems(formatItems), 190, func(i int) { a.formatMenu(gtx, i) })),
+			row(drop(&h.formatDD, gui.IconFormatCells, "Format", gui.MenuItems(formatItems), 190, func(i int) { a.formatMenu(gtx, i) })),
 		)},
 		{Caption: "Editing", Content: stack(
 			row(
-				drop(&h.sumDD, gui.IconFunctions, "AutoSum", menuItems(sumItems), 150, a.autoSum),
-				drop(&h.fillCmdDD, gui.IconFillDown, "Fill", menuItems(fillItems), 130, a.fillMenu),
-				drop(&h.clearDD, gui.IconClear, "Clear", menuItems(clearItems), 150, a.clearMenu),
+				drop(&h.sumDD, gui.IconFunctions, "AutoSum", gui.MenuItems(sumItems), 150, a.autoSum),
+				drop(&h.fillCmdDD, gui.IconFillDown, "Fill", gui.MenuItems(fillItems), 130, a.fillMenu),
+				drop(&h.clearDD, gui.IconClear, "Clear", gui.MenuItems(clearItems), 150, a.clearMenu),
 			),
 			row(
-				drop(&h.sortDD, gui.IconSort, "Sort & Filter", menuItems(sortItems), 150, a.sortMenu),
-				drop(&h.findDD, gui.IconSearch, "Find & Select", menuItems(findItems), 140, a.findMenu),
+				drop(&h.sortDD, gui.IconSort, "Sort & Filter", gui.MenuItems(sortItems), 150, a.sortMenu),
+				drop(&h.findDD, gui.IconSearch, "Find & Select", gui.MenuItems(findItems), 140, a.findMenu),
 			),
 		)},
 	}
 	dims := h.ribbon.Layout(gtx, th, groups...)
-	if did && !a.ed.active && !a.rename.active && !a.fmtDlg.open && !a.askDlg.open {
+	if k.Did && !a.ed.active && !a.rename.active && !a.fmtDlg.open && !a.askDlg.open {
 		a.grid.focusPending = true
 	}
 	return dims

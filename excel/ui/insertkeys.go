@@ -24,11 +24,11 @@ func (a *App) insertKeys(gtx layout.Context) {
 			break
 		}
 		e, ok := ev.(key.Event)
-		if !ok || e.State != key.Press || a.back.Visible || a.dialog.Visible {
+		if !ok || e.State != key.Press || a.back.Visible || a.rename.active {
 			continue
 		}
-		if a.ins.kind != dlgNone && a.ins.kind != dlgFind {
-			continue // a dialog has the keyboard
+		if a.modalOpen() || a.onChartSheet() {
+			continue // a dialog has the keyboard; a chart sheet has no cells
 		}
 		if a.ed.active && e.Name != key.NameF3 {
 			continue // shortcuts that change cells wait for the entry

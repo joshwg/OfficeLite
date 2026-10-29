@@ -20,7 +20,7 @@ import (
 )
 
 // The Insert menu: Insert/Delete Cells, sheet rows, columns and sheets,
-// Function, Symbol, Hyperlink and notes.
+// Function, Symbol, Hyperlink, notes, PivotTable and charts.
 
 // Insert menu items.
 const (
@@ -39,6 +39,8 @@ const (
 	_
 	insNote
 	insDeleteNote
+	_
+	insPivot
 )
 
 func (a *App) insertMenuDef() gui.Menu {
@@ -63,7 +65,7 @@ func (a *App) insertMenuDef() gui.Menu {
 	if noteHere {
 		noteLabel = "Edit Note"
 	}
-	return gui.Menu{Label: "Insert", Items: []gui.MenuItem{
+	return gui.Menu{Label: "Insert", Items: append([]gui.MenuItem{
 		insCells:       {Label: "Insert Cells…", Disabled: editing, Tip: "Add cells, shifting the others right or down, or whole rows or columns."},
 		insDeleteCells: {Label: "Delete Cells…", Disabled: editing, Tip: "Delete the selected cells, shifting the others left or up, or whole rows or columns."},
 		2:              {Separator: true},
@@ -79,10 +81,15 @@ func (a *App) insertMenuDef() gui.Menu {
 		12:             {Separator: true},
 		insNote:        {Label: noteLabel, Shortcut: "Shift+F2", Disabled: editing, Tip: "Add a note to the active cell, or change its note."},
 		insDeleteNote:  {Label: "Delete Notes", Disabled: editing || !hasNote, Tip: "Delete the notes in the selection."},
-	}}
+		15:             {Separator: true},
+		insPivot:       {Label: "PivotTable…", Disabled: editing, Tip: "Summarize the data around the selection in a PivotTable: arrange and summarize complicated data and drill down on details."},
+	}, a.chartInsertItems()...)} // chartribbon.go
 }
 
 func (a *App) insertChosen(item int) {
+	if a.chartInsertChosen(item) {
+		return
+	}
 	switch item {
 	case insCells:
 		a.insertCellsDialog()
@@ -102,6 +109,8 @@ func (a *App) insertChosen(item int) {
 		a.clearHyperlinks()
 	case insNote:
 		a.newNote()
+	case insPivot:
+		a.insertPivot() // pivot.go
 	case insDeleteNote:
 		a.clearNotes()
 	}
@@ -168,11 +177,11 @@ func (a *App) layoutCellsDialog(gtx layout.Context, k int) {
 	body := func(gtx layout.Context) layout.Dimensions {
 		var rows []layout.FlexChild
 		for _, o := range opts {
-			rows = append(rows, layout.Rigid(a.radio(&d.shift, o[0], o[1])))
+			rows = append(rows, layout.Rigid(a.ui.Radio(&d.shift, o[0], o[1])))
 		}
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, rows...)
 	}
-	a.modal(gtx, &d.block, title, 260, body, a.accentButton(&d.ok, "OK"), a.plainButton(&d.cancel, "Cancel"))
+	a.ui.ModalDialog(gtx, &d.block, title, 260, body, a.accentButton(&d.ok, "OK"), a.plainButton(&d.cancel, "Cancel"))
 }
 
 // shiftCells inserts or deletes the selection's cells.
@@ -295,12 +304,13 @@ func (a *App) layoutFunctionDialog(gtx layout.Context, k int) {
 		names = append(names, c.Name)
 	}
 	th := a.ui
+	form := gui.Form{Th: th, LabelW: 90}
 	body := func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-			a.labeled("Search:", 90, func(gtx layout.Context) layout.Dimensions {
-				return a.textField(gtx, &d.search, 300, 1, "Type part of a function name")
+			form.Field("Search:", func(gtx layout.Context) layout.Dimensions {
+				return gui.TextField(gtx, a.ui, &d.search, 300, 1, "Type part of a function name")
 			}),
-			a.labeled("Category:", 90, func(gtx layout.Context) layout.Dimensions {
+			form.Field("Category:", func(gtx layout.Context) layout.Dimensions {
 				if i := d.cat.Layout(gtx, th, 220, names[d.catIdx], dropItems(names)); i >= 0 {
 					d.catIdx = i
 				}
@@ -337,7 +347,7 @@ func (a *App) layoutFunctionDialog(gtx layout.Context, k int) {
 			}),
 		)
 	}
-	a.modal(gtx, &a.ins.block, "Insert Function", 440, body, a.accentButton(&a.ins.ok, "OK"), a.plainButton(&a.ins.cancel, "Cancel"))
+	a.ui.ModalDialog(gtx, &a.ins.block, "Insert Function", 440, body, a.accentButton(&a.ins.ok, "OK"), a.plainButton(&a.ins.cancel, "Cancel"))
 }
 
 // insertIntoEntry types s into the cell entry at the caret, starting an
@@ -446,7 +456,7 @@ func (a *App) layoutSymbolDialog(gtx layout.Context, k int) {
 		}))
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, rows...)
 	}
-	a.modal(gtx, &a.ins.block, "Symbol", unit.Dp(30*perRow+40), body, a.accentButton(&a.ins.ok, "Insert"), a.plainButton(&a.ins.cancel, "Close"))
+	a.ui.ModalDialog(gtx, &a.ins.block, "Symbol", unit.Dp(30*perRow+40), body, a.accentButton(&a.ins.ok, "Insert"), a.plainButton(&a.ins.cancel, "Close"))
 }
 
 // --- Hyperlink ---
@@ -560,13 +570,14 @@ func (a *App) layoutLinkDialog(gtx layout.Context, k int) {
 		return
 	}
 	body := func(gtx layout.Context) layout.Dimensions {
+		form := gui.Form{Th: a.ui, LabelW: 120}
 		field := func(e *widget.Editor, hint string) layout.Widget {
-			return func(gtx layout.Context) layout.Dimensions { return a.textField(gtx, e, 360, 1, hint) }
+			return func(gtx layout.Context) layout.Dimensions { return gui.TextField(gtx, a.ui, e, 360, 1, hint) }
 		}
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-			a.labeled("Text to display:", 120, field(&d.display, "")),
-			a.labeled("Address:", 120, field(&d.address, "https://…, mailto:…, a file, or #Sheet2!A1")),
-			a.labeled("ScreenTip:", 120, field(&d.tip, "")),
+			form.Field("Text to display:", field(&d.display, "")),
+			form.Field("Address:", field(&d.address, "https://…, mailto:…, a file, or #Sheet2!A1")),
+			form.Field("ScreenTip:", field(&d.tip, "")),
 			layout.Rigid(a.ui.Label(12, "Ctrl+click the cell to follow the link.", mutedText, font.Normal).Layout),
 			a.errorLine(),
 		)
@@ -575,7 +586,7 @@ func (a *App) layoutLinkDialog(gtx layout.Context, k int) {
 	if d.existing {
 		btns = append([]layout.Widget{a.plainButton(&a.ins.extra, "Remove Link")}, btns...)
 	}
-	a.modal(gtx, &a.ins.block, "Insert Hyperlink", 540, body, btns...)
+	a.ui.ModalDialog(gtx, &a.ins.block, "Insert Hyperlink", 540, body, btns...)
 }
 
 // clearHyperlinks removes the selection's hyperlinks, keeping the text

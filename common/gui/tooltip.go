@@ -2,8 +2,11 @@ package gui
 
 import (
 	"image"
+	"reflect"
+	"runtime"
 	"sync"
 	"time"
+	"weak"
 
 	"gioui.org/font"
 	"gioui.org/io/event"
@@ -37,10 +40,33 @@ type Tip struct {
 	Name, Keys, Desc string
 }
 
+// tips holds each button's tip. Its keys are pointers into a window's
+// state (&h.bold, &p.cells[i], ...), so they are held weakly: a strong
+// key would keep every closed window's App reachable for good. A cleanup
+// drops the entry once its button's memory is collected.
 var (
 	tipsMu sync.RWMutex
-	tips   = map[any]Tip{}
+	tips   = map[tipKey]Tip{}
 )
+
+// tipKey identifies a button: its pointer, held weakly, and type (a
+// *DropDown and its first field share an address). Keys that aren't
+// pointers are kept as they are in v.
+type tipKey struct {
+	t reflect.Type
+	p weak.Pointer[byte]
+	v any
+}
+
+// tipKeyOf returns btn's key and, for a pointer, the pointer itself.
+func tipKeyOf(btn any) (tipKey, *byte) {
+	v := reflect.ValueOf(btn)
+	if v.Kind() != reflect.Pointer || v.IsNil() {
+		return tipKey{v: btn}, nil
+	}
+	p := (*byte)(v.UnsafePointer())
+	return tipKey{t: v.Type(), p: weak.Make(p)}, p
+}
 
 // SetTip attaches a tooltip to a button, a *widget.Clickable or a
 // *DropDown. keys and desc may be empty.
@@ -48,14 +74,26 @@ func SetTip(btn any, name, keys, desc string) {
 	if d, ok := btn.(*DropDown); ok {
 		btn = &d.btn
 	}
+	k, p := tipKeyOf(btn)
 	tipsMu.Lock()
-	tips[btn] = Tip{name, keys, desc}
+	_, had := tips[k]
+	tips[k] = Tip{name, keys, desc}
+	tipsMu.Unlock()
+	if !had && p != nil {
+		runtime.AddCleanup(p, dropTip, k)
+	}
+}
+
+func dropTip(k tipKey) {
+	tipsMu.Lock()
+	delete(tips, k)
 	tipsMu.Unlock()
 }
 
 func tipFor(btn any) (Tip, bool) {
+	k, _ := tipKeyOf(btn)
 	tipsMu.RLock()
-	t, ok := tips[btn]
+	t, ok := tips[k]
 	tipsMu.RUnlock()
 	return t, ok
 }

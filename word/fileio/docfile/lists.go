@@ -1,6 +1,7 @@
 package docfile
 
 import (
+	"strconv"
 	"strings"
 	"unicode/utf16"
 
@@ -88,6 +89,7 @@ func (r *reader) readLists() {
 		list := &model.List{}
 		if d != nil {
 			list.Levels = append(list.Levels, d.levels...)
+			list.Abstract = strconv.Itoa(int(e.lsid)) // LFOs of one list count together
 		}
 		if q+4 <= len(t) {
 			q += 4 // cp
@@ -103,10 +105,11 @@ func (r *reader) readLists() {
 					}
 					q = next
 					if ilvl < len(list.Levels) {
+						lvl.Restart = fl&0x10 != 0
 						list.Levels[ilvl] = lvl
 					}
 				} else if fl&0x10 != 0 && ilvl < len(list.Levels) { // fStartAt
-					list.Levels[ilvl].Start = start
+					list.Levels[ilvl].Start, list.Levels[ilvl].Restart = start, true
 				}
 			}
 		}

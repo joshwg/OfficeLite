@@ -10,8 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/richardlehane/mscfb"
-
+	"officelite/common/iwork"
 	"officelite/common/ole"
 )
 
@@ -49,21 +48,29 @@ func Detect(name string, data []byte) Kind {
 	return detect(name, data, bytes.NewReader(data), int64(len(data)))
 }
 
-func detect(name string, head []byte, r io.ReaderAt, size int64) Kind {
+func detect(name string, head []byte, r io.ReaderAt, size int64) (k Kind) {
+	// A damaged file falls back to its extension rather than crashing;
+	// opening it then reports the damage.
+	defer func() {
+		if recover() != nil {
+			k = byExtension(name)
+		}
+	}()
 	switch {
 	case bytes.HasPrefix(head, []byte("PK\x03\x04")):
 		if k := detectZip(r, size); k != Unknown {
 			return k
 		}
 	case ole.IsCompoundFile(head):
-		if k := detectOLE(r); k != Unknown {
+		if k := detectOLE(r, size); k != Unknown {
 			return k
 		}
 	}
 	return byExtension(name)
 }
 
-// detectZip looks for the main part of an Office Open XML package.
+// detectZip looks for the main part of an Office Open XML package, or
+// the document archive of a Numbers or Pages file.
 func detectZip(r io.ReaderAt, size int64) Kind {
 	zr, err := zip.NewReader(r, size)
 	if err != nil {
@@ -75,14 +82,21 @@ func detectZip(r io.ReaderAt, size int64) Kind {
 			return Spreadsheet
 		case "word/document.xml":
 			return Document
+		case "index/document.iwa":
+			switch iwork.Detect(r, size) {
+			case iwork.Numbers:
+				return Spreadsheet
+			case iwork.Pages:
+				return Document
+			}
 		}
 	}
 	return Unknown
 }
 
 // detectOLE looks at the stream names of a binary Office file.
-func detectOLE(r io.ReaderAt) Kind {
-	cf, err := mscfb.New(r)
+func detectOLE(r io.ReaderAt, size int64) Kind {
+	cf, err := ole.Open(r, size)
 	if err != nil {
 		return Unknown
 	}
@@ -99,9 +113,9 @@ func detectOLE(r io.ReaderAt) Kind {
 
 func byExtension(name string) Kind {
 	switch strings.ToLower(filepath.Ext(name)) {
-	case ".xlsx", ".xlsm", ".xltx", ".xltm", ".xls", ".xlt", ".csv", ".tsv", ".tab":
+	case ".xlsx", ".xlsm", ".xltx", ".xltm", ".xls", ".xlt", ".csv", ".tsv", ".tab", ".numbers":
 		return Spreadsheet
-	case ".docx", ".docm", ".dotx", ".dotm", ".doc", ".dot", ".rtf", ".txt", ".odt":
+	case ".docx", ".docm", ".dotx", ".dotm", ".doc", ".dot", ".rtf", ".txt", ".odt", ".pages":
 		return Document
 	}
 	return Unknown

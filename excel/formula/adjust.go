@@ -88,15 +88,17 @@ func DeleteSheetRefs(f, sheet string) string {
 }
 
 // QuoteSheet returns a sheet name as it is written before '!' in a
-// formula: quoted when it is not a plain identifier or could be read as a
-// cell reference.
+// formula: quoted when it is not a plain identifier (it starts with a
+// digit, or has a space or punctuation) or could be read as a cell
+// reference (A1, Q1, R1C1) or a logical value (TRUE).
 func QuoteSheet(name string) string {
 	plain := name != "" && isIdentStart(name[0])
 	for i := 0; plain && i < len(name); i++ {
 		c := name[i]
 		plain = isLetter(c) || c >= '0' && c <= '9' || c == '_' || c == '.' || c >= 0x80
 	}
-	if plain && (matchCell(name) == len(name) || looksR1C1(name)) {
+	if plain && (matchCell(name) == len(name) || looksR1C1(name) ||
+		strings.EqualFold(name, "TRUE") || strings.EqualFold(name, "FALSE")) {
 		plain = false
 	}
 	if plain {

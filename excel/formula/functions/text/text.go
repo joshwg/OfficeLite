@@ -19,6 +19,7 @@ import (
 	"unicode"
 	"unicode/utf16"
 
+	"officelite/common/textenc"
 	f "officelite/excel/formula"
 )
 
@@ -594,7 +595,7 @@ func char(_ *f.Env, a []f.Value) f.Value {
 	if n < 1 || n > 255 {
 		return f.ErrValue
 	}
-	return f.String(string(decode1252(byte(n))))
+	return f.String(string(textenc.Windows1252Rune(byte(n))))
 }
 
 // CODE(text): the Windows-1252 code of the first character; characters
@@ -608,7 +609,7 @@ func code(_ *f.Env, a []f.Value) f.Value {
 		return f.ErrValue
 	}
 	r := []rune(s)[0]
-	if b, ok := encode1252(r); ok {
+	if b, ok := textenc.Windows1252Byte(r); ok {
 		return f.Number(b)
 	}
 	return f.Number('?')

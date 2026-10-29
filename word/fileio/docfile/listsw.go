@@ -118,12 +118,8 @@ func (w *writer) lvl(lv model.ListLevel) []byte {
 		chpx.w(sprmCRgFtc1, f)
 		chpx.w(sprmCRgFtc2, f)
 	}
-	start := lv.Start
-	if start == 0 && nfc != 23 {
-		start = 1
-	}
-	b := le.AppendUint32(nil, uint32(int32(start)))
-	b = append(b, nfc, 0) // nfc, jc = left
+	b := le.AppendUint32(nil, uint32(int32(lv.Start))) // a list may start at 0
+	b = append(b, nfc, 0)                              // nfc, jc = left
 	b = append(b, nums[:]...)
 	b = append(b, 0)          // ixchFollow: tab
 	b = le.AppendUint32(b, 0) // dxaIndentSav

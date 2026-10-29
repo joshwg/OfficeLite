@@ -2,7 +2,6 @@ package ui
 
 import (
 	"image"
-	"image/color"
 	"math"
 
 	"gioui.org/f32"
@@ -63,11 +62,11 @@ func (d *window) enterHF(i int, footer bool) {
 		d.exitHF()
 	}
 	doc := d.doc
-	kind := doc.HF.KindFor(i)
-	hf := *doc.HF.Slot(kind, footer)
+	hfs, kind := d.eng.PageHF(i) // the page's section's
+	hf := d.eng.PageHeader(i, footer)
 	if hf == nil {
 		n := len(doc.Styles.Styles)
-		hf = doc.NewHeaderFooter(kind, footer)
+		hf = doc.NewHeaderFooterIn(hfs, kind, footer)
 		d.ed.Version++ // a change to save
 		d.eng.Invalidate(nil, len(doc.Styles.Styles) != n)
 	}
@@ -176,7 +175,7 @@ func (d *window) hfInsertField(instr string) {
 	if !d.hf.on {
 		d.enterHF(d.eng.PageOfPos(d.ed.Sel.Caret), true)
 	}
-	v, _ := wl.FieldValue(instr, d.hf.page+1, len(d.eng.Pages))
+	v, _ := d.eng.PageFieldValue(d.hf.page, instr)
 	d.ed.InsertSimpleField(instr, v)
 	d.edited()
 }
@@ -184,11 +183,15 @@ func (d *window) hfInsertField(instr string) {
 // setHFSwitch turns Different First Page or Different Odd & Even Pages
 // on or off (one change to the document; not on the undo stack).
 func (d *window) setHFSwitch(first bool, on bool) {
-	hf := &d.doc.HF
 	if first {
-		hf.TitlePage = on
+		page := d.eng.PageOfPos(d.bodyEd().Sel.Caret)
+		if d.hf.on {
+			page = d.hf.page
+		}
+		hfs, _ := d.eng.PageHF(page) // per section
+		hfs.TitlePage = on
 	} else {
-		hf.EvenOdd = on
+		d.doc.HF.EvenOdd = on
 	}
 	d.bodyEd().Version++
 	d.eng.InvalidateHF()
@@ -211,7 +214,8 @@ func (d *window) removeHF(footer bool) {
 		page = d.hf.page
 		d.exitHF()
 	}
-	slot := d.doc.HF.Slot(d.doc.HF.KindFor(page), footer)
+	hfs, kind := d.eng.PageHF(page)
+	slot := hfs.Slot(kind, footer)
 	if *slot == nil {
 		return
 	}
@@ -236,8 +240,9 @@ func (d *window) hfBar(gtx layout.Context) layout.Dimensions {
 	for h.numPages.Clicked(gtx) {
 		d.hfInsertField(model.FieldNumPages)
 	}
+	secHF, _ := d.eng.PageHF(h.page)
 	for h.firstPg.Clicked(gtx) {
-		d.setHFSwitch(true, !d.doc.HF.TitlePage)
+		d.setHFSwitch(true, !secHF.TitlePage)
 	}
 	for h.oddEven.Clicked(gtx) {
 		d.setHFSwitch(false, !d.doc.HF.EvenOdd)
@@ -271,10 +276,9 @@ func (d *window) hfBar(gtx layout.Context) layout.Dimensions {
 			what = "Odd Page " + what
 		}
 	}
+	k := &gui.RibbonKit{Th: th}
 	text := func(b *widget.Clickable, label string, checked bool) layout.FlexChild {
-		return layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return gui.ToolButton(gtx, th, b, nil, label, checked, color.NRGBA{})
-		})
+		return layout.Rigid(k.Text(b, label, checked))
 	}
 	check := func(b *widget.Clickable, label string, on bool) layout.FlexChild {
 		mark := "☐ "
@@ -293,7 +297,7 @@ func (d *window) hfBar(gtx layout.Context) layout.Dimensions {
 			text(&h.pageNum, "# Page Number", false),
 			text(&h.numPages, "Number of Pages", false),
 			layout.Rigid(gui.ToolSeparator),
-			check(&h.firstPg, "Different First Page", d.doc.HF.TitlePage),
+			check(&h.firstPg, "Different First Page", secHF.TitlePage),
 			check(&h.oddEven, "Different Odd & Even Pages", d.doc.HF.EvenOdd),
 			layout.Rigid(gui.ToolSeparator),
 			text(&h.gotoOther, other, false),
@@ -350,7 +354,7 @@ func (d *window) drawPageExtras(gtx layout.Context, pg *wl.Page) {
 		o.Pop()
 	}
 	names := [3]string{"", "First Page ", "Even Page "}
-	k := d.doc.HF.KindFor(pg.Index)
+	_, k := d.eng.PageHF(pg.Index)
 	pre := names[k]
 	if k == model.HFDefault && d.doc.HF.EvenOdd {
 		pre = "Odd Page "

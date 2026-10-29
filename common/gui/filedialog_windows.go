@@ -59,8 +59,12 @@ func (d *FileDialog) listen(e event.Event) {
 }
 
 // filterSpec is the dialog's filter: "label\0pattern\0" pairs ending in
-// an extra \0.
-func filterSpec(filters []FileFilter) []uint16 {
+// an extra \0, or nil (no filter) when there are none: a lone \0 isn't
+// double-terminated, and the dialog would read past it.
+func filterSpec(filters []FileFilter) *uint16 {
+	if len(filters) == 0 {
+		return nil
+	}
 	var spec []rune
 	for _, f := range filters {
 		spec = append(spec, []rune(f.Label())...)
@@ -69,7 +73,7 @@ func filterSpec(filters []FileFilter) []uint16 {
 		spec = append(spec, 0)
 	}
 	spec = append(spec, 0)
-	return utf16.Encode(spec)
+	return &utf16.Encode(spec)[0]
 }
 
 func (d *FileDialog) open(filters []FileFilter) (string, error) {
@@ -77,7 +81,7 @@ func (d *FileDialog) open(filters []FileFilter) (string, error) {
 	path := make([]uint16, 32768)
 	ofn := openFileName{
 		Owner:       d.owner.Load(),
-		Filter:      &filter[0],
+		Filter:      filter,
 		FilterIndex: 1,
 		File:        &path[0],
 		MaxFile:     uint32(len(path)),
@@ -96,7 +100,7 @@ func (d *FileDialog) save(name string, filters []FileFilter) (string, error) {
 	copy(path[:len(path)-1], utf16.Encode([]rune(name)))
 	ofn := openFileName{
 		Owner:       d.owner.Load(),
-		Filter:      &filter[0],
+		Filter:      filter,
 		FilterIndex: 1,
 		File:        &path[0],
 		MaxFile:     uint32(len(path)),

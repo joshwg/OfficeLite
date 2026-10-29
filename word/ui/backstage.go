@@ -14,6 +14,7 @@ import (
 
 	"officelite/common/doctype"
 	"officelite/common/gui"
+	"officelite/common/lockfile"
 	"officelite/common/recent"
 	"officelite/common/version"
 	"officelite/word/fileio"
@@ -80,7 +81,7 @@ func (d *window) handleBackstage(ev gui.BackstageEvent) {
 // saveFormat is the format Save writes to the current file, if it has one
 // WordLite writes.
 func (d *window) saveFormat() (fileio.Format, bool) {
-	if d.path == "" {
+	if d.path == "" || d.lk.readOnly {
 		return 0, false
 	}
 	switch strings.ToLower(filepath.Ext(d.path)) {
@@ -113,13 +114,15 @@ func (d *window) save() {
 
 // saveTo writes the document to its file in format f.
 func (d *window) saveTo(f fileio.Format) {
-	if err := fileio.SaveFile(d.doc, d.path, f); err != nil {
-		d.errMsg = "Save failed: " + err.Error()
+	// After an AutoSave still writing, never under it (autosave.go).
+	if err := d.as.saver.Save(func() error { return fileio.SaveFile(d.doc, d.path, f) }); err != nil {
+		d.errMsg = lockfile.SaveError(d.path, err)
 		d.closeAfterSave = false
 		return
 	}
 	d.errMsg = ""
 	d.saved = d.bodyEd().Version
+	d.dropRecovery() // recover.go
 	d.fileInfo, _ = os.Stat(d.path)
 	d.notice = "Saved " + filepath.Base(d.path)
 	d.afterSave()
@@ -153,12 +156,12 @@ func (d *window) saveAs(f fileio.Format, export bool) {
 func (d *window) writeAs(f fileio.Format, export bool) {
 	d.saving.Store(true)
 	doc, version := d.doc.Clone(), d.bodyEd().Version
-	name := d.baseName() + f.Ext()
+	name := d.saveAsName(f) // recover.go
 	go func() {
 		defer d.saving.Store(false)
 		wc, err := d.expl.CreateFile(name)
 		if errors.Is(err, explorer.ErrUserDecline) {
-			d.post(func() { d.closeAfterSave = false })
+			d.calls.Post(func() { d.closeAfterSave = false })
 			return
 		}
 		if err == nil {
@@ -171,7 +174,7 @@ func (d *window) writeAs(f fileio.Format, export bool) {
 		if file, ok := wc.(*os.File); ok && err == nil {
 			path = file.Name()
 		}
-		d.post(func() { d.savedAs(f, path, export, version, err) })
+		d.calls.Post(func() { d.savedAs(f, path, export, version, err) })
 	}()
 }
 
@@ -197,13 +200,20 @@ func (d *window) savedAs(f fileio.Format, path string, export bool, version int,
 		return
 	}
 	d.saved = version
+	d.dropRecovery()
 	if filepath.IsAbs(path) {
 		d.path = path
 		d.fileInfo, _ = os.Stat(path)
 		d.cfg.Recent.Add(path, recent.Document)
+		d.lk.readOnly = false
+		d.lk.doc.Set(path, true) // the new file's registration and owner file
+		d.as.elsewhere = false
 	}
 	d.doc.Name = filepath.Base(path)
 	d.updateTitle()
+	if !d.as.saver.On() {
+		d.autoSaveLoaded() // on for a .docx when that's the default (autosave.go)
+	}
 	d.afterSave()
 }
 
@@ -227,7 +237,7 @@ func (d *window) backstagePage(p gui.Page) []layout.Widget {
 		f := saveFormats[bs.saveFmt]
 		rows := []layout.Widget{
 			th.Property("File name", d.baseName()+f.Ext()),
-			th.Property("Current file", orNone(d.path, "Not saved yet")),
+			th.Property("Current file", gui.OrNone(d.path, "Not saved yet")),
 			th.Heading("Save as type"),
 		}
 		for i, sf := range saveFormats {
@@ -277,13 +287,13 @@ func (d *window) infoPage() []layout.Widget {
 	st := d.docStats()
 	rows := []layout.Widget{
 		th.Heading(doc.Name),
-		th.Paragraph(orNone(d.path, "This document hasn't been saved yet."), gui.MutedText),
+		th.Paragraph(gui.OrNone(d.path, "This document hasn't been saved yet."), gui.MutedText),
 		th.Heading("Properties"),
 		th.Property("Type", fileType(d.path)),
 	}
 	if fi := d.fileInfo; fi != nil {
 		rows = append(rows,
-			th.Property("Size", byteSize(fi.Size())),
+			th.Property("Size", gui.ByteSize(fi.Size())),
 			th.Property("Modified", fi.ModTime().Format("January 2, 2006 3:04 PM")))
 	}
 	styles := d.bs.info.styles
@@ -296,7 +306,7 @@ func (d *window) infoPage() []layout.Widget {
 		th.Property("Words", fmt.Sprint(st.words)),
 		th.Property("Characters", fmt.Sprint(st.chars)),
 		th.Property("Paragraphs", fmt.Sprint(st.paras)),
-		th.Property("Styles used", orNone(styleText, "None")),
+		th.Property("Styles used", gui.OrNone(styleText, "None")),
 	)
 	if d.modified() {
 		rows = append(rows, th.Property("Changes", "Not saved"))
@@ -307,6 +317,8 @@ func (d *window) infoPage() []layout.Widget {
 			rows = append(rows, th.Paragraph("• "+w, gui.ChromeText))
 		}
 	}
+	rows = append(rows, d.back.AutoRecoverRows(th)...)
+	rows = append(rows, d.back.AutoSaveRows(th, ".docx")...)
 	rows = append(rows, th.Heading("About"),
 		th.Paragraph(version.String()+" · "+appName+" · MIT License", gui.MutedText))
 	return rows
@@ -350,22 +362,13 @@ func fileType(path string) string {
 		return "Word 97-2003 Document"
 	case ".txt":
 		return "Plain Text"
+	case ".pages":
+		return "Apple Pages Document (imported; Save As to keep changes)"
 	}
 	return "Document"
 }
 
-func byteSize(n int64) string {
-	switch {
-	case n < 1024:
-		return fmt.Sprintf("%d bytes", n)
-	case n < 1024*1024:
-		return fmt.Sprintf("%.1f KB", float64(n)/1024)
-	default:
-		return fmt.Sprintf("%.1f MB", float64(n)/(1024*1024))
-	}
-}
-
-func formatIcon(f fileio.Format) *widget.Icon {
+func formatIcon(f fileio.Format) *gui.Icon {
 	if f == fileio.TXT {
 		return gui.IconText
 	}

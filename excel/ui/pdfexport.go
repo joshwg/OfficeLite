@@ -2,11 +2,7 @@ package ui
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
-	"time"
 
 	"gioui.org/layout"
 	"gioui.org/widget"
@@ -82,98 +78,29 @@ func (a *App) exportPDF() {
 	if a.ed.active && !a.commitEdit(0, 0) {
 		return
 	}
-	a.saving.Store(true)
-	name := a.baseName() + ".pdf"
-	go func() {
-		path, err := a.files.Save(name, gui.PDFFilter, gui.AllFilter)
-		switch {
-		case err == nil:
-			a.post(func() {
-				defer a.saving.Store(false)
-				b, pages, err := a.buildPDF()
-				if err == nil {
-					err = os.WriteFile(path, b, 0o644)
-				}
-				a.pdfDone(path, pages, err, !a.bs.pdf.noOpen)
-			})
-			return
-		case errors.Is(err, gui.ErrCancelled):
-			a.saving.Store(false)
-			return
-		}
-		// No native dialog: the explorer's Save dialog.
-		wc, err := a.expl.CreateFile(name)
-		a.post(func() {
-			defer a.saving.Store(false)
-			if errors.Is(err, explorer.ErrUserDecline) {
-				return
-			}
-			var pages int
-			path := name
-			if err == nil {
-				var b []byte
-				b, pages, err = a.buildPDF()
-				if err == nil {
-					_, err = wc.Write(b)
-				}
-				if cerr := wc.Close(); err == nil {
-					err = cerr
-				}
-				if f, ok := wc.(*os.File); ok {
-					path = f.Name()
-				}
-			}
-			a.pdfDone(path, pages, err, !a.bs.pdf.noOpen && filepath.IsAbs(path))
-		})
-	}()
+	gui.SavePDF(gui.PDFSave{Name: a.baseName(), Files: &a.files, Create: a.expl.CreateFile,
+		Declined: explorer.ErrUserDecline, Calls: a.calls, Busy: &a.saving, Build: a.buildPDF,
+		Open: !a.bs.pdf.noOpen, Report: a.pdfDone})
 }
 
-// printViaPDF writes the PDF to a temporary file and opens it in the
-// default PDF viewer, to be printed from there.
+// printViaPDF opens the PDF in the default PDF viewer, to be printed from
+// there.
 func (a *App) printViaPDF() {
 	if a.ed.active && !a.commitEdit(0, 0) {
 		return
 	}
-	b, pages, err := a.buildPDF()
-	path := ""
-	if err == nil {
-		dir := filepath.Join(os.TempDir(), "OfficeLite")
-		err = os.MkdirAll(dir, 0o755)
-		// A new name each time: the viewer may still hold the last one.
-		path = filepath.Join(dir, fmt.Sprintf("%s (print %s).pdf", a.baseName(), time.Now().Format("150405")))
-		if err == nil {
-			err = os.WriteFile(path, b, 0o644)
-		}
-	}
-	if err != nil {
-		a.errMsg = "Print failed: " + err.Error()
-		return
-	}
-	if err := gui.OpenWithDefault(path); err != nil {
-		a.errMsg = "Can't open the PDF viewer: " + err.Error() + " (the PDF is " + path + ")"
-		return
-	}
-	a.errMsg = ""
-	a.back.Hide()
-	a.grid.focusPending = true
-	a.notice = fmt.Sprintf("Opened %d page(s) in your PDF viewer; print from there", pages)
+	a.pdfDone(gui.PrintViaPDF(a.baseName(), a.buildPDF))
 }
 
-// pdfDone reports an export on the UI goroutine.
-func (a *App) pdfDone(path string, pages int, err error, open bool) {
-	if err != nil {
-		a.errMsg = "PDF export failed: " + err.Error()
+// pdfDone reports an export or print on the UI goroutine.
+func (a *App) pdfDone(notice, errMsg string) {
+	a.errMsg = errMsg
+	if errMsg != "" {
 		return
 	}
-	a.errMsg = ""
 	a.back.Hide()
 	a.grid.focusPending = true
-	a.notice = fmt.Sprintf("Exported %s (%d page(s))", filepath.Base(path), pages)
-	if open {
-		if err := gui.OpenWithDefault(path); err != nil {
-			a.notice += "; can't open it: " + err.Error()
-		}
-	}
+	a.notice = notice
 }
 
 // pdfOptionRows are the PDF settings, shared by the Export and Print

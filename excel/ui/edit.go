@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"image"
 	"image/color"
 	"strconv"
@@ -18,6 +19,7 @@ import (
 	"officelite/common/colors"
 	"officelite/common/gui"
 	"officelite/excel/calc"
+	"officelite/excel/edit"
 	"officelite/excel/model"
 	"officelite/excel/render"
 )
@@ -37,6 +39,7 @@ type cellEditor struct {
 	focus           *widget.Editor // editor to focus at the next frame
 	barText         string         // what bar shows while not editing
 	point           refPoint       // the reference last put in by pointing (mouse.go)
+	checked         bool           // the entry passed its validation alert (validation.go)
 }
 
 var editSelection = color.NRGBA{R: 0xA8, G: 0x5C, B: 0x00, A: 0x50}
@@ -72,6 +75,9 @@ func editText(sh *model.Sheet, p render.Pos) string {
 // beginEdit starts editing the active cell with text, the caret at its
 // end. enter selects Enter mode; bar puts the caret in the formula bar.
 func (a *App) beginEdit(text string, enter, bar bool) {
+	if a.onChartSheet() {
+		return // no cells to edit
+	}
 	st := a.state()
 	p := st.view.Sel.Active
 	if m, ok := st.view.Sheet.MergeAt(p.Row, p.Col); ok {
@@ -110,15 +116,26 @@ func (a *App) commitEdit(dr, dc int) bool {
 	if !ed.active {
 		return true
 	}
+	if a.dialog.Visible {
+		return false // a data validation alert is waiting for its answer
+	}
 	text := a.editingText()
 	if text != ed.orig {
+		if !a.entryAllowed(text, dr, dc) {
+			return false // validation.go
+		}
 		res, err := a.book.Enter(ed.sheet, ed.row, ed.col, text)
+		if errors.Is(err, edit.ErrPivotChange) {
+			ed.active = false // Excel's message box, and the entry goes
+			a.grid.focusPending = true
+			a.showError(err)
+			return false
+		}
 		if err != nil {
 			a.errMsg = err.Error()
 			return false
 		}
-		a.changed(res)
-		a.clip = nil // as in Excel, an entry ends copy mode
+		a.changed(res) // as in Excel, an entry ends copy mode
 	}
 	ed.active = false
 	a.grid.focusPending = true
@@ -366,14 +383,21 @@ func (a *App) layoutBarEditor(gtx layout.Context, content string, w, h int) {
 // cached counts.
 func (a *App) changed(res calc.Result) {
 	a.modified = true
+	a.ar.rev++ // AutoRecover copies it again (recover.go)
 	a.stats = statsCache{}
+	for _, st := range a.states {
+		st.extent = extent{}
+	}
 	a.bs.info = infoCache{}
 	a.errMsg = ""
 	a.notice = ""
+	// As in Excel, any change ends cut or copy mode (paste keeps a copy).
+	a.clip = nil
 	if w := circularWarning(res); w != nil {
 		a.notice = w[0]
 	}
 	if a.win != nil {
 		a.win.Option(windowTitle(a.wb.Name))
 	}
+	a.refreshCircles() // validation.go
 }

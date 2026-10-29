@@ -22,6 +22,7 @@ type sheetChange struct {
 	sheet         int
 	before, after sheetProps
 	rows          *dimChange // row heights that grew with a format change
+	cols          *dimChange // column widths that grew with a PivotTable update
 }
 
 type sheetProps struct {
@@ -29,10 +30,16 @@ type sheetProps struct {
 	hidden    bool
 	baseWidth float32
 	defWidth  float32
+	valids    []model.Validation  // data validation rules (validation.go)
+	pivots    []*model.PivotTable // PivotTable reports (pivot.go)
+	charts    []*model.Chart      // the sheet's charts (chart.go)
+	chart     *model.Chart        // a chart sheet's chart
 }
 
 func propsOf(sh *model.Sheet) sheetProps {
-	return sheetProps{merges: slices.Clone(sh.Merges), hidden: sh.Hidden, baseWidth: sh.BaseColWidth, defWidth: sh.DefaultColWidth}
+	return sheetProps{merges: slices.Clone(sh.Merges), hidden: sh.Hidden, baseWidth: sh.BaseColWidth, defWidth: sh.DefaultColWidth,
+		valids: model.CloneValidations(sh.Validations), pivots: model.ClonePivots(sh.Pivots), charts: model.CloneCharts(sh.Charts),
+		chart: sh.ChartSheet.Clone()}
 }
 
 func (c *sheetChange) set(wb *model.Workbook, after bool) {
@@ -43,8 +50,15 @@ func (c *sheetChange) set(wb *model.Workbook, after bool) {
 	sh := wb.Sheets[c.sheet]
 	sh.Merges = slices.Clone(p.merges)
 	sh.Hidden, sh.BaseColWidth, sh.DefaultColWidth = p.hidden, p.baseWidth, p.defWidth
+	sh.Validations = model.CloneValidations(p.valids)
+	sh.Pivots = model.ClonePivots(p.pivots)
+	sh.Charts = model.CloneCharts(p.charts)
+	sh.ChartSheet = p.chart.Clone()
 	if c.rows != nil {
 		c.rows.set(wb, after)
+	}
+	if c.cols != nil {
+		c.cols.set(wb, after)
 	}
 }
 
@@ -52,11 +66,12 @@ func (c *sheetChange) set(wb *model.Workbook, after bool) {
 // for rows that a larger font or wrapped text made taller, as Excel
 // does for rows without a height of their own.
 func (b *Book) GrowRows(sheet int, rows []int, heights []float32) {
+	defer b.Op("Row Height")()
 	if len(rows) == 0 {
 		return
 	}
 	n := len(b.undo)
-	if n == 0 || b.undo[n-1].st != nil || b.undo[n-1].dims != nil || b.undo[n-1].group != nil ||
+	if n == 0 || b.undo[n-1].st != nil || b.undo[n-1].dims != nil || b.undo[n-1].group != nil || b.undo[n-1].filter != nil || b.undo[n-1].outline != nil ||
 		b.undo[n-1].sheet != nil && (b.undo[n-1].sheet.sheet != sheet || b.undo[n-1].sheet.rows != nil) {
 		b.SetRowHeights(sheet, rows, heights)
 		return
@@ -93,6 +108,7 @@ func FormatArea(sh *model.Sheet, r model.Range) (model.Range, bool) {
 // Format changes the style of every cell of r on sheet with f, which
 // gets each cell's style and position, as one undoable change.
 func (b *Book) Format(sheet int, r model.Range, f func(st *model.Style, row, col int)) calc.Result {
+	defer b.Op("Format Cells")()
 	area, ok := FormatArea(b.WB.Sheets[sheet], r)
 	if !ok {
 		return calc.Result{}
@@ -101,12 +117,16 @@ func (b *Book) Format(sheet int, r model.Range, f func(st *model.Style, row, col
 }
 
 // restyle lists the cell changes f makes to the styles of area's cells.
-// Cells whose style stays the same are left out.
+// Cells whose style stays the same are left out, and so are rows the
+// AutoFilter hides, as in Excel.
 func (b *Book) restyle(sheet int, area model.Range, f func(st *model.Style, row, col int)) []cellChange {
 	sh := b.WB.Sheets[sheet]
 	child := spillChildren(sh)
 	var cells []cellChange
 	for row := area.R1; row <= area.R2; row++ {
+		if sh.RowFiltered(row) {
+			continue
+		}
 		for col := area.C1; col <= area.C2; col++ {
 			cur := sh.Get(row, col)
 			st := b.style(cur.Style)
@@ -159,6 +179,7 @@ var BorderNames = []string{
 // Borders applies a border preset to r. No Border also clears the edges
 // the cells around r draw against it, as Excel does.
 func (b *Book) Borders(sheet int, r model.Range, kind BorderKind) calc.Result {
+	defer b.Op("Borders")()
 	sh := b.WB.Sheets[sheet]
 	area, ok := FormatArea(sh, r)
 	if !ok {
@@ -234,6 +255,9 @@ func ApplyBorder(st *model.Style, kind BorderKind, in model.Range, row, col int)
 	}
 }
 
+// mergeNames are the MergeKinds' names, in order.
+var mergeNames = []string{"Merge & Center", "Merge Across", "Merge Cells", "Unmerge Cells"}
+
 // MergeKind is a Merge & Center menu choice.
 type MergeKind int
 
@@ -249,6 +273,7 @@ const (
 // value of each new area, and its cells take the upper-left cell's
 // format. lost reports whether other values were dropped.
 func (b *Book) Merge(sheet int, r model.Range, kind MergeKind) (res calc.Result, lost bool) {
+	defer b.Op(mergeNames[kind])()
 	sh := b.WB.Sheets[sheet]
 	area, ok := FormatArea(sh, r)
 	if !ok {
@@ -318,6 +343,7 @@ func (b *Book) applySheet(where Where, ch *sheetChange, cells []cellChange) calc
 // ClearFormats gives the cells of r the default format and unmerges
 // them; ClearAll empties them too (Clear All).
 func (b *Book) ClearFormats(sheet int, r model.Range, all bool) calc.Result {
+	defer b.Op(either(all, "Clear All", "Clear Formats"))()
 	sh := b.WB.Sheets[sheet]
 	area, ok := FormatArea(sh, r)
 	if !ok {
@@ -329,6 +355,9 @@ func (b *Book) ClearFormats(sheet int, r model.Range, all bool) calc.Result {
 	child := spillChildren(sh)
 	var cells []cellChange
 	for row := area.R1; row <= area.R2; row++ {
+		if sh.RowFiltered(row) {
+			continue // as in Excel, rows the AutoFilter hides keep theirs
+		}
 		for col := area.C1; col <= min(area.C2, sh.RowLen(row)-1); col++ {
 			before := snapshot(sh, child, row, col)
 			c := model.Cell{}
@@ -345,6 +374,7 @@ func (b *Book) ClearFormats(sheet int, r model.Range, all bool) calc.Result {
 
 // HideSheet hides or shows a sheet. where is what Undo selects.
 func (b *Book) HideSheet(sheet int, hidden bool, where Where) {
+	defer b.Op(either(hidden, "Hide Sheet", "Unhide Sheet"))()
 	sh := b.WB.Sheets[sheet]
 	ch := &sheetChange{sheet: sheet, before: propsOf(sh)}
 	ch.after = propsOf(sh)
@@ -355,6 +385,7 @@ func (b *Book) HideSheet(sheet int, hidden bool, where Where) {
 // SetStandardWidth sets the width of columns without their own width,
 // in characters excluding padding (Format > Default Width).
 func (b *Book) SetStandardWidth(sheet int, chars float32) {
+	defer b.Op("Standard Width")()
 	sh := b.WB.Sheets[sheet]
 	ch := &sheetChange{sheet: sheet, before: propsOf(sh)}
 	ch.after = propsOf(sh)
@@ -417,7 +448,7 @@ func StepDecimals(id int, code, shown string, delta int) (string, bool) {
 	}
 	changed := false
 	var out strings.Builder
-	for _, sec := range splitSections(c) {
+	for _, sec := range numfmt.SplitSections(c) {
 		if out.Len() > 0 {
 			out.WriteByte(';')
 		}
@@ -426,25 +457,6 @@ func StepDecimals(id int, code, shown string, delta int) (string, bool) {
 		out.WriteString(s)
 	}
 	return out.String(), changed
-}
-
-// splitSections splits a format code at the ';' outside quotes.
-func splitSections(c string) []string {
-	var secs []string
-	start := 0
-	for i := 0; i < len(c); i++ {
-		switch c[i] {
-		case '"':
-			for i++; i < len(c) && c[i] != '"'; i++ {
-			}
-		case '\\', '_', '*':
-			i++
-		case ';':
-			secs = append(secs, c[start:i])
-			start = i + 1
-		}
-	}
-	return append(secs, c[start:])
 }
 
 // stepSection adds or removes a decimal place in one section: after the

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"sync/atomic"
 
 	"gioui.org/app"
@@ -19,9 +20,11 @@ import (
 	"gioui.org/unit"
 	"gioui.org/x/explorer"
 
+	"officelite/common/autorecover"
 	"officelite/common/colors"
 	"officelite/common/doctype"
 	"officelite/common/gui"
+	"officelite/common/lockfile"
 	"officelite/common/recent"
 	"officelite/word/fileio"
 	wl "officelite/word/layout"
@@ -41,7 +44,7 @@ var templates = []gui.Template{
 }
 
 // Extensions offered in the Open dialog.
-var openExtensions = []string{".docx", ".docm", ".doc", ".txt", ".xlsx", ".xls", ".csv"}
+var openExtensions = []string{".docx", ".docm", ".doc", ".txt", ".pages", ".xlsx", ".xls", ".csv", ".numbers"}
 
 // docSeq numbers new documents (Document1, Document2, ...).
 var docSeq atomic.Int32
@@ -54,6 +57,9 @@ type Config struct {
 	// disables New and Open.
 	Launch func(kind doctype.Kind, path string)
 	Recent *recent.List // nil uses recent.Default()
+	// Recovered is a recovery copy to open (Document Recovery), instead
+	// of Path.
+	Recovered *autorecover.Entry
 }
 
 type loadResult struct {
@@ -62,6 +68,8 @@ type loadResult struct {
 	shaper *text.Shaper
 	fams   []string
 	err    error
+	lock   lockfile.Status    // what openPath found about the file (lock.go)
+	rec    *autorecover.Entry // the recovery copy loaded (recover.go)
 }
 
 type window struct {
@@ -70,6 +78,7 @@ type window struct {
 	expl *explorer.Explorer
 	// files is the Open dialog with Word/Excel file-type filters.
 	files gui.FileDialog
+	drop  gui.FileDrop // files dragged onto the window (drop.go)
 	cfg   Config
 	gtx   layout.Context // the frame being laid out, for backstage pages
 
@@ -79,8 +88,11 @@ type window struct {
 	fams     []string // font families loaded into the engine's shaper
 	path     string   // file the document was loaded from or saved to
 	fileInfo os.FileInfo
-	saved    int // editor version at the last load or save
-	laidOut  int // editor version the layout reflects (-1: stale)
+	saved    int         // editor version at the last load or save
+	lk       lockState   // the file's registration, owner file, read-only (lock.go)
+	ar       autoRecover // the AutoRecover copy of unsaved changes (recover.go)
+	as       autoSave    // AutoSave into the file itself (autosave.go)
+	laidOut  int         // editor version the layout reflects (-1: stale)
 	title    string
 	loading  atomic.Bool
 	saving   atomic.Bool
@@ -101,7 +113,7 @@ type window struct {
 	dlg     styleDialog
 	ins     insertState // Insert menu dialogs, pictures and links (insert.go)
 	results chan loadResult
-	calls   chan func()
+	calls   *gui.CallQueue
 
 	clip     *model.Fragment // last copied content, for pasting with formatting
 	clipText string          // its plain text, to recognise it on the clipboard
@@ -116,6 +128,7 @@ type window struct {
 	pastePlain bool // the next clipboard read pastes plain text
 	pane       stylesPane
 	newStyle   newStyleDialog
+	showMarks  bool // Show/Hide ¶ (per window, not saved)
 }
 
 // Run drives a document window until it is closed.
@@ -124,7 +137,16 @@ func Run(w *app.Window, cfg Config) error {
 	if w != nil {
 		w.Option(app.Size(unit.Dp(1100), unit.Dp(800)))
 	}
-	if cfg.Path != "" {
+	d.lk.doc = lockfile.NewDoc(d.raise)
+	defer d.lk.doc.Close()
+	d.startAutoRecover()
+	defer d.ar.saver.Close() // a normal close: the copy goes
+	d.startAutoSave()
+	defer d.as.saver.Close()
+	if cfg.Recovered != nil {
+		d.openRecovered(*cfg.Recovered)
+	} else if cfg.Path != "" {
+		d.lk.closeOnCancel = true
 		d.setDoc(model.New(filepath.Base(cfg.Path)), d.th.Shaper, nil)
 		d.openPath(cfg.Path)
 	} else {
@@ -136,6 +158,7 @@ func Run(w *app.Window, cfg Config) error {
 		e := w.Event()
 		d.expl.ListenEvents(e)
 		d.files.ListenEvents(e)
+		d.drop.Event(e)
 		switch e := e.(type) {
 		case app.DestroyEvent:
 			return e.Err
@@ -147,7 +170,7 @@ func Run(w *app.Window, cfg Config) error {
 				w.Invalidate()
 			}
 		case app.FrameEvent:
-			d.runCalls()
+			d.calls.Run()
 			d.takeResult()
 			gtx := app.NewContext(&ops, e)
 			d.layout(gtx)
@@ -171,10 +194,11 @@ func newWindow(w *app.Window, cfg Config) *window {
 		th:      gui.NewTheme(cfg.Fonts, accent, accentDark),
 		cfg:     cfg,
 		results: make(chan loadResult, 1),
-		calls:   make(chan func(), 16),
 	}
+	d.calls = gui.NewCallQueue(d.invalidate)
 	if w != nil {
 		d.expl = explorer.NewExplorer(w)
+		d.drop.Window = w
 	}
 	d.v.zoom = 1
 	d.v.vbar.Vertical = true
@@ -183,13 +207,13 @@ func newWindow(w *app.Window, cfg Config) *window {
 
 // newBlank starts a new document; its fonts load in the background.
 func (d *window) newBlank() {
-	doc := model.New("Document" + itoa(int(docSeq.Add(1))))
+	doc := model.New("Document" + strconv.Itoa(int(docSeq.Add(1))))
 	d.setDoc(doc, d.th.Shaper, nil)
 	d.loading.Store(true)
 	go func() {
 		fams := docFonts(doc)
 		sh := d.cfg.Fonts.Shaper(fams...)
-		d.post(func() {
+		d.calls.Post(func() {
 			d.loading.Store(false)
 			if d.doc == doc {
 				d.fams = fams
@@ -200,33 +224,9 @@ func (d *window) newBlank() {
 	}()
 }
 
-func itoa(n int) string {
-	if n < 10 {
-		return string(rune('0' + n))
-	}
-	return itoa(n/10) + string(rune('0'+n%10))
-}
-
-// post runs f on the UI goroutine at the next frame.
-func (d *window) post(f func()) {
-	d.calls <- f
-	d.invalidate()
-}
-
 func (d *window) invalidate() {
 	if d.win != nil {
 		d.win.Invalidate()
-	}
-}
-
-func (d *window) runCalls() {
-	for {
-		select {
-		case f := <-d.calls:
-			f()
-		default:
-			return
-		}
 	}
 }
 
@@ -269,9 +269,14 @@ func (d *window) ensureFont(name string) {
 
 func (d *window) openPath(path string) {
 	d.loading.Store(true)
+	d.lk.doc.Set(path, false) // opening it again raises this window
 	go func() {
+		st := lockfile.Check(path)
 		doc, err := fileio.Open(path)
-		d.finishLoad(path, doc, err)
+		if err == nil && !st.Locked() {
+			d.lk.doc.Set(path, true) // an owner file, on a network share
+		}
+		d.finishLoadLock(path, doc, err, st)
 	}()
 }
 
@@ -287,7 +292,7 @@ func (d *window) openDialog() {
 		path, err := d.files.Open(gui.WordFilter, gui.ExcelFilter, gui.AllFilter)
 		switch {
 		case err == nil:
-			d.post(func() { d.openFile(path) })
+			d.calls.Post(func() { d.openFile(path) })
 			return
 		case errors.Is(err, gui.ErrCancelled):
 			return
@@ -303,7 +308,7 @@ func (d *window) openDialog() {
 		defer rc.Close()
 		if f, ok := rc.(*os.File); ok && filepath.IsAbs(f.Name()) {
 			path := f.Name()
-			d.post(func() { d.openFile(path) })
+			d.calls.Post(func() { d.openFile(path) })
 			return
 		}
 		d.loading.Store(true)
@@ -321,8 +326,17 @@ func (d *window) openDialog() {
 // finishLoad runs on the loader goroutine; fonts are loaded here so the
 // UI thread never blocks on disk.
 func (d *window) finishLoad(path string, doc *model.Document, err error) {
-	res := loadResult{path: path, doc: doc, err: err}
-	if doc != nil {
+	d.finishLoadLock(path, doc, err, lockfile.Status{})
+}
+
+// finishLoadLock is finishLoad for a file lockfile.Check found st about.
+func (d *window) finishLoadLock(path string, doc *model.Document, err error, st lockfile.Status) {
+	d.finishLoadResult(loadResult{path: path, doc: doc, err: err, lock: st})
+}
+
+// finishLoadResult hands a loaded document to the UI goroutine.
+func (d *window) finishLoadResult(res loadResult) {
+	if doc := res.doc; doc != nil {
 		res.fams = docFonts(doc)
 		res.shaper = d.cfg.Fonts.Shaper(res.fams...)
 	}
@@ -335,18 +349,34 @@ func (d *window) takeResult() {
 	case r := <-d.results:
 		d.loading.Store(false)
 		if r.err != nil {
-			d.errMsg = "Can't open " + orNone(filepath.Base(r.path), "the file") + ": " + r.err.Error()
+			d.errMsg = "Can't open " + gui.OrNone(filepath.Base(r.path), "the file") + ": " + r.err.Error()
+			d.lk.doc.Set(d.path, !d.lk.readOnly) // back to the file shown
 			return
 		}
-		d.errMsg = ""
-		d.path, d.fileInfo = r.path, nil
-		if r.path != "" {
-			d.fileInfo, _ = os.Stat(r.path)
-			d.cfg.Recent.Add(r.path, recent.Document)
+		if r.lock.Locked() {
+			d.askLocked(r) // lock.go
+			return
 		}
-		d.setDoc(r.doc, r.shaper, r.fams)
+		d.applyLoad(r, false)
 	default:
 	}
+}
+
+// applyLoad shows a loaded document, read-only or not.
+func (d *window) applyLoad(r loadResult, readOnly bool) {
+	d.errMsg = ""
+	d.path, d.fileInfo = r.path, nil
+	d.lk.readOnly, d.lk.closeOnCancel = readOnly, false
+	if r.path != "" {
+		d.fileInfo, _ = os.Stat(r.path)
+		d.cfg.Recent.Add(r.path, recent.Document)
+	}
+	d.setDoc(r.doc, r.shaper, r.fams)
+	if r.rec != nil {
+		d.adoptRecovered(*r.rec) // recover.go
+	}
+	d.as.elsewhere = r.lock.Locked() && !readOnly // Open Anyway
+	d.autoSaveLoaded()                            // autosave.go
 }
 
 // setDoc makes doc the window's document.
@@ -354,6 +384,7 @@ func (d *window) setDoc(doc *model.Document, shaper *text.Shaper, fams []string)
 	d.doc = doc
 	d.ed = model.NewEditor(doc)
 	d.eng = wl.New(doc, shaper)
+	d.eng.SetShowHidden(d.showMarks)
 	d.fams = fams
 	d.saved = d.ed.Version
 	d.laidOut = -1
@@ -373,7 +404,7 @@ func (d *window) modified() bool { return d.ed != nil && d.bodyEd().Version != d
 // updateTitle sets the OS window title when the name or modified state
 // changes.
 func (d *window) updateTitle() {
-	t := d.doc.Name + " - " + appName
+	t := d.docName() + " - " + appName
 	if d.modified() {
 		t = "• " + t
 	}
@@ -398,6 +429,9 @@ func (d *window) openFile(path string) {
 		d.errMsg = "Can't open " + filepath.Base(path) + ": " + err.Error()
 		return
 	}
+	if lockfile.Activate(path) {
+		return // open in a window already, which comes to the front
+	}
 	kind, _ := doctype.DetectFile(path)
 	switch {
 	case kind != doctype.Document:
@@ -407,11 +441,4 @@ func (d *window) openFile(path string) {
 	default:
 		d.cfg.Launch(doctype.Document, path)
 	}
-}
-
-func orNone(s, none string) string {
-	if s == "" || s == "." {
-		return none
-	}
-	return s
 }

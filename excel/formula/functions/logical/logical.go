@@ -107,7 +107,7 @@ func argOr(e *f.Env, args []f.Node, i int, def f.Value) f.Value {
 
 // IF(logical_test, [value_if_true], [value_if_false])
 func ifFn(e *f.Env, args []f.Node) f.Value {
-	cond := e.Deref(e.Eval(args[0]))
+	cond := e.Deref(e.EvalArg(args[0]))
 	if a, ok := multi(cond); ok {
 		t := e.Deref(argOr(e, args, 1, f.Bool(true)))
 		fv := e.Deref(argOr(e, args, 2, f.Bool(false)))
@@ -140,7 +140,7 @@ func ifsFn(e *f.Env, args []f.Node) f.Value {
 	// Scalar conditions are evaluated lazily, in order.
 	conds := make([]f.Value, 0, len(args)/2)
 	for i := 0; i < len(args); i += 2 {
-		c := e.Deref(e.Eval(args[i]))
+		c := e.Deref(e.EvalArg(args[i]))
 		if _, ok := multi(c); ok {
 			return ifsArray(e, args, append(conds, c))
 		}
@@ -181,7 +181,7 @@ func ifsArray(e *f.Env, args []f.Node, conds []f.Value) f.Value {
 
 // SWITCH(expression, value1, result1, [value2, result2], ..., [default])
 func switchFn(e *f.Env, args []f.Node) f.Value {
-	x := e.Deref(e.Eval(args[0]))
+	x := e.Deref(e.EvalArg(args[0]))
 	pairs := (len(args) - 1) / 2
 	hasDefault := (len(args)-1)%2 == 1
 	if a, ok := multi(x); ok {
@@ -219,7 +219,7 @@ func switchFn(e *f.Env, args []f.Node) f.Value {
 
 // IFERROR / IFNA: replace (matching) errors with the alternative.
 func ifErr(e *f.Env, args []f.Node, matches func(f.Error) bool) f.Value {
-	raw := e.Eval(args[0])
+	raw := e.EvalArg(args[0])
 	v := e.Deref(raw)
 	if a, ok := multi(v); ok {
 		var alt f.Value

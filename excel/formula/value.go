@@ -349,6 +349,7 @@ func typeRank(v Value) int {
 
 // Compare compares two scalars as Excel's comparison operators do: numbers
 // sort before text, text before booleans; text compares case-insensitively.
+// Numbers equal to 15 significant digits are equal (=0.1+0.2=0.3 is TRUE).
 // A blank compares as 0 against numbers, "" against text and FALSE against
 // booleans. Errors are returned as the second result.
 func Compare(a, b Value) (int, Value) {
@@ -370,6 +371,8 @@ func Compare(a, b Value) (int, Value) {
 	case Number:
 		bv := b.(Number)
 		switch {
+		case equal15(float64(av), float64(bv)):
+			return 0, nil
 		case av < bv:
 			return -1, nil
 		case av > bv:
@@ -389,6 +392,18 @@ func Compare(a, b Value) (int, Value) {
 		return 1, nil
 	}
 	return 0, nil
+}
+
+// equal15 reports whether a and b are the same number to 15 significant
+// digits, the precision Excel compares at.
+func equal15(a, b float64) bool {
+	if a == b {
+		return true
+	}
+	if math.Abs(a-b) > max(math.Abs(a), math.Abs(b))*1e-14 {
+		return false // the usual case, without formatting
+	}
+	return Round15(a) == Round15(b)
 }
 
 // blankAs turns a blank into the zero value of other's type.

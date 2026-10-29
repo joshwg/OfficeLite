@@ -57,7 +57,7 @@ func dollar(x, fraction float64, toDecimal bool) f.Value {
 // maturity after settlement and at most a year later, x > 0 — and applies
 // fn to the days to maturity and x.
 func tbill(e *f.Env, a []f.Value, fn func(dsm, x float64) float64) f.Value {
-	v, err := nums(a, 3)
+	v, err := nums(e, a, 3)
 	if err != nil {
 		return err
 	}

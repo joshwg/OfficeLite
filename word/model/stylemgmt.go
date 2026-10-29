@@ -2,6 +2,7 @@ package model
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -40,16 +41,9 @@ func styleIDFor(ss *StyleSheet, name string) string {
 	}
 	id := base
 	for n := 1; ss.Find(id) != nil; n++ {
-		id = base + itoaModel(n)
+		id = base + strconv.Itoa(n)
 	}
 	return id
-}
-
-func itoaModel(n int) string {
-	if n < 10 {
-		return string(rune('0' + n))
-	}
-	return itoaModel(n/10) + string(rune('0'+n%10))
 }
 
 // Errors from style management.
@@ -78,6 +72,7 @@ func (e *Editor) directRun() Run {
 // character's direct character formatting on top of BasedOn; a character
 // style gets the character formatting.
 func (e *Editor) NewStyle(spec StyleSpec) (string, error) {
+	defer e.Op("New Style")()
 	name := strings.TrimSpace(spec.Name)
 	if name == "" {
 		return "", ErrStyleName
@@ -181,6 +176,7 @@ func clearSame(p, s RunProps) RunProps {
 // (Update <Style> to Match Selection): the selection's direct formatting
 // moves into the style, so every paragraph (or run) using it changes.
 func (e *Editor) UpdateStyleToMatch(id string) {
+	defer e.Op("Update Style")()
 	st := e.Doc.Styles.Find(id)
 	if st == nil {
 		return
@@ -223,6 +219,7 @@ func (e *Editor) UpdateStyleToMatch(id string) {
 // runs using it fall back to the style it was based on, as do styles based
 // on it.
 func (e *Editor) DeleteStyle(id string) error {
+	defer e.Op("Delete Style")()
 	st := e.Doc.Styles.Find(id)
 	if st == nil {
 		return nil
@@ -234,6 +231,7 @@ func (e *Editor) DeleteStyle(id string) error {
 	if st.Type == ParagraphStyle && (base == "" || base == normalID(e.Doc)) {
 		base = ""
 	}
+	hf := e.Doc.HF.Clone() // headers and footers using the style change too
 	e.edit("style", 0, len(e.Doc.Body)-1, true, func() {
 		ss := &e.Doc.Styles
 		out := ss.Styles[:0:0]
@@ -266,6 +264,7 @@ func (e *Editor) DeleteStyle(id string) error {
 		fix(e.Doc.Body)
 		e.Doc.HF.All(func(hf *HeaderFooter) { fix(hf.Blocks) })
 	})
+	e.undo[len(e.undo)-1].hf = &hf
 	return nil
 }
 

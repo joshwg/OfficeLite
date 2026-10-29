@@ -2,8 +2,9 @@ package docfile
 
 import (
 	"encoding/binary"
-	"fmt"
 	"strings"
+
+	"officelite/common/colors"
 )
 
 // Single property modifiers ([MS-DOC] 2.6) used by this package.
@@ -38,42 +39,45 @@ const (
 	sprmCShd         = 0xCA71
 
 	// paragraph
-	sprmPIstd             = 0x4600
-	sprmPJc80             = 0x2403
-	sprmPFKeep            = 0x2405
-	sprmPFKeepFollow      = 0x2406
-	sprmPFPageBreakBefore = 0x2407
-	sprmPIlvl             = 0x260A
-	sprmPIlfo             = 0x460B
-	sprmPChgTabsPapx      = 0xC60D
-	sprmPDxaRight80       = 0x840E
-	sprmPDxaLeft80        = 0x840F
-	sprmPDxaLeft180       = 0x8411
-	sprmPDyaLine          = 0x6412
-	sprmPDyaBefore        = 0xA413
-	sprmPDyaAfter         = 0xA414
-	sprmPChgTabs          = 0xC615
-	sprmPFInTable         = 0x2416
-	sprmPFTtp             = 0x2417
-	sprmPShd80            = 0x442D
-	sprmPFWidowControl    = 0x2431
-	sprmPOutLvl           = 0x2640
-	sprmPHugePapx         = 0x6646
-	sprmPItap             = 0x6649
-	sprmPDtap             = 0x664A
-	sprmPFInnerTableCell  = 0x244B
-	sprmPFInnerTtp        = 0x244C
-	sprmPShd              = 0xC64D
-	sprmPDxaRight         = 0x845D
-	sprmPDxaLeft          = 0x845E
-	sprmPDxaLeft1         = 0x8460
-	sprmPJc               = 0x2461
+	sprmPIstd               = 0x4600
+	sprmPJc80               = 0x2403
+	sprmPFKeep              = 0x2405
+	sprmPFKeepFollow        = 0x2406
+	sprmPFPageBreakBefore   = 0x2407
+	sprmPIlvl               = 0x260A
+	sprmPIlfo               = 0x460B
+	sprmPChgTabsPapx        = 0xC60D
+	sprmPDxaRight80         = 0x840E
+	sprmPDxaLeft80          = 0x840F
+	sprmPDxaLeft180         = 0x8411
+	sprmPDyaLine            = 0x6412
+	sprmPDyaBefore          = 0xA413
+	sprmPDyaAfter           = 0xA414
+	sprmPChgTabs            = 0xC615
+	sprmPFInTable           = 0x2416
+	sprmPFTtp               = 0x2417
+	sprmPShd80              = 0x442D
+	sprmPFWidowControl      = 0x2431
+	sprmPOutLvl             = 0x2640
+	sprmPHugePapx           = 0x6646
+	sprmPItap               = 0x6649
+	sprmPDtap               = 0x664A
+	sprmPFInnerTableCell    = 0x244B
+	sprmPFInnerTtp          = 0x244C
+	sprmPShd                = 0xC64D
+	sprmPDxaRight           = 0x845D
+	sprmPDxaLeft            = 0x845E
+	sprmPDxaLeft1           = 0x8460
+	sprmPJc                 = 0x2461
+	sprmPFContextualSpacing = 0x246D
 
 	// table
 	sprmTJc90            = 0x5400
 	sprmTDxaLeft         = 0x9601
 	sprmTDxaGapHalf      = 0x9602
+	sprmTFCantSplit      = 0x3403
 	sprmTTableHeader     = 0x3404
+	sprmTFCantSplit90    = 0x3466
 	sprmTTableBorders80  = 0xD605
 	sprmTDyaRowHeight    = 0x9407
 	sprmTDefTable        = 0xD608
@@ -85,6 +89,7 @@ const (
 	sprmTVertMerge       = 0xD62B
 	sprmTVertAlign       = 0xD62C
 	sprmTJc              = 0x548A
+	sprmTIstd            = 0x563A
 	sprmTDefTableShdRaw  = 0xD670
 	sprmTDefTableShdRaw2 = 0xD671
 	sprmTDefTableShdRaw3 = 0xD672
@@ -248,16 +253,16 @@ func colorRef(b []byte) string {
 	if len(b) < 4 || b[3] == 0xFF {
 		return ""
 	}
-	return fmt.Sprintf("%02X%02X%02X", b[0], b[1], b[2])
+	return colors.Hex(colors.RGBA(b[0], b[1], b[2], 255))
 }
 
 // encColorRef encodes RRGGBB as a COLORREF ("" → automatic).
 func encColorRef(hex string) [4]byte {
-	var r, g, b byte
-	if n, _ := fmt.Sscanf(hex, "%02x%02x%02x", &r, &g, &b); n != 3 {
+	c, ok := colors.ParseHex(hex)
+	if !ok {
 		return [4]byte{0, 0, 0, 0xFF}
 	}
-	return [4]byte{r, g, b, 0}
+	return [4]byte{c.R, c.G, c.B, 0}
 }
 
 // shdColor returns the visible background of a Shd (cvFore, cvBack, ipat).

@@ -2,8 +2,6 @@ package ui
 
 import (
 	"math"
-	"os/exec"
-	"runtime"
 	"strings"
 
 	"gioui.org/f32"
@@ -56,7 +54,7 @@ func (d *window) pointerPage(p f32.Point) (int, float64, float64, bool) {
 	x := (float64(p.X) - float64(d.pageX())) / v.scale
 	y := v.scrollY + float64(p.Y)/v.scale
 	page, py := d.eng.PageAt(y)
-	return page, x, py, true
+	return page, x - d.eng.Pages[page].X, py, true
 }
 
 // pressObject handles a primary-button press in the page view before
@@ -190,8 +188,8 @@ func (d *window) drawInsertOverlay(gtx layout.Context, px int) {
 	v := &d.v
 	pg := d.eng.Pages[s.resPage]
 	r := s.resNow
-	x0 := px + int(math.Round(r.X0*v.scale))
-	x1 := px + int(math.Round(r.X1*v.scale))
+	x0 := px + int(math.Round((pg.X+r.X0)*v.scale))
+	x1 := px + int(math.Round((pg.X+r.X1)*v.scale))
 	y0 := int(math.Round((pg.Top + r.Y0 - v.scrollY) * v.scale))
 	y1 := int(math.Round((pg.Top + r.Y1 - v.scrollY) * v.scale))
 	gui.DashedLine(gtx.Ops, x0, y0, x1, y0, 1, 4, 3, resizeOutline)
@@ -215,27 +213,9 @@ func (d *window) followLink(l model.Link) {
 		d.notice = "WordLite only opens web and e-mail links: " + url
 		return
 	}
-	if err := openURL(url); err != nil {
+	if err := gui.OpenURL(url); err != nil {
 		d.errMsg = "Can't open " + url + ": " + err.Error()
 		return
 	}
 	d.notice = "Opened " + url
-}
-
-// openURL hands a URL to the operating system.
-func openURL(url string) error {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
-	case "darwin":
-		cmd = exec.Command("open", url)
-	default:
-		cmd = exec.Command("xdg-open", url)
-	}
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	go cmd.Wait()
-	return nil
 }

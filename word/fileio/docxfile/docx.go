@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"officelite/common/opc"
 	"officelite/word/model"
 )
 
@@ -51,6 +52,7 @@ func Write(doc *model.Document, w io.Writer) error {
 		}
 	}
 	wr.prepareHeaders()
+	wr.prepareNotes()
 	docXML := wr.documentXML()
 	styles := wr.stylesXML()
 	numbering := wr.numberingXML()
@@ -77,6 +79,11 @@ type writer struct {
 	picRels map[*model.Picture]string
 	media   []media
 	docPrID int
+	// notes (sections.go)
+	noteIDs   map[*model.Note]string
+	noteParts []hfPart
+	inEndnote bool
+	secIndex  map[*model.Section]int
 }
 
 func (w *writer) warn(s string) {
@@ -104,7 +111,7 @@ func (w *writer) loadSource() error {
 	w.src = p
 	w.rels = p.rels(w.main)
 	for _, rl := range w.rels {
-		part := resolve(w.main, rl.Target)
+		part := opc.Resolve(w.main, rl.Target)
 		switch {
 		case rl.is(relTheme):
 			if b, err := p.read(part); err == nil {
@@ -185,23 +192,22 @@ func (w *writer) documentXML() []byte {
 	var b strings.Builder
 	b.WriteString(xmlHeader)
 	rootTag(&b, "w:document", w.srcRoot)
-	var sect *node
 	if w.srcRoot != nil {
 		for _, k := range w.srcRoot.kids {
 			if k.name == "w:body" {
-				for _, bk := range k.kids {
-					if bk.name == "w:sectPr" {
-						sect = bk
-					}
-				}
 				break
 			}
 			b.Write(k.raw()) // w:background etc.
 		}
 	}
+	secs := w.doc.Sections()
+	w.secIndex = map[*model.Section]int{}
+	for i, s := range secs {
+		w.secIndex[s] = i
+	}
 	b.WriteString("<w:body>")
 	w.blocks(&b, w.doc.Body)
-	w.sectPr(&b, sect)
+	b.WriteString(w.sectPrXML(&w.doc.Section, len(secs)-1))
 	b.WriteString("</w:body></w:document>")
 	return []byte(b.String())
 }
@@ -367,7 +373,18 @@ func (w *writer) para(b *strings.Builder, p *model.Paragraph) {
 	if p.Mark.DocxXML != "" {
 		_, markStyle = parseRPr(parseFragment(p.Mark.DocxXML), w.th)
 	}
-	if ppr := pPrXML(p.Style, p.Props, rPrXML(markStyle, p.Mark, w.th), w.th); ppr != "" {
+	ppr := pPrXML(p.Style, p.Props, rPrXML(markStyle, p.Mark, w.th), w.th)
+	if i, ok := w.secIndex[p.Sect]; ok && p.Sect != nil {
+		// A section's properties end its last paragraph's (before any
+		// tracked change of them).
+		sp := w.sectPrXML(p.Sect, i)
+		if k := strings.Index(ppr, "<w:pPrChange"); k >= 0 {
+			ppr = ppr[:k] + sp + ppr[k:]
+		} else {
+			ppr += sp
+		}
+	}
+	if ppr != "" {
 		b.WriteString("<w:pPr>" + ppr + "</w:pPr>")
 	}
 	ws := &wrapStack{w: w, b: b}
@@ -381,6 +398,19 @@ func (w *writer) para(b *strings.Builder, p *model.Paragraph) {
 }
 
 func (w *writer) run(b *strings.Builder, r *model.Run) {
+	if o := r.Opaque; r.Kind == model.RunOpaque && o != nil {
+		switch {
+		case o.Note != nil || o.NoteMark:
+			w.noteRun(b, r)
+			return
+		case o.FieldChar != model.FieldNone && !w.opaqueOK(o):
+			w.fieldChar(b, r)
+			return
+		case o.Float != nil && !w.opaqueOK(o):
+			w.floatRun(b, r)
+			return
+		}
+	}
 	if r.Kind == model.RunOpaque {
 		if w.opaqueOK(r.Opaque) {
 			b.Write(r.Opaque.Data)
@@ -555,14 +585,24 @@ func (w *writer) row(b *strings.Builder, r *model.TableRow) {
 		}
 	}
 	oh, ohdr := parseTrPr(orig)
-	var hgen, hdr string
+	ocs := false
+	for _, k := range orig {
+		if k.name == "w:cantSplit" {
+			ocs = onOff(k) == model.On
+		}
+	}
+	var hgen, hdr, cs string
 	if r.Height > 0 {
 		hgen = `<w:trHeight w:val="` + ptTwips(r.Height) + `"/>`
 	}
 	if r.Header {
 		hdr = "<w:tblHeader/>"
 	}
+	if r.CantSplit {
+		cs = "<w:cantSplit/>"
+	}
 	trpr := mergeProps(orig, []propGroup{
+		{[]string{"w:cantSplit"}, r.CantSplit == ocs, cs},
 		{[]string{"w:trHeight"}, r.Height == oh, hgen},
 		{[]string{"w:tblHeader"}, r.Header == ohdr, hdr},
 	}, trPrOrder)
@@ -583,7 +623,7 @@ func (w *writer) cell(b *strings.Builder, c *model.TableCell) {
 		width = `<w:tcW w:w="` + ptTwips(c.Width) + `" w:type="dxa"/>`
 	}
 	if c.Span > 1 {
-		span = valXML("gridSpan", itoa(c.Span))
+		span = valXML("gridSpan", strconv.Itoa(c.Span))
 	}
 	switch c.VMerge {
 	case 1:
@@ -619,40 +659,6 @@ func (w *writer) cell(b *strings.Builder, c *model.TableCell) {
 	}
 	w.blocks(b, blocks)
 	b.WriteString("</w:tc>")
-}
-
-// ---- section ----
-
-func (w *writer) sectPr(b *strings.Builder, sect *node) {
-	var orig []*node
-	if sect != nil {
-		orig = sect.kids
-	}
-	pg := w.doc.Page
-	o := parsePage(orig)
-	if pg.Width <= 0 || pg.Height <= 0 {
-		pg = model.LetterPage()
-	}
-	size := `<w:pgSz w:w="` + ptTwips(pg.Width) + `" w:h="` + ptTwips(pg.Height) + `"`
-	if pg.Landscape {
-		size += ` w:orient="landscape"`
-	}
-	size += "/>"
-	mar := `<w:pgMar w:top="` + ptTwips(pg.MarginTop) + `" w:right="` + ptTwips(pg.MarginRight) +
-		`" w:bottom="` + ptTwips(pg.MarginBottom) + `" w:left="` + ptTwips(pg.MarginLeft) +
-		`" w:header="` + ptTwips(pg.Header) + `" w:footer="` + ptTwips(pg.Footer) + `" w:gutter="0"/>`
-	groups := []propGroup{
-		{[]string{"w:pgSz"}, has(orig, "w:pgSz") && pg.Width == o.Width && pg.Height == o.Height && pg.Landscape == o.Landscape, size},
-		{[]string{"w:pgMar"}, has(orig, "w:pgMar") && pg.MarginTop == o.MarginTop && pg.MarginBottom == o.MarginBottom &&
-			pg.MarginLeft == o.MarginLeft && pg.MarginRight == o.MarginRight && pg.Header == o.Header && pg.Footer == o.Footer, mar},
-	}
-	groups = append(groups, w.hfGroups(orig)...)
-	if sect == nil {
-		groups = append(groups,
-			propGroup{[]string{"w:cols"}, false, `<w:cols w:space="720"/>`},
-			propGroup{[]string{"w:docGrid"}, false, `<w:docGrid w:linePitch="360"/>`})
-	}
-	b.WriteString("<w:sectPr>" + mergeProps(orig, groups, sectPrOrder) + "</w:sectPr>")
 }
 
 // ---- styles.xml ----
@@ -769,7 +775,7 @@ func (w *writer) numberingXML() []byte {
 		if _, ok := numXML[id]; !ok {
 			numOrder = append(numOrder, id)
 		}
-		numXML[id] = `<w:num w:numId="` + itoa(id) + `"><w:abstractNumId w:val="` + itoa(maxAbs) + `"/></w:num>`
+		numXML[id] = `<w:num w:numId="` + strconv.Itoa(id) + `"><w:abstractNumId w:val="` + strconv.Itoa(maxAbs) + `"/></w:num>`
 	}
 	for _, id := range numOrder {
 		nums = append(nums, numXML[id])
@@ -788,15 +794,15 @@ func (w *writer) numberingXML() []byte {
 
 func abstractNumXML(id int, l *model.List) string {
 	var b strings.Builder
-	b.WriteString(`<w:abstractNum w:abstractNumId="` + itoa(id) + `"><w:multiLevelType w:val="hybridMultilevel"/>`)
+	b.WriteString(`<w:abstractNum w:abstractNumId="` + strconv.Itoa(id) + `"><w:multiLevelType w:val="hybridMultilevel"/>`)
 	for i, lv := range l.Levels {
 		f := lv.Format
 		if f == "" {
 			f = "decimal"
 		}
-		b.WriteString(`<w:lvl w:ilvl="` + itoa(i) + `">`)
+		b.WriteString(`<w:lvl w:ilvl="` + strconv.Itoa(i) + `">`)
 		if lv.Start != 0 {
-			b.WriteString(valXML("start", itoa(lv.Start)))
+			b.WriteString(valXML("start", strconv.Itoa(lv.Start)))
 		}
 		b.WriteString(valXML("numFmt", f))
 		b.WriteString(`<w:lvlText w:val="` + escAttr(lv.Text) + `"/><w:lvlJc w:val="left"/>`)
@@ -845,12 +851,12 @@ func (w *writer) writeInto(out io.Writer, docXML, styles, numbering []byte) erro
 	var keep []rel
 	for _, rl := range w.rels {
 		if rl.is(relVBA) || rl.is(relToolbars) {
-			part := resolve(w.main, rl.Target)
+			part := opc.Resolve(w.main, rl.Target)
 			drop[part] = true
-			drop[relsPath(part)] = true
+			drop[opc.RelsPath(part)] = true
 			for _, sub := range p.rels(part) {
 				if sub.Mode != "External" {
-					drop[resolve(part, sub.Target)] = true
+					drop[opc.Resolve(part, sub.Target)] = true
 				}
 			}
 			w.relsDirty = true
@@ -884,9 +890,9 @@ func (w *writer) writeInto(out io.Writer, docXML, styles, numbering []byte) erro
 	for _, rl := range w.rels {
 		switch {
 		case rl.is(relStyles):
-			stylesPart = resolve(w.main, rl.Target)
+			stylesPart = opc.Resolve(w.main, rl.Target)
 		case rl.is(relNumbering):
-			numPart = resolve(w.main, rl.Target)
+			numPart = opc.Resolve(w.main, rl.Target)
 		}
 	}
 	addPart := func(name, typ, ctype string) string {
@@ -918,7 +924,7 @@ func (w *writer) writeInto(out io.Writer, docXML, styles, numbering []byte) erro
 		ctDirty = true
 	}
 	if w.relsDirty {
-		replace[relsPath(w.main)] = relsXML(w.rels)
+		replace[opc.RelsPath(w.main)] = relsXML(w.rels)
 	}
 	if ctDirty {
 		replace["[Content_Types].xml"] = ct.xml()
@@ -995,6 +1001,12 @@ func (w *writer) writeNew(out io.Writer, docXML, styles, numbering []byte) error
 	if w.doc.HF.EvenOdd {
 		settings = strings.Replace(settings, "<w:characterSpacingControl", "<w:evenAndOddHeaders/><w:characterSpacingControl", 1)
 	}
+	if ns := w.noteSettingsXML(); ns != "" {
+		settings = strings.Replace(settings, "<w:compat>", ns+"<w:compat>", 1)
+	}
+	for _, p := range w.noteParts {
+		ct.setOverride(p.name, p.ctype)
+	}
 
 	zw := zip.NewWriter(out)
 	parts := []struct {
@@ -1026,12 +1038,15 @@ func (w *writer) writeNew(out io.Writer, docXML, styles, numbering []byte) error
 			return err
 		}
 	}
-	for _, p := range w.hfParts {
+	for _, p := range append(w.hfParts, w.noteParts...) {
+		if p.shared {
+			continue
+		}
 		if err := deflate(zw, p.name, p.data); err != nil {
 			return err
 		}
 		if p.rels != nil {
-			if err := deflate(zw, relsPath(p.name), p.rels); err != nil {
+			if err := deflate(zw, opc.RelsPath(p.name), p.rels); err != nil {
 				return err
 			}
 		}

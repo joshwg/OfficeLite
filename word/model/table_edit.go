@@ -155,6 +155,7 @@ func NewTable(rows, cols int, width float64) *Table {
 // selection, and puts the caret in its first cell. In the middle of a
 // paragraph the paragraph is split; a paragraph always follows the table.
 func (e *Editor) InsertTable(rows, cols int) {
+	defer e.Op("Insert Table")()
 	from, to := e.span()
 	e.edit("table", from, to, false, func() {
 		p := e.deleteSelection()
@@ -192,7 +193,7 @@ func (e *Editor) tableEdit(kind string, f func(tl TableLoc)) bool {
 // emptyCellLike returns an empty cell with c's properties (width, span,
 // shading...) and the formatting of its first paragraph.
 func emptyCellLike(c *TableCell) *TableCell {
-	n := &TableCell{Span: c.Span, Shading: c.Shading, VAlign: c.VAlign, Width: c.Width, DocxXML: c.DocxXML}
+	n := &TableCell{Span: c.Span, Shading: c.Shading, VAlign: c.VAlign, Width: c.Width, Borders: c.Borders, DocxXML: c.DocxXML}
 	p := &Paragraph{}
 	if len(c.Blocks) > 0 {
 		if q, ok := c.Blocks[0].(*Paragraph); ok {
@@ -224,6 +225,7 @@ func cellAtGrid(row *TableRow, g int) int {
 // InsertRow inserts a row above or below the caret's row, with the same
 // cells (empty); the caret moves into it.
 func (e *Editor) InsertRow(below bool) {
+	defer e.Op("Insert Rows")()
 	e.tableEdit("table", func(tl TableLoc) {
 		t := tl.Table
 		src := t.Rows[tl.Row]
@@ -255,6 +257,7 @@ func (e *Editor) InsertRow(below bool) {
 // InsertColumn inserts a column left or right of the caret's cell. The
 // new column takes the cell's width and the table keeps its total width.
 func (e *Editor) InsertColumn(right bool) {
+	defer e.Op("Insert Columns")()
 	e.tableEdit("table", func(tl TableLoc) {
 		t := tl.Table
 		cell := t.Rows[tl.Row].Cells[tl.Cell]
@@ -373,6 +376,7 @@ func fixCellWidths(t *Table) {
 // DeleteRows deletes the rows the selection touches (the caret's row);
 // deleting every row deletes the table.
 func (e *Editor) DeleteRows() {
+	defer e.Op("Delete Rows")()
 	r0, r1, ok := e.selectedRows()
 	if !ok {
 		return
@@ -449,6 +453,7 @@ func (e *Editor) selectedGrid() (int, int, bool) {
 // DeleteColumns deletes the grid columns the selection touches (the
 // caret's cell's columns); deleting every column deletes the table.
 func (e *Editor) DeleteColumns() {
+	defer e.Op("Delete Columns")()
 	g0, g1, ok := e.selectedGrid()
 	if !ok {
 		return
@@ -503,6 +508,7 @@ func (e *Editor) DeleteColumns() {
 
 // DeleteTable deletes the table the caret is in.
 func (e *Editor) DeleteTable() {
+	defer e.Op("Delete Table")()
 	e.tableEdit("table", func(tl TableLoc) { e.removeTable(tl) })
 }
 

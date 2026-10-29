@@ -1,7 +1,9 @@
 package edit
 
 import (
+	"reflect"
 	"slices"
+	"strconv"
 	"time"
 
 	"officelite/excel/calc"
@@ -28,6 +30,8 @@ type Book struct {
 	// BeginGroup.
 	grouping bool
 	groupAt  int
+	// label names the changes recorded now in the Undo list; see Op.
+	label string
 }
 
 // Where is the part of a sheet a change affected, which Undo and Redo
@@ -41,6 +45,8 @@ type Where struct {
 // structural change.
 type change struct {
 	where Where
+	// label is the change's name in the Undo and Redo lists ("Paste").
+	label string
 	cells []cellChange
 	st    *structural
 	dims  *dimChange
@@ -50,6 +56,15 @@ type change struct {
 	// sheet, when set, changes sheet properties (merges, hidden, default
 	// width) along with cells; see format.go.
 	sheet *sheetChange
+	// filter, when set, changes the AutoFilter and the rows it hides; see
+	// filter.go.
+	filter *filterChange
+	// outline, when set, changes the outline and the rows and columns it
+	// hides; see outline.go.
+	outline *outlineChange
+	// names, when set, changes the defined names along with cells (cut
+	// and pasted or dragged cells they point at); see move.go.
+	names *namesChange
 	// group, when set, is a series of changes made as one (BeginGroup).
 	group []*change
 }
@@ -61,12 +76,14 @@ type cellChange struct {
 
 // New starts editing wb.
 func New(wb *model.Workbook) *Book {
-	return &Book{
+	b := &Book{
 		WB:     wb,
 		calc:   calc.NewCalculator(wb, functions.Default()),
 		nf:     numfmt.New(wb.Date1904),
 		styles: map[model.Style]uint32{},
 	}
+	b.StylePivots()
+	return b
 }
 
 // Close releases the number formatter.
@@ -88,25 +105,86 @@ func (b *Book) CanUndo() bool { return len(b.undo) > 0 }
 func (b *Book) CanRedo() bool { return len(b.redo) > 0 }
 
 // Undo takes back the last change.
-func (b *Book) Undo() (Where, calc.Result, bool) {
-	if len(b.undo) == 0 {
-		return Where{}, calc.Result{}, false
-	}
-	ch := b.undo[len(b.undo)-1]
-	b.undo = b.undo[:len(b.undo)-1]
-	b.redo = append(b.redo, ch)
-	return ch.where, b.revert(ch), true
-}
+func (b *Book) Undo() (Where, calc.Result, bool) { return b.UndoN(1) }
 
 // Redo repeats the last change taken back.
-func (b *Book) Redo() (Where, calc.Result, bool) {
-	if len(b.redo) == 0 {
-		return Where{}, calc.Result{}, false
+func (b *Book) Redo() (Where, calc.Result, bool) { return b.RedoN(1) }
+
+// UndoN takes back the last n changes (fewer if there aren't as many), as
+// choosing an entry of Excel's Undo list does. where is the last one
+// taken back's.
+func (b *Book) UndoN(n int) (Where, calc.Result, bool) {
+	var (
+		where Where
+		res   calc.Result
+		ok    bool
+	)
+	for i := 0; i < n && len(b.undo) > 0; i++ {
+		ch := b.undo[len(b.undo)-1]
+		b.undo = b.undo[:len(b.undo)-1]
+		b.redo = append(b.redo, ch)
+		where, res, ok = ch.where, joinResults(res, b.revert(ch)), true
 	}
-	ch := b.redo[len(b.redo)-1]
-	b.redo = b.redo[:len(b.redo)-1]
-	b.undo = append(b.undo, ch)
-	return ch.where, b.reapply(ch), true
+	return where, res, ok
+}
+
+// RedoN repeats the last n changes taken back.
+func (b *Book) RedoN(n int) (Where, calc.Result, bool) {
+	var (
+		where Where
+		res   calc.Result
+		ok    bool
+	)
+	for i := 0; i < n && len(b.redo) > 0; i++ {
+		ch := b.redo[len(b.redo)-1]
+		b.redo = b.redo[:len(b.redo)-1]
+		b.undo = append(b.undo, ch)
+		where, res, ok = ch.where, joinResults(res, b.reapply(ch)), true
+	}
+	return where, res, ok
+}
+
+// UndoLabels and RedoLabels name the changes Undo and Redo would take
+// back or repeat, the next one first, for the Undo and Redo lists.
+func (b *Book) UndoLabels() []string { return labels(b.undo) }
+func (b *Book) RedoLabels() []string { return labels(b.redo) }
+
+func labels(stack []*change) []string {
+	out := make([]string, len(stack))
+	for i, ch := range stack {
+		out[len(stack)-1-i] = ch.label
+	}
+	return out
+}
+
+// Op names the changes recorded until the returned function runs, for
+// the Undo list ("Bold", "Fill Color"): a caller that knows the command
+// better than the Book method it calls names it first, and the outermost
+// name wins.
+//
+//	defer b.Op("Bold")()
+func (b *Book) Op(label string) func() {
+	if b.label != "" {
+		return func() {}
+	}
+	b.label = label
+	return func() { b.label = "" }
+}
+
+// either is yes when c is set, else no.
+func either(c bool, yes, no string) string {
+	if c {
+		return yes
+	}
+	return no
+}
+
+// typingLabel is Excel's Undo list name for typing text in a cell.
+func typingLabel(text string, row, col int) string {
+	if r := []rune(text); len(r) > 20 {
+		text = string(r[:20]) + "…"
+	}
+	return "Typing '" + text + "' in " + model.ColName(col) + strconv.Itoa(row+1)
 }
 
 // revert takes back one change.
@@ -119,9 +197,19 @@ func (b *Book) revert(ch *change) calc.Result {
 		return res
 	}
 	b.setAnnots(ch.annots, false)
+	if ch.names != nil {
+		ch.names.set(b.WB, false)
+	}
 	switch {
+	case ch.filter != nil:
+		ch.filter.set(b.WB, false)
+		res = b.visibilityChanged()
+	case ch.outline != nil:
+		ch.outline.set(b.WB, false)
+		res = b.visibilityChanged()
 	case ch.dims != nil:
 		ch.dims.set(b.WB, false)
+		res = b.visibilityChanged()
 	case ch.st != nil:
 		res = b.revertStructural(ch.st)
 	case ch.sheet != nil:
@@ -129,6 +217,9 @@ func (b *Book) revert(ch *change) calc.Result {
 		res = b.setCells(ch.cells, false)
 	default:
 		res = b.setCells(ch.cells, false)
+	}
+	if ch.names != nil {
+		res = b.recalculateAll() // what reads the names reads elsewhere
 	}
 	return res
 }
@@ -143,9 +234,19 @@ func (b *Book) reapply(ch *change) calc.Result {
 		return res
 	}
 	b.setAnnots(ch.annots, true)
+	if ch.names != nil {
+		ch.names.set(b.WB, true)
+	}
 	switch {
+	case ch.filter != nil:
+		ch.filter.set(b.WB, true)
+		res = b.visibilityChanged()
+	case ch.outline != nil:
+		ch.outline.set(b.WB, true)
+		res = b.visibilityChanged()
 	case ch.dims != nil:
 		ch.dims.set(b.WB, true)
+		res = b.visibilityChanged()
 	case ch.st != nil:
 		res, _ = b.applyStructural(ch.st)
 	case ch.sheet != nil:
@@ -153,6 +254,9 @@ func (b *Book) reapply(ch *change) calc.Result {
 		res = b.setCells(ch.cells, true)
 	default:
 		res = b.setCells(ch.cells, true)
+	}
+	if ch.names != nil {
+		res = b.recalculateAll()
 	}
 	return res
 }
@@ -178,18 +282,63 @@ func (b *Book) EndGroup() {
 	b.grouping = false
 	if n := len(b.undo) - b.groupAt; n > 1 {
 		g := slices.Clone(b.undo[b.groupAt:])
-		b.undo = append(b.undo[:b.groupAt], &change{where: g[len(g)-1].where, group: g})
+		label := b.label
+		if label == "" {
+			label = g[0].label
+		}
+		b.undo = append(b.undo[:b.groupAt], &change{where: g[len(g)-1].where, label: label, group: g})
 	}
 	b.trim()
 }
 
+// visibilityChanged recalculates after rows were hidden or shown (by a
+// filter or a row height): SUBTOTAL and AGGREGATE, which leave hidden rows
+// out, are always recalculated, so an update with no edited cells does it.
+func (b *Book) visibilityChanged() calc.Result { return b.calc.Update(nil, b.now()) }
+
 // record adds a change that has been applied to the undo stack.
 func (b *Book) record(ch *change) {
+	if ch.label == "" {
+		ch.label = b.label
+	}
+	if ch.label == "" {
+		ch.label = ch.kindLabel()
+	}
 	b.undo = append(b.undo, ch)
 	b.redo = nil
 	if !b.grouping {
 		b.trim()
 	}
+}
+
+// kindLabel names a change no command named, by what it changes.
+func (ch *change) kindLabel() string {
+	switch {
+	case ch.filter != nil:
+		return "AutoFilter"
+	case ch.outline != nil:
+		return "Outline"
+	case ch.dims != nil:
+		return "Size"
+	case ch.st != nil:
+		return "Insert/Delete"
+	case ch.names != nil:
+		return "Move"
+	case ch.sheet != nil:
+		b, a := ch.sheet.before, ch.sheet.after
+		switch {
+		case !reflect.DeepEqual(b.charts, a.charts) || !reflect.DeepEqual(b.chart, a.chart):
+			return "Chart"
+		case !reflect.DeepEqual(b.pivots, a.pivots):
+			return "PivotTable"
+		case !reflect.DeepEqual(b.valids, a.valids):
+			return "Data Validation"
+		}
+		return "Format"
+	case len(ch.annots) > 0 && len(ch.cells) == 0:
+		return "Note"
+	}
+	return "Edit"
 }
 
 // trim drops the oldest changes past maxUndo.
@@ -262,6 +411,9 @@ func snapshot(sh *model.Sheet, child func(r, c int) bool, r, c int) model.Cell {
 // changes nothing.
 func (b *Book) Enter(sheet, row, col int, text string) (calc.Result, error) {
 	sh := b.WB.Sheets[sheet]
+	if pt, i := sh.PivotAt(row, col); pt != nil {
+		return b.pivotEnter(sheet, i, row, col, text)
+	}
 	old := sh.Get(row, col)
 	cell, err := b.inputCell(old.Style, text)
 	if err != nil {
@@ -269,6 +421,7 @@ func (b *Book) Enter(sheet, row, col int, text string) (calc.Result, error) {
 	}
 	before := snapshot(sh, spillChildren(sh), row, col)
 	where := Where{sheet, model.Range{R1: row, C1: col, R2: row, C2: col}}
+	defer b.Op(typingLabel(text, row, col))()
 	return b.apply(where, []cellChange{{sheet, row, col, before, cell}}), nil
 }
 
@@ -334,8 +487,10 @@ func usedPart(sh *model.Sheet, r model.Range) (model.Range, bool) {
 	return r, r.R1 <= r.R2 && r.C1 <= r.C2
 }
 
-// Clear empties the cells of r, keeping their formats (Delete).
+// Clear empties the cells of r, keeping their formats (Delete). Rows the
+// AutoFilter hides are left alone, as in Excel.
 func (b *Book) Clear(sheet int, r model.Range) calc.Result {
+	defer b.Op("Clear")()
 	sh := b.WB.Sheets[sheet]
 	where := Where{sheet, r}
 	u, ok := usedPart(sh, r)
@@ -345,9 +500,12 @@ func (b *Book) Clear(sheet int, r model.Range) calc.Result {
 	child := spillChildren(sh)
 	var cells []cellChange
 	for row := u.R1; row <= u.R2; row++ {
+		if sh.RowFiltered(row) {
+			continue
+		}
 		for col := u.C1; col <= min(u.C2, sh.RowLen(row)-1); col++ {
 			before := snapshot(sh, child, row, col)
-			if before.Formula == "" && before.Kind == model.KindEmpty {
+			if before.IsBlank() {
 				continue
 			}
 			cells = append(cells, cellChange{sheet, row, col, before, model.Cell{Style: before.Style}})

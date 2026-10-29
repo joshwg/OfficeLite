@@ -4,12 +4,12 @@ import (
 	"image"
 	"image/color"
 	"slices"
+	"strconv"
 	"strings"
 
 	"gioui.org/font"
 	"gioui.org/io/key"
 	"gioui.org/layout"
-	"gioui.org/unit"
 	"gioui.org/widget"
 
 	"officelite/common/colors"
@@ -268,10 +268,10 @@ func (s *newStyleDialog) openFor(d *window) {
 	s.basedOn = d.ed.ParaStyleID(d.ed.Sel.Caret.Para)
 	s.next = ""
 	n := 1
-	for d.doc.Styles.FindStyleByName("Style"+itoa(n)) != nil {
+	for d.doc.Styles.FindStyleByName("Style"+strconv.Itoa(n)) != nil {
 		n++
 	}
-	s.name.SetText("Style" + itoa(n))
+	s.name.SetText("Style" + strconv.Itoa(n))
 	s.name.SetCaret(s.name.Len(), 0)
 	d.menu.Close()
 }
@@ -355,31 +355,9 @@ func (s *newStyleDialog) layout(gtx layout.Context, d *window) {
 		typeName = "Character"
 	}
 
-	label := func(t string) layout.FlexChild {
-		return layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			gtx.Constraints.Min.X = gtx.Dp(180)
-			return gui.Middle(gtx, th.Label(13, t, gui.MutedText, font.Normal).Layout)
-		})
-	}
-	row := func(children ...layout.FlexChild) layout.FlexChild {
-		return layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Bottom: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				gtx.Constraints.Min.Y = gtx.Dp(28)
-				return layout.Flex{Alignment: layout.Middle}.Layout(gtx, children...)
-			})
-		})
-	}
-	combo := func(dd *gui.DropDown, w unit.Dp, cur string, items []gui.DropItem, apply func(int)) layout.FlexChild {
-		return layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return gui.Middle(gtx, func(gtx layout.Context) layout.Dimensions {
-				if i := dd.Layout(gtx, th, w, cur, items); i >= 0 {
-					apply(i)
-				}
-				return layout.Dimensions{Size: image.Pt(gtx.Dp(w), gtx.Dp(24))}
-			})
-		})
-	}
-	modal(gtx, &s.tag, 500, func(gtx layout.Context) layout.Dimensions {
+	form := gui.Form{Th: th, LabelW: 180, LabelColor: gui.MutedText, RowH: 28}
+	label, row, combo := form.Label, form.Row, form.Combo
+	gui.Modal(gtx, &s.tag, 500, func(gtx layout.Context) layout.Dimensions {
 		children := []layout.FlexChild{
 			layout.Rigid(th.Label(18, "Create New Style from Formatting", gui.ChromeText, font.SemiBold).Layout),
 			layout.Rigid(layout.Spacer{Height: 14}.Layout),
@@ -412,7 +390,7 @@ func (s *newStyleDialog) layout(gtx layout.Context, d *window) {
 				return layout.Flex{}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions { return th.Button(gtx, &s.ok, "OK") }),
 					layout.Rigid(layout.Spacer{Width: 8}.Layout),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions { return plainButton(gtx, th, &s.cancel, "Cancel") }),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions { return th.SecondaryButton(gtx, &s.cancel, "Cancel") }),
 				)
 			}),
 		)

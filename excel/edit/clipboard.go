@@ -16,6 +16,17 @@ type Clip struct {
 	Src   model.Range    // the copied cells, limited to the used area
 	Cells [][]model.Cell // Src's cells, row by row
 	Cut   bool
+	// Rows holds the sheet row of each of Cells' rows when a copy left
+	// out rows the AutoFilter hides; nil when they are Src's rows.
+	Rows []int
+}
+
+// srcRow is the sheet row clip row i was copied from.
+func (c *Clip) srcRow(i int) int {
+	if c.Rows != nil {
+		return c.Rows[i]
+	}
+	return c.Src.R1 + i
 }
 
 // ErrPasteSize is returned when a paste would go past the sheet's edge.
@@ -23,7 +34,9 @@ var ErrPasteSize = errors.New("The paste area doesn't fit on the sheet")
 
 // Copy takes a copy of the cells of r for pasting. Values spilled from a
 // formula that is copied too are left out (the pasted formula spills
-// again); others are copied as values.
+// again); others are copied as values. A copy (not a cut) leaves out the
+// rows the AutoFilter hides, as Excel's does, so that they paste as
+// adjacent rows.
 func (b *Book) Copy(sheet int, r model.Range, cut bool) *Clip {
 	sh := b.WB.Sheets[sheet]
 	u, ok := usedPart(sh, r)
@@ -31,7 +44,13 @@ func (b *Book) Copy(sheet int, r model.Range, cut bool) *Clip {
 		u = model.Range{R1: r.R1, C1: r.C1, R2: r.R1, C2: r.C1}
 	}
 	clip := &Clip{WB: b.WB, Sheet: sheet, Src: u, Cut: cut}
+	if !cut {
+		clip.Rows = shownRows(sh, u)
+	}
 	for row := u.R1; row <= u.R2; row++ {
+		if clip.Rows != nil && sh.RowFiltered(row) {
+			continue
+		}
 		line := make([]model.Cell, u.C2-u.C1+1)
 		for col := u.C1; col <= u.C2; col++ {
 			c := *sh.Get(row, col)
@@ -43,6 +62,24 @@ func (b *Book) Copy(sheet int, r model.Range, cut bool) *Clip {
 		clip.Cells = append(clip.Cells, line)
 	}
 	return clip
+}
+
+// shownRows lists the rows of u the AutoFilter doesn't hide, or nil when
+// it hides none of them (or all of them: the copy then takes them all).
+func shownRows(sh *model.Sheet, u model.Range) []int {
+	if len(sh.Filtered) == 0 {
+		return nil
+	}
+	var rows []int
+	for row := u.R1; row <= u.R2; row++ {
+		if !sh.RowFiltered(row) {
+			rows = append(rows, row)
+		}
+	}
+	if len(rows) == 0 || len(rows) == u.R2-u.R1+1 {
+		return nil
+	}
+	return rows
 }
 
 // pasteTarget is where a block of h×w cells goes when sel is selected:
@@ -72,6 +109,7 @@ func pasteTarget(sh *model.Sheet, sel model.Range, h, w int) (model.Range, error
 // instead, and formulas pointing at them follow. It returns the pasted
 // range.
 func (b *Book) Paste(clip *Clip, sheet int, sel model.Range) (model.Range, calc.Result, error) {
+	defer b.Op("Paste")()
 	h, w := len(clip.Cells), len(clip.Cells[0])
 	if clip.Cut {
 		sel = model.Range{R1: sel.R1, C1: sel.C1, R2: sel.R1, C2: sel.C1}
@@ -103,12 +141,15 @@ func (b *Book) Paste(clip *Clip, sheet int, sel model.Range) (model.Range, calc.
 	}
 	dr, dc := dest.R1-clip.Src.R1, dest.C1-clip.Src.C1
 	for r := dest.R1; r <= dest.R2; r++ {
+		if h == 1 && !clip.Cut && sh.RowFiltered(r) {
+			continue // a single row fills only the rows the AutoFilter shows
+		}
 		for c := dest.C1; c <= dest.C2; c++ {
 			i, j := (r-dest.R1)%h, (c-dest.C1)%w
 			v := clip.Cells[i][j]
 			if v.Formula != "" && !clip.Cut {
 				// Each tile shifts by its own offset.
-				v.Formula = formula.Shift(v.Formula, r-(clip.Src.R1+i), c-(clip.Src.C1+j))
+				v.Formula = formula.Shift(v.Formula, r-clip.srcRow(i), c-(clip.Src.C1+j))
 			}
 			set(sheet, r, c, v)
 		}
@@ -151,6 +192,16 @@ func (b *Book) Paste(clip *Clip, sheet int, sel model.Range) (model.Range, calc.
 	for _, k := range order {
 		list = append(list, *cells[k])
 	}
+	if clip.Cut && clip.Sheet == sheet {
+		if names := b.moveNames(b.WB.Sheets[clip.Sheet].Name, clip.Src, dr, dc); names != nil {
+			// Names pointing into the moved block follow it too.
+			names.set(b.WB, true)
+			b.setCells(list, true)
+			res := b.recalculateAll()
+			b.record(&change{where: Where{sheet, dest}, cells: list, names: names})
+			return dest, res, nil
+		}
+	}
 	res := b.apply(Where{sheet, dest}, list)
 	return dest, res, nil
 }
@@ -160,6 +211,7 @@ func (b *Book) Paste(clip *Clip, sheet int, sel model.Range) (model.Range, calc.
 // top-left cell (a single value fills the selection) and keeps the
 // destination cells' styles.
 func (b *Book) PasteText(text string, sheet int, sel model.Range) (model.Range, calc.Result, error) {
+	defer b.Op("Paste")()
 	rows := SplitText(text)
 	if len(rows) == 0 {
 		return sel, calc.Result{}, nil
@@ -183,6 +235,9 @@ func (b *Book) PasteText(text string, sheet int, sel model.Range) (model.Range, 
 	child := spillChildren(sh)
 	var cells []cellChange
 	for r := dest.R1; r <= dest.R2; r++ {
+		if h == 1 && sh.RowFiltered(r) {
+			continue // a single value fills only the rows the AutoFilter shows
+		}
 		line := rows[(r-dest.R1)%h]
 		for c := dest.C1; c <= dest.C2; c++ {
 			field := ""
@@ -254,14 +309,19 @@ func SplitText(s string) [][]string {
 }
 
 // CopyText renders cells as tab-separated text for other programs, with
-// fields holding tabs, line breaks or quotes in double quotes.
+// fields holding tabs, line breaks or quotes in double quotes, leaving
+// out the rows the AutoFilter hides.
 func CopyText(sh *model.Sheet, r model.Range) string {
 	u, ok := usedPart(sh, r)
 	if !ok {
 		return "\r\n"
 	}
 	var b strings.Builder
+	rows := shownRows(sh, u)
 	for row := u.R1; row <= u.R2; row++ {
+		if rows != nil && sh.RowFiltered(row) {
+			continue // as Copy leaves them out
+		}
 		for col := u.C1; col <= u.C2; col++ {
 			if col > u.C1 {
 				b.WriteByte('\t')

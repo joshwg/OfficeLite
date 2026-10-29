@@ -50,6 +50,9 @@ type DropDown struct {
 // IsOpen reports whether the list is showing.
 func (d *DropDown) IsOpen() bool { return d.open }
 
+// Button is the button that opens the list (for tests that click it).
+func (d *DropDown) Button() *widget.Clickable { return &d.btn }
+
 // Close hides the list.
 func (d *DropDown) Close() { d.open = false }
 
@@ -74,7 +77,7 @@ func (d *DropDown) Layout(gtx layout.Context, th *Theme, width unit.Dp, current 
 		off := op.Offset(image.Pt(w-gtx.Dp(19), (h-gtx.Dp(18))/2)).Push(gtx.Ops)
 		IconDropArrow.Layout(ic, MutedText)
 		off.Pop()
-		tipButton(gtx, d, d.btn.Hovered() && !d.open, image.Pt(w, h))
+		tipButton(gtx, &d.btn, d.btn.Hovered() && !d.open, image.Pt(w, h))
 		return layout.Dimensions{Size: image.Pt(w, h)}
 	})
 }
@@ -223,4 +226,58 @@ func strokeRect(ops *op.Ops, r image.Rectangle, c color.NRGBA) {
 	HLine(ops, r.Min.X, r.Max.X, r.Max.Y-1, 1, c)
 	VLine(ops, r.Min.X, r.Min.Y, r.Max.Y, 1, c)
 	VLine(ops, r.Max.X-1, r.Min.Y, r.Max.Y, 1, c)
+}
+
+// LayoutPanel is LayoutButton with a panel of its own in place of the
+// list: panel draws the open drop-down's content (its size is the
+// panel's) and returns true to close it.
+func (d *DropDown) LayoutPanel(gtx layout.Context, button layout.Widget, panel func(gtx layout.Context) (layout.Dimensions, bool)) {
+	for d.btn.Clicked(gtx) {
+		d.open = !d.open
+	}
+	for {
+		ev, ok := gtx.Event(pointer.Filter{Target: &d.catcher, Kinds: pointer.Press})
+		if !ok {
+			break
+		}
+		if _, ok := ev.(pointer.Event); ok {
+			d.open = false
+			gtx.Execute(op.InvalidateCmd{})
+		}
+	}
+	dims := d.btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		dims := button(gtx)
+		area := clip.Rect{Max: dims.Size}.Push(gtx.Ops)
+		pointer.CursorPointer.Add(gtx.Ops)
+		area.Pop()
+		return dims
+	})
+	d.size = dims.Size
+	if !d.open {
+		return
+	}
+	rec := op.Record(gtx.Ops)
+	area := clip.Rect(image.Rect(-1<<15, -1<<15, 1<<15, 1<<15)).Push(gtx.Ops)
+	event.Op(gtx.Ops, &d.catcher)
+	area.Pop()
+	off := op.Offset(image.Pt(0, d.size.Y)).Push(gtx.Ops)
+	body := op.Record(gtx.Ops)
+	g := gtx
+	g.Constraints = layout.Constraints{Max: image.Pt(1<<15, 1<<15)}
+	pd, done := panel(g)
+	call := body.Stop()
+	sz := pd.Size
+	FillRect(gtx.Ops, image.Rect(2, 2, sz.X+3, sz.Y+3), colors.RGBA(0, 0, 0, 0x22))
+	FillRect(gtx.Ops, image.Rect(-1, -1, sz.X+1, sz.Y+1), ChromeLine)
+	FillRect(gtx.Ops, image.Rectangle{Max: sz}, colors.White)
+	stop := clip.Rect{Max: sz}.Push(gtx.Ops)
+	event.Op(gtx.Ops, &d.items) // absorb clicks between the panel's controls
+	stop.Pop()
+	call.Add(gtx.Ops)
+	off.Pop()
+	op.Defer(gtx.Ops, rec.Stop())
+	if done {
+		d.open = false
+		gtx.Execute(op.InvalidateCmd{})
+	}
 }

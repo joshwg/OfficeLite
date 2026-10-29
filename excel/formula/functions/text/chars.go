@@ -3,30 +3,9 @@ package text
 import (
 	"strings"
 
-	"golang.org/x/text/encoding/charmap"
 	"golang.org/x/text/unicode/norm"
 	"golang.org/x/text/width"
 )
-
-// decode1252 maps a Windows-1252 byte to its character. The unassigned
-// bytes 0x81, 0x8D, 0x8F, 0x90 and 0x9D map to U+0081 etc., as Windows'
-// MultiByteToWideChar does.
-func decode1252(b byte) rune {
-	r := charmap.Windows1252.DecodeByte(b)
-	if r == '�' {
-		return rune(b)
-	}
-	return r
-}
-
-func encode1252(r rune) (byte, bool) {
-	switch r {
-	case 0x81, 0x8D, 0x8F, 0x90, 0x9D:
-		return byte(r), true
-	}
-	b, ok := charmap.Windows1252.EncodeRune(r)
-	return b, ok
-}
 
 // Half-width voiced sound marks.
 const (

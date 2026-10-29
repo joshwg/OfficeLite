@@ -19,6 +19,7 @@ const (
 // PasteSpecial pastes part of clip into sel on sheet, tiled as Paste
 // does. Only PasteAll moves cut cells; the other modes copy them.
 func (b *Book) PasteSpecial(clip *Clip, sheet int, sel model.Range, mode PasteMode) (model.Range, calc.Result, error) {
+	defer b.Op("Paste Special")()
 	if mode == PasteAll {
 		return b.Paste(clip, sheet, sel)
 	}
@@ -31,6 +32,9 @@ func (b *Book) PasteSpecial(clip *Clip, sheet int, sel model.Range, mode PasteMo
 	child := spillChildren(sh)
 	var cells []cellChange
 	for r := dest.R1; r <= dest.R2; r++ {
+		if h == 1 && sh.RowFiltered(r) {
+			continue // as Paste: a single row fills only the rows shown
+		}
 		for c := dest.C1; c <= dest.C2; c++ {
 			i, j := (r-dest.R1)%h, (c-dest.C1)%w
 			src := clip.Cells[i][j]
@@ -46,7 +50,7 @@ func (b *Book) PasteSpecial(clip *Clip, sheet int, sel model.Range, mode PasteMo
 			case PasteFormulas:
 				v = src
 				if v.Formula != "" {
-					v.Formula = formula.Shift(v.Formula, r-(clip.Src.R1+i), c-(clip.Src.C1+j))
+					v.Formula = formula.Shift(v.Formula, r-clip.srcRow(i), c-(clip.Src.C1+j))
 				}
 				v = b.withStyle(v, before.Style)
 			case PasteFormats:

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 	"unicode/utf16"
 
@@ -76,25 +75,57 @@ func (r *reader) readFields() {
 			r.skip[o.s] = true
 		}
 	}
-	flattened := 0
-	var flat []fld
-	for _, f := range all {
-		if f.depth != 0 {
-			continue
-		}
-		unit := true
-		for cp := f.b; cp <= f.e; cp++ {
+	// A field without paragraph marks is one opaque run (with the fields
+	// nested in it). A field spanning paragraphs (a table of contents)
+	// keeps its result as text between a run holding its begin character,
+	// code and separator and one holding its end character; when its code
+	// spans paragraphs too, it is flattened to its result.
+	r.fieldBegin, r.fieldEnd = map[int]int{}, map[int]bool{}
+	sort.Slice(all, func(i, j int) bool { return all[i].b < all[j].b })
+	breaks := func(a, b int) bool {
+		for cp := a; cp <= b; cp++ {
 			if c := r.text[cp]; c == 0x0D || c == 0x07 || (c == 0x0C && r.sedCPs[cp+1]) {
-				unit = false
-				break
+				return true
 			}
 		}
-		if unit {
+		return false
+	}
+	flattened := 0
+	var flat, kept []fld
+	inside := func(f fld, list []fld, code bool) bool {
+		for _, t := range list {
+			end := t.e
+			if code && t.s >= 0 {
+				end = t.s
+			}
+			if f.b > t.b && f.e <= end {
+				return true
+			}
+		}
+		return false
+	}
+	var units []fld
+	for _, f := range all {
+		if inside(f, units, false) || inside(f, flat, false) || inside(f, kept, true) {
+			continue
+		}
+		if !breaks(f.b, f.e) {
 			r.unitEnd[f.b] = f.e
-		} else {
+			units = append(units, f)
+			continue
+		}
+		codeEnd := f.s
+		if codeEnd < 0 {
+			codeEnd = f.e
+		}
+		if breaks(f.b, codeEnd) {
 			flattened++
 			flat = append(flat, f)
+			continue
 		}
+		r.fieldBegin[f.b] = codeEnd
+		r.fieldEnd[f.e] = true
+		kept = append(kept, f)
 	}
 	// Flatten: hide codes of the field and of every field nested in it.
 	for _, f := range all {
@@ -165,7 +196,7 @@ func (r *reader) runProps(c *chpInfo, paraStyle string) (model.RunProps, string)
 	return resolveToggles(c, base), cs
 }
 
-// tableState collects table rows while walking paragraphs.
+// tableState collects a table's rows while walking paragraphs.
 type tableState struct {
 	table *model.Table
 	cells []*model.TableCell
@@ -178,28 +209,52 @@ type rowTap struct {
 	tap []byte
 }
 
-// buildBody walks the main text paragraph by paragraph.
+// buildBody builds the main document's blocks.
 func (r *reader) buildBody() {
-	var ts *tableState
-	flush := func() {
-		if ts == nil {
-			return
-		}
+	r.doc.Body = r.blocks(0, int(r.fib.lw[lwCcpText]), true)
+	if len(r.doc.Body) == 0 {
+		r.doc.Body = []model.Block{&model.Paragraph{}}
+	}
+}
+
+// blocks builds the blocks of CPs [start, end): paragraphs and tables,
+// nested tables included (a paragraph's itap is its table depth; the
+// cells of a table at depth 2 or more end with sprmPFInnerTableCell and
+// its rows with sprmPFInnerTtp). In the main document (main set) a
+// section mark (0x0C at a section boundary) ends a paragraph and its
+// section.
+func (r *reader) blocks(start, end int, main bool) []model.Block {
+	var out []model.Block
+	var stack []*tableState // stack[d-1] is the open table at depth d
+	// pop finishes the innermost open table and puts it in its parent's
+	// cell (or the output).
+	pop := func() {
+		ts := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
 		if ts.cell != nil && len(ts.cell.Blocks) > 0 {
 			ts.cells = append(ts.cells, ts.cell)
 		}
 		if len(ts.cells) > 0 {
 			ts.rows = append(ts.rows, rowTap{&model.TableRow{Cells: ts.cells}, nil})
 		}
+		if len(ts.rows) == 0 {
+			return
+		}
 		r.finishTable(ts)
-		r.doc.Body = append(r.doc.Body, ts.table)
-		ts = nil
+		if len(stack) == 0 {
+			out = append(out, ts.table)
+			return
+		}
+		parent := stack[len(stack)-1]
+		if parent.cell == nil {
+			parent.cell = &model.TableCell{Span: 1}
+		}
+		parent.cell.Blocks = append(parent.cell.Blocks, ts.table)
 	}
-	start := 0
-	nested := false
-	for cp := 0; cp < len(r.text); cp++ {
+	ps := start
+	for cp := start; cp < end && cp < len(r.text); cp++ {
 		c := r.text[cp]
-		section := c == 0x0C && r.sedCPs[cp+1] && cp+1 < len(r.text)
+		section := main && c == 0x0C && r.sedCPs[cp+1] && cp+1 < end
 		if c != 0x0D && c != 0x07 && !section {
 			continue
 		}
@@ -213,34 +268,27 @@ func (r *reader) buildBody() {
 		if pi.hasItap {
 			itap = pi.itap
 		}
-		para := r.paragraph(start, cp, istd, &pi)
+		para := r.paragraph(ps, cp, istd, &pi)
 		if section {
-			para.Runs = append(para.Runs, model.Run{Kind: model.RunPageBreak})
+			para.Sect = r.sectEnding(cp + 1)
 		}
-		start = cp + 1
+		ps = cp + 1
+		for len(stack) > itap {
+			pop()
+		}
 		if itap <= 0 {
-			flush()
-			r.doc.Body = append(r.doc.Body, para)
+			out = append(out, para)
 			continue
 		}
-		if ts == nil {
-			ts = &tableState{table: &model.Table{}}
+		for len(stack) < itap {
+			stack = append(stack, &tableState{table: &model.Table{}})
 		}
-		if ts.cell == nil {
-			ts.cell = &model.TableCell{Span: 1}
-		}
+		ts := stack[itap-1]
+		rowEnd, cellEnd := pi.ttp, c == 0x07
 		if itap > 1 {
-			if !nested {
-				nested = true
-				r.warn("Nested tables are shown as plain paragraphs inside the outer table's cells.")
-			}
-			if pi.innerTtp {
-				continue
-			}
-			ts.cell.Blocks = append(ts.cell.Blocks, para)
-			continue
+			rowEnd, cellEnd = pi.innerTtp, pi.innerCell && !pi.innerTtp
 		}
-		if pi.ttp {
+		if rowEnd {
 			if ts.cell != nil && len(ts.cell.Blocks) > 0 {
 				ts.cells = append(ts.cells, ts.cell)
 			}
@@ -248,16 +296,19 @@ func (r *reader) buildBody() {
 			ts.cells, ts.cell = nil, nil
 			continue
 		}
+		if ts.cell == nil {
+			ts.cell = &model.TableCell{Span: 1}
+		}
 		ts.cell.Blocks = append(ts.cell.Blocks, para)
-		if c == 0x07 {
+		if cellEnd {
 			ts.cells = append(ts.cells, ts.cell)
 			ts.cell = nil
 		}
 	}
-	flush()
-	if len(r.doc.Body) == 0 {
-		r.doc.Body = []model.Block{&model.Paragraph{}}
+	for len(stack) > 0 {
+		pop()
 	}
+	return out
 }
 
 // paragraph builds the paragraph with text [start, mark) and mark at mark.
@@ -302,6 +353,15 @@ func (r *reader) runs(start, end int, paraStyle string) []model.Run {
 			cp = e
 			continue
 		}
+		if e, ok := r.fieldBegin[cp]; ok && e < end {
+			add(r.fieldCharRun(cp, e, "fieldbegin", paraStyle))
+			cp = e
+			continue
+		}
+		if r.fieldEnd[cp] {
+			add(r.fieldCharRun(cp, cp, "fieldend", paraStyle))
+			continue
+		}
 		c := r.text[cp]
 		chp := r.chpAt(cp)
 		if chp.rmDel {
@@ -328,14 +388,26 @@ func (r *reader) runs(start, end int, paraStyle string) []model.Run {
 				add(*o)
 			}
 		case c == 0x08 && chp.spec:
-			r.warn("Floating pictures and drawings are shown as placeholders and are not kept when saving.")
-			add(r.simpleOpaque(run, "shape", "[shape]", cp))
-		case c == 0x02 && chp.spec:
-			n, ok := r.footnoteRefs[cp]
-			if !ok {
-				n = r.endnoteRefs[cp]
+			o := r.simpleOpaque(run, "shape", "", cp)
+			if f := r.floatAt(cp); f != nil {
+				o.Opaque.Float = f
+			} else {
+				r.warn("Some floating pictures and drawings can't be shown; they are not kept when saving.")
+				o.Text = "[shape]"
 			}
-			add(r.simpleOpaque(run, "note", strconv.Itoa(n), cp))
+			add(o)
+		case c == 0x02 && chp.spec:
+			if note := r.noteAt[cp]; note != nil {
+				o := r.simpleOpaque(run, "note", "", cp)
+				o.Opaque.Note = note
+				add(o)
+			} else if r.inNote {
+				o := r.simpleOpaque(run, "notemark", "", cp)
+				o.Opaque.NoteMark = true
+				add(o)
+			} else {
+				add(r.simpleOpaque(run, "note", "*", cp))
+			}
 		case c == 0x05 && chp.spec:
 			continue // comment anchor
 		case c < 0x20 && c != 0x1E && c != 0x1F:
@@ -621,10 +693,17 @@ func (r *reader) finishTable(ts *tableState) {
 				row.Height = twips(abs(int(i16(a))))
 			case sprmTTableHeader:
 				row.Header = u8(a) != 0
+			case sprmTFCantSplit, sprmTFCantSplit90:
+				row.CantSplit = u8(a) != 0
 			case sprmTJc90:
 				t.Align = tableAlign(u16(a))
 			case sprmTJc:
 				t.Align = tableAlign(uint16(u8(a)))
+			case sprmTIstd:
+				// The table style, for the paragraph spacing it gives cells.
+				if st := r.doc.Styles.Find(r.styleID(int(u16(a)))); st != nil && st.Type == model.TableStyle {
+					t.Style = st.ID
+				}
 			case sprmTDefTableShd, sprmTDefTableShd2nd, sprmTDefTableShd3rd,
 				sprmTDefTableShdRaw, sprmTDefTableShdRaw2, sprmTDefTableShdRaw3:
 				off := 0

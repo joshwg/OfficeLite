@@ -5,6 +5,7 @@ import (
 	"sort"
 
 	f "officelite/excel/formula"
+	"officelite/excel/formula/functions/internal/stats"
 )
 
 // Statistic numbers, as used by AGGREGATE (SUBTOTAL uses 1-11 too).
@@ -111,7 +112,7 @@ func stat(id int, xs []float64, k float64) f.Value {
 		if len(xs) == 0 {
 			return f.ErrDiv0
 		}
-		return f.NumberOrErr(sum(xs) / n)
+		return f.NumberOrErr(stats.Sum(xs) / n)
 	case stCount, stCountA:
 		return f.Number(n)
 	case stMax, stMin:
@@ -135,22 +136,16 @@ func stat(id int, xs []float64, k float64) f.Value {
 		}
 		return f.NumberOrErr(p)
 	case stSum:
-		return f.NumberOrErr(sum(xs))
+		return f.NumberOrErr(stats.Sum(xs))
 	case stStdevS, stStdevP, stVarS, stVarP:
-		sample := id == stStdevS || id == stVarS
-		if len(xs) == 0 || (sample && len(xs) < 2) {
+		ddof := 0
+		if id == stStdevS || id == stVarS {
+			ddof = 1
+		}
+		v, ok := stats.Variance(xs, ddof)
+		if !ok {
 			return f.ErrDiv0
 		}
-		mean := sum(xs) / n
-		ss := 0.0
-		for _, x := range xs {
-			ss += (x - mean) * (x - mean)
-		}
-		d := n
-		if sample {
-			d--
-		}
-		v := ss / d
 		if id == stStdevS || id == stStdevP {
 			v = math.Sqrt(v)
 		}
@@ -194,14 +189,6 @@ func stat(id int, xs []float64, k float64) f.Value {
 		return percentile(xs, k, true)
 	}
 	return f.ErrValue
-}
-
-func sum(xs []float64) float64 {
-	s := 0.0
-	for _, x := range xs {
-		s += x
-	}
-	return s
 }
 
 func sorted(xs []float64) []float64 {

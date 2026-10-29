@@ -5,8 +5,9 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"path"
 	"strings"
+
+	"officelite/common/opc"
 )
 
 // Relationship types (matched by suffix so transitional and strict both work).
@@ -77,22 +78,8 @@ type rel struct {
 
 func (r rel) is(suffix string) bool { return strings.HasSuffix(r.Type, suffix) }
 
-// relsPath is the relationships part for a part ("" = the package).
-func relsPath(part string) string {
-	dir, base := path.Split(part)
-	return dir + "_rels/" + base + ".rels"
-}
-
-// resolve turns a relationship target into a part name.
-func resolve(from, target string) string {
-	if strings.HasPrefix(target, "/") {
-		return strings.TrimPrefix(path.Clean(target), "/")
-	}
-	return strings.TrimPrefix(path.Clean(path.Join(path.Dir(from), target)), "/")
-}
-
 func (p *pkg) rels(part string) []rel {
-	data, err := p.read(relsPath(part))
+	data, err := p.read(opc.RelsPath(part))
 	if err != nil {
 		return nil
 	}
@@ -113,7 +100,7 @@ func (p *pkg) rels(part string) []rel {
 func (p *pkg) mainPart() string {
 	for _, r := range p.rels("") {
 		if r.is(relOfficeDoc) {
-			return resolve("", r.Target)
+			return opc.Resolve("", r.Target)
 		}
 	}
 	return "word/document.xml"

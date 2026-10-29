@@ -12,11 +12,15 @@ import (
 	"log"
 	"os"
 	"sync"
+	"time"
 
 	"gioui.org/app"
 
+	"officelite/common/autorecover"
+	"officelite/common/autosave"
 	"officelite/common/doctype"
 	"officelite/common/gui"
+	"officelite/common/lockfile"
 	"officelite/common/version"
 	excelui "officelite/excel/ui"
 	wordui "officelite/word/ui"
@@ -38,22 +42,47 @@ func main() {
 
 	fonts := gui.NewFontLibrary(gui.DefaultFontDirs()...)
 	var windows sync.WaitGroup
+	// Recovery copies left by an OfficeLite that crashed, found before
+	// this one's windows write their own.
+	orphans := autorecover.Orphans("")
 	// open starts a window; windows call it for New, Open and recent files.
+	// A file already open in a window (of this process or another
+	// OfficeLite's) brings that window to the front instead.
 	var open func(kind doctype.Kind, path string)
-	open = func(kind doctype.Kind, path string) {
+	// start opens a window for a file or, with rec, a recovered copy.
+	start := func(kind doctype.Kind, path string, rec *autorecover.Entry) {
 		windows.Add(1)
 		go func() {
 			defer windows.Done()
 			w := new(app.Window)
 			var err error
 			if kind == doctype.Document {
-				err = wordui.Run(w, wordui.Config{Path: path, Fonts: fonts, Launch: open})
+				err = wordui.Run(w, wordui.Config{Path: path, Fonts: fonts, Launch: open, Recovered: rec})
 			} else {
-				err = excelui.Run(w, excelui.Config{Path: path, Fonts: fonts, Launch: open})
+				err = excelui.Run(w, excelui.Config{Path: path, Fonts: fonts, Launch: open, Recovered: rec})
 			}
 			if err != nil {
 				log.Print(err)
 			}
+		}()
+	}
+	open = func(kind doctype.Kind, path string) {
+		if path != "" && lockfile.Activate(path) {
+			return
+		}
+		start(kind, path, nil)
+	}
+	if len(orphans) > 0 {
+		windows.Add(1)
+		go func() {
+			defer windows.Done()
+			runRecovery(new(app.Window), fonts, orphans, func(e autorecover.Entry) {
+				kind := doctype.Spreadsheet
+				if e.App == autorecover.Word {
+					kind = doctype.Document
+				}
+				start(kind, "", &e)
+			})
 		}()
 	}
 
@@ -81,8 +110,12 @@ func main() {
 		open(kind, path)
 	}
 
+	// With every file handed to the OfficeLite that has it open, there is
+	// no window and the program ends here.
 	go func() {
 		windows.Wait()
+		autorecover.Flush(10 * time.Second) // the closed windows' copies deleted
+		autosave.Flush(10 * time.Second)    // and their AutoSaves written
 		os.Exit(0)
 	}()
 	app.Main()

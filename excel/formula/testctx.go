@@ -2,6 +2,7 @@ package formula
 
 import (
 	"math/rand"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -95,18 +96,7 @@ func cellName(row, col int) string {
 	for c := col + 1; c > 0; c = (c - 1) / 26 {
 		b = append([]byte{byte('A' + (c-1)%26)}, b...)
 	}
-	return string(b) + itoa(row+1)
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var b []byte
-	for ; n > 0; n /= 10 {
-		b = append([]byte{byte('0' + n%10)}, b...)
-	}
-	return string(b)
+	return string(b) + strconv.Itoa(row+1)
 }
 
 // Eval evaluates src as if it were entered in Sheet1!A1000.

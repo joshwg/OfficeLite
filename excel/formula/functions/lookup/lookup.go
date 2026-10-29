@@ -1,6 +1,7 @@
 // Package lookup implements Excel's lookup and reference functions:
 // XLOOKUP, XMATCH, VLOOKUP, HLOOKUP, LOOKUP, MATCH, INDEX, CHOOSE, ROW,
-// ROWS, COLUMN, COLUMNS, ADDRESS, OFFSET, INDIRECT, TRANSPOSE and the
+// ROWS, COLUMN, COLUMNS, ADDRESS, GETPIVOTDATA, OFFSET, INDIRECT, AREAS, FORMULATEXT,
+// HYPERLINK, TRANSPOSE and the
 // dynamic-array functions FILTER, UNIQUE, SORT, SORTBY, GROUPBY and PIVOTBY
 // and the array-shaping CHOOSECOLS, CHOOSEROWS, TAKE, DROP, EXPAND, HSTACK,
 // VSTACK, TOCOL, TOROW, WRAPCOLS, WRAPROWS and TRIMRANGE.
@@ -23,6 +24,7 @@ func Register(r *f.Registry) {
 			return vhlookup(e, a, false)
 		}},
 		f.Spec{Name: "LOOKUP", Min: 2, Max: 3, Arrays: f.Only(1, 2), Refs: f.Only(2), Fn: lookupFn},
+		f.Spec{Name: "GETPIVOTDATA", Min: 2, Max: 254, Refs: f.Only(1), Volatile: true, Fn: getPivotData},
 		f.Spec{Name: "INDEX", Min: 2, Max: 4, Refs: f.Only(0), Arrays: f.All, Fn: index},
 		f.Spec{Name: "CHOOSE", Min: 2, Max: 255, Refs: f.From(1), Arrays: f.All, Fn: choose},
 		f.Spec{Name: "ROW", Min: 0, Max: 1, Refs: f.All, Arrays: f.All, Fn: func(e *f.Env, a []f.Value) f.Value {
@@ -40,6 +42,9 @@ func Register(r *f.Registry) {
 		f.Spec{Name: "ADDRESS", Min: 2, Max: 5, Fn: address},
 		f.Spec{Name: "OFFSET", Min: 3, Max: 5, Refs: f.Only(0), Arrays: f.Only(0), Volatile: true, Fn: offset},
 		f.Spec{Name: "INDIRECT", Min: 1, Max: 2, Volatile: true, Fn: indirect},
+		f.Spec{Name: "AREAS", Min: 1, Max: 1, Refs: f.All, Arrays: f.All, Fn: areas},
+		f.Spec{Name: "FORMULATEXT", Min: 1, Max: 1, Refs: f.All, Arrays: f.All, Fn: formulaText},
+		f.Spec{Name: "HYPERLINK", Min: 1, Max: 2, Fn: hyperlink},
 		f.Spec{Name: "TRANSPOSE", Min: 1, Max: 1, Arrays: f.All, Fn: transpose},
 		f.Spec{Name: "FILTER", Min: 2, Max: 3, Arrays: f.All, Fn: filter},
 		f.Spec{Name: "UNIQUE", Min: 1, Max: 3, Arrays: f.All, Fn: unique},

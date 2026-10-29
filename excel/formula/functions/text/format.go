@@ -28,9 +28,6 @@ func formatNumber(v float64, code string) string {
 	return formatter.Format(v, 0, code)
 }
 
-// offset1904 is the 1900-system serial of 1904-01-01 minus one.
-const offset1904 = 1462
-
 // isDateFormat reports whether a format section shows a calendar date
 // (y, m, d, e outside quotes; E+ and E- are scientific notation), so a 1904 serial must be shifted. Elapsed
 // time ([h], [m], [s]) is a duration and is not shifted.
@@ -104,37 +101,11 @@ func textFn(e *f.Env, a []f.Value) f.Value {
 	return result(formatSections(x, code, e.Date1904()))
 }
 
-// splitSections splits a number format at the ';' that separate its
-// positive;negative;zero;text sections (not inside quotes, after a
-// backslash or within [...]).
-func splitSections(code string) []string {
-	var out []string
-	start, quoted, bracket := 0, false, false
-	for i := 0; i < len(code); i++ {
-		switch c := code[i]; {
-		case quoted:
-			quoted = c != '"'
-		case c == '"':
-			quoted = true
-		case c == '\\':
-			i++
-		case c == '[':
-			bracket = true
-		case c == ']':
-			bracket = false
-		case c == ';' && !bracket:
-			out = append(out, code[start:i])
-			start = i + 1
-		}
-	}
-	return append(out, code[start:])
-}
-
 // formatSections picks the section for x's sign itself (the renderer
 // mishandles a zero section) and renders it. Conditional formats such as
 // [>100] are left to the renderer.
 func formatSections(x float64, code string, date1904 bool) string {
-	secs := splitSections(code)
+	secs := numfmt.SplitSections(code)
 	conditional := false
 	for _, s := range secs {
 		if strings.HasPrefix(s, "[<") || strings.HasPrefix(s, "[>") || strings.HasPrefix(s, "[=") {
@@ -160,7 +131,7 @@ func formatSections(x float64, code string, date1904 bool) string {
 		return f.NumberText(x)
 	}
 	if date1904 && isDateFormat(sec) {
-		x += offset1904
+		x += f.Offset1904
 	}
 	return formatNumber(x, sec)
 }
@@ -169,7 +140,7 @@ func formatSections(x float64, code string, date1904 bool) string {
 // section containing '@', with '@' standing for the text. Other formats
 // leave text unchanged.
 func formatText(s, code string) string {
-	secs := splitSections(code)
+	secs := numfmt.SplitSections(code)
 	var sec string
 	switch {
 	case len(secs) >= 4:
@@ -214,50 +185,10 @@ func formatText(s, code string) string {
 
 // --- FIXED / DOLLAR -------------------------------------------------------------------
 
-// roundDec rounds x to d decimals (d may be negative) half away from zero,
-// after reducing it to 15 significant digits as Excel does, so that
-// 1.005 rounds to 1.01.
-func roundDec(x float64, d int) float64 {
-	if x == 0 || math.IsInf(x, 0) || math.IsNaN(x) {
-		return x
-	}
-	s := strconv.FormatFloat(math.Abs(x), 'e', 14, 64) // d.dddddddddddddde±XX
-	mant, expStr, _ := strings.Cut(s, "e")
-	digits := []byte(strings.Replace(mant, ".", "", 1))
-	exp, _ := strconv.Atoi(expStr)
-	keep := exp + 1 + d // digits before the rounding position
-	if keep >= len(digits) {
-		return x
-	}
-	if keep < 0 {
-		return 0
-	}
-	up := digits[keep] >= '5'
-	digits = digits[:keep]
-	if up {
-		i := keep - 1
-		for ; i >= 0 && digits[i] == '9'; i-- {
-			digits[i] = '0'
-		}
-		if i >= 0 {
-			digits[i]++
-		} else {
-			digits = append([]byte{'1'}, digits...)
-			exp++
-			keep++
-		}
-	}
-	if len(digits) == 0 {
-		return 0
-	}
-	v, _ := strconv.ParseFloat(string(digits)+"e"+strconv.Itoa(exp+1-keep), 64)
-	return math.Copysign(v, x)
-}
-
 // fixedText formats |x| rounded to d decimals, with thousands separators
 // unless noCommas. neg reports whether the rounded value is negative.
 func fixedText(x float64, d int, noCommas bool) (s string, neg bool) {
-	r := roundDec(x, d)
+	r := f.RoundDigits(x, d, f.RoundHalf)
 	s = strconv.FormatFloat(math.Abs(r), 'f', max(d, 0), 64)
 	if !noCommas {
 		intPart, frac, hasFrac := strings.Cut(s, ".")

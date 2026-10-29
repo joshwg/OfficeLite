@@ -55,6 +55,9 @@ type parser struct {
 	xti      []xti
 	names    []definedName
 	warned   map[string]bool
+
+	flt filterReader // the AutoFilter records of the sheet being read
+	dv  validationReader
 }
 
 // warnf adds a workbook warning once.
@@ -93,13 +96,20 @@ func Read(data []byte) (*model.Workbook, error) {
 	p.wb.Date1904 = p.date1904
 	p.nf = numfmt.New(p.date1904)
 	defer p.nf.Close()
-	for _, bs := range p.sheets {
+	for i, bs := range p.sheets {
+		if bs.kind == 2 {
+			p.warnf("%s: chart sheets can't be read from .xls files; the sheet isn't shown and is dropped when saved", bs.name)
+		}
 		if bs.kind != 0 {
 			continue // chart, macro and VB module sheets
 		}
 		sh := model.NewSheet(bs.name)
 		sh.Hidden = bs.hidden
+		p.flt = filterReader{hiddenHt: map[int]float32{}}
+		p.dv = validationReader{}
 		p.readSheet(bs.pos, sh)
+		p.finishFilter(i+1, sh, &p.flt)
+		p.finishValidations(sh, &p.dv)
 		p.wb.Sheets = append(p.wb.Sheets, sh)
 	}
 	return p.wb, nil
@@ -153,13 +163,17 @@ func (p *parser) globals() error {
 		case recPalette:
 			n := u16(r.body, 0)
 			for i := 0; i < n; i++ {
-				b := r.body[2+4*i:]
-				if len(b) < 3 {
+				o := 2 + 4*i
+				if o+3 > len(r.body) {
 					break
 				}
+				b := r.body[o:]
 				p.palette[8+i] = uint32(b[0])<<16 | uint32(b[1])<<8 | uint32(b[2])
 			}
 		case recBoundSheet:
+			if len(r.body) < 6 {
+				break
+			}
 			name, _ := unicodeString(r.body, 6, 1)
 			p.sheets = append(p.sheets, boundSheet{
 				name:   name,

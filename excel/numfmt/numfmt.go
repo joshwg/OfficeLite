@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/xuri/excelize/v2"
+
+	"officelite/excel/formula"
 )
 
 // Formatter turns a number plus an Excel number format into display text.
@@ -43,9 +45,6 @@ func New(date1904 bool) *Formatter {
 	// 1904 dates wrongly); 1904 serials are shifted instead, see Format.
 	return &Formatter{date1904: date1904, scratch: excelize.NewFile(), styles: map[fmtKey]int{}, failed: map[fmtKey]bool{}}
 }
-
-// offset1904 is the number of days between the two date systems' epochs.
-const offset1904 = 1462
 
 // showsCalendarDate reports whether a format displays a calendar date (as
 // opposed to a number, a time of day or elapsed time), i.e. whether the
@@ -90,7 +89,7 @@ func IsGeneral(id int, code string) bool {
 // Format renders v with built-in format id, or with code when code is set.
 func (nf *Formatter) Format(v float64, id int, code string) string {
 	if nf.date1904 && showsCalendarDate(id, code) {
-		v += offset1904
+		v += formula.Offset1904
 	}
 	if code == "" {
 		code = localeFormats[id]

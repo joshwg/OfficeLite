@@ -116,7 +116,7 @@ func (t *Theme) Button(gtx layout.Context, btn *widget.Clickable, label string) 
 
 // Option is a large selectable row with an icon, a title and a
 // description, used for Open's Browse and the Save As / Export choices.
-func (t *Theme) Option(gtx layout.Context, btn *widget.Clickable, icon *widget.Icon, title, desc string, selected bool) layout.Dimensions {
+func (t *Theme) Option(gtx layout.Context, btn *widget.Clickable, icon *Icon, title, desc string, selected bool) layout.Dimensions {
 	bg := color.NRGBA{}
 	if selected {
 		bg = t.AccentTint

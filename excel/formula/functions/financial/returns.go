@@ -60,7 +60,7 @@ func cashflows(e *f.Env, v f.Value, strict bool) ([]float64, f.Value) {
 		default:
 			if direct {
 				var n float64
-				if n, bad = f.Num(x); bad == nil {
+				if n, bad = e.Num(x); bad == nil {
 					out = append(out, n)
 				}
 			} else if strict {
@@ -83,11 +83,11 @@ func mixed(vs []float64) bool {
 }
 
 // guessArg is the optional guess argument i, 10% when omitted.
-func guessArg(a []f.Value, i int) (float64, f.Value) {
+func guessArg(e *f.Env, a []f.Value, i int) (float64, f.Value) {
 	if !given(a, i) {
 		return 0.1, nil
 	}
-	return f.Num(a[i])
+	return e.Num(a[i])
 }
 
 // IRR(values, [guess]): the rate at which the NPV of values (one per
@@ -98,7 +98,7 @@ func irr(e *f.Env, a []f.Value) f.Value {
 	if err != nil {
 		return err
 	}
-	guess, err := guessArg(a, 1)
+	guess, err := guessArg(e, a, 1)
 	if err != nil {
 		return err
 	}
@@ -127,7 +127,7 @@ func mirr(e *f.Env, a []f.Value) f.Value {
 	if err != nil {
 		return err
 	}
-	x, err := nums(a[1:], 2)
+	x, err := nums(e, a[1:], 2)
 	if err != nil {
 		return err
 	}
@@ -185,7 +185,7 @@ func xnpvOf(r float64, vs, ts []float64) (y, dy float64) {
 
 // XNPV(rate, values, dates)
 func xnpv(e *f.Env, a []f.Value) f.Value {
-	r, err := f.Num(a[0])
+	r, err := e.Num(a[0])
 	if err != nil {
 		return err
 	}
@@ -208,7 +208,7 @@ func xirr(e *f.Env, a []f.Value) f.Value {
 	if err != nil {
 		return err
 	}
-	guess, err := guessArg(a, 2)
+	guess, err := guessArg(e, a, 2)
 	if err != nil {
 		return err
 	}
@@ -225,7 +225,7 @@ func xirr(e *f.Env, a []f.Value) f.Value {
 // FVSCHEDULE(principal, schedule): principal compounded at each rate of
 // schedule; blank cells count as 0% and other non-numbers are #VALUE!.
 func fvschedule(e *f.Env, a []f.Value) f.Value {
-	p, err := f.Num(a[0])
+	p, err := e.Num(a[0])
 	if err != nil {
 		return err
 	}
@@ -241,7 +241,7 @@ func fvschedule(e *f.Env, a []f.Value) f.Value {
 			var n float64
 			if !direct {
 				bad = f.ErrValue
-			} else if n, bad = f.Num(x); bad == nil {
+			} else if n, bad = e.Num(x); bad == nil {
 				p *= 1 + n
 			}
 		}

@@ -4,12 +4,16 @@ package recent
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"time"
+
+	"officelite/common/atomicfile"
 )
 
 // Max is how many files the list keeps.
@@ -67,11 +71,21 @@ func Default() *List {
 func Open(path string) *List {
 	l := &List{path: path}
 	if path != "" {
-		if data, err := os.ReadFile(path); err == nil {
-			_ = json.Unmarshal(data, &l.list)
-		}
+		l.list, _ = load(path)
 	}
 	return l
+}
+
+func load(path string) ([]Entry, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var list []Entry
+	if err := json.Unmarshal(data, &list); err != nil {
+		return nil, err
+	}
+	return list, nil
 }
 
 // Entries returns the list, most recent first.
@@ -88,48 +102,56 @@ func (l *List) Revision() int {
 	return l.rev
 }
 
-// Add moves path to the top of the list.
-func (l *List) Add(path string, kind Kind) {
+// Add moves path to the top of the list. The list is saved at once; the
+// error is from saving it (the list in memory is updated regardless).
+func (l *List) Add(path string, kind Kind) error {
 	if path == "" {
-		return
+		return nil
 	}
 	if abs, err := filepath.Abs(path); err == nil {
 		path = abs
 	}
+	return l.update(func(list []Entry) []Entry {
+		list = slices.DeleteFunc(list, func(e Entry) bool { return samePath(e.Path, path) })
+		list = slices.Insert(list, 0, Entry{Path: path, Kind: kind, Opened: time.Now()})
+		if len(list) > Max {
+			list = list[:Max]
+		}
+		return list
+	})
+}
+
+// Remove drops path from the list and saves it, as Add does.
+func (l *List) Remove(path string) error {
+	return l.update(func(list []Entry) []Entry {
+		return slices.DeleteFunc(list, func(e Entry) bool { return samePath(e.Path, path) })
+	})
+}
+
+// update applies change to the list and saves it. Other OfficeLite
+// processes share the file, so change is applied to the list as last
+// saved (by any of them), not to this process's copy, which would drop
+// what the others added since.
+func (l *List) update(change func([]Entry) []Entry) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.list = slices.DeleteFunc(l.list, func(e Entry) bool { return samePath(e.Path, path) })
-	l.list = slices.Insert(l.list, 0, Entry{Path: path, Kind: kind, Opened: time.Now()})
-	if len(l.list) > Max {
-		l.list = l.list[:Max]
+	if l.path != "" {
+		if list, err := load(l.path); err == nil {
+			l.list = list
+		} else if errors.Is(err, fs.ErrNotExist) {
+			l.list = nil
+		} // unreadable or damaged: keep this process's copy
 	}
-	l.saveLocked()
-}
-
-// Remove drops path from the list.
-func (l *List) Remove(path string) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.list = slices.DeleteFunc(l.list, func(e Entry) bool { return samePath(e.Path, path) })
-	l.saveLocked()
-}
-
-func (l *List) saveLocked() {
+	l.list = change(l.list)
 	l.rev++
 	if l.path == "" {
-		return
+		return nil
 	}
 	data, err := json.MarshalIndent(l.list, "", "  ")
 	if err != nil {
-		return
+		return err
 	}
-	if os.MkdirAll(filepath.Dir(l.path), 0o755) != nil {
-		return
-	}
-	tmp := l.path + ".tmp"
-	if os.WriteFile(tmp, data, 0o644) == nil {
-		_ = os.Rename(tmp, l.path)
-	}
+	return atomicfile.WriteFile(l.path, data, 0o644)
 }
 
 // samePath compares paths case-insensitively on Windows-style paths.

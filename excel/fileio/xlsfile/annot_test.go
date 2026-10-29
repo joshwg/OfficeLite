@@ -53,3 +53,27 @@ func TestHyperlinksRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// Control characters in a note's text, and an empty author, survive a
+// .xls round trip.
+func TestNoteControlCharsRoundTrip(t *testing.T) {
+	sh := model.NewSheet("Sheet1")
+	want := model.Note{Text: "a\x01b\tc\x1fd\ne\rf"}
+	sh.SetNote(1, 1, &want)
+	sh.SetNote(2, 2, &model.Note{Author: "Josh", Text: "€\x02\x00z"})
+	wb := &model.Workbook{Sheets: []*model.Sheet{sh}, Styles: []model.Style{model.DefaultStyle()}}
+	var buf bytes.Buffer
+	if err := Write(wb, &buf); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Read(buf.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := got.Sheets[0].NoteAt(1, 1); n != want {
+		t.Errorf("note = %+q, want %+q", n, want)
+	}
+	if n, _ := got.Sheets[0].NoteAt(2, 2); n != (model.Note{Author: "Josh", Text: "€\x02\x00z"}) {
+		t.Errorf("note 2 = %+q", n)
+	}
+}

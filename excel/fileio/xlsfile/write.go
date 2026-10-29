@@ -8,6 +8,7 @@ import (
 	"math"
 	"slices"
 	"strings"
+	"unicode/utf16"
 	"unicode/utf8"
 
 	"github.com/xuri/excelize/v2"
@@ -202,7 +203,17 @@ func (x *writer) build() {
 	}
 	x.xfOf[0] = defaultXF
 	x.definedNames()
+	x.filterNames()
 	for i, sh := range x.sheets {
+		if len(sh.Pivots) > 0 {
+			x.issue("%s: PivotTables are saved as plain cells (Excel 97-2003 files here can't hold them)", sh.Name)
+		}
+		if len(sh.Charts) > 0 {
+			x.issue("%s: charts can't be saved in .xls files here and will be dropped", sh.Name)
+		}
+		if sh.IsChartSheet() {
+			x.issue("%s: chart sheets can't be saved in .xls files here; it will be saved as an empty sheet", sh.Name)
+		}
 		x.sheetData = append(x.sheetData, x.sheetRecords(i, sh))
 	}
 	x.buildFormats()
@@ -325,7 +336,7 @@ func (x *writer) sheetRecords(si int, sh *model.Sheet) []byte {
 	b = rec(b, recPrintHeaders, le(0))
 	b = rec(b, recPrintGrid, le(0))
 	b = rec(b, recGridSet, le(1))
-	b = rec(b, recGuts, le(0, 0, 0, 0))
+	b = rec(b, recGuts, guts(sh))
 	defTw := pxToTwips(sh.DefaultRowHeight)
 	if defTw <= 0 {
 		defTw = pxToTwips(model.DefaultRowHeightPx)
@@ -335,7 +346,14 @@ func (x *writer) sheetRecords(si int, sh *model.Sheet) []byte {
 		unsynced = 1
 	}
 	b = rec(b, recDefaultRowHt, le(unsynced, defTw))
-	b = rec(b, recWsBool, le(0x04C1))
+	wsBool := 0x0401 // automatic page breaks, outline symbols shown
+	if !sh.Outline.SummaryAbove {
+		wsBool |= 0x40
+	}
+	if !sh.Outline.SummaryLeft {
+		wsBool |= 0x80
+	}
+	b = rec(b, recWsBool, le(wsBool))
 	base := int(math.Round(float64(sh.BaseColWidth)))
 	if base <= 0 {
 		base = model.DefaultBaseColWidth
@@ -345,13 +363,14 @@ func (x *writer) sheetRecords(si int, sh *model.Sheet) []byte {
 		b = rec(b, recStandardWidth, le(min(int(math.Round(float64(sh.DefaultColWidth)*256)), 0xFFFF)))
 	}
 	b = x.colInfo(b, sh)
+	b = x.autoFilter(b, sh)
 
 	// Extent of what is written.
 	rows := min(sh.UsedRows(), xlsMaxRows)
 	dropped := 0
 	for r := xlsMaxRows; r < sh.UsedRows(); r++ {
 		for c := 0; c < sh.RowLen(r); c++ {
-			if !isBlank(sh.Get(r, c)) {
+			if !sh.Get(r, c).IsBlank() {
 				dropped++
 			}
 		}
@@ -359,11 +378,11 @@ func (x *writer) sheetRecords(si int, sh *model.Sheet) []byte {
 	r1, r2, c1, c2 := -1, -1, -1, -1
 	for r := 0; r < rows; r++ {
 		for c := 0; c < sh.RowLen(r); c++ {
-			if isBlank(sh.Get(r, c)) && sh.Get(r, c).Style == 0 {
+			if sh.Get(r, c).IsBlank() && sh.Get(r, c).Style == 0 {
 				continue
 			}
 			if c >= xlsMaxCols {
-				if !isBlank(sh.Get(r, c)) {
+				if !sh.Get(r, c).IsBlank() {
 					dropped++
 				}
 				continue
@@ -394,6 +413,17 @@ func (x *writer) sheetRecords(si int, sh *model.Sheet) []byte {
 			lastRow = max(lastRow, r+1)
 		}
 	}
+	for r := range sh.Filtered {
+		if r < xlsMaxRows {
+			lastRow = max(lastRow, r+1)
+		}
+	}
+	for r := range sh.Outline.RowLevel {
+		lastRow = max(lastRow, min(r+1, xlsMaxRows))
+	}
+	for r := range sh.Outline.RowCollapsed {
+		lastRow = max(lastRow, min(r+1, xlsMaxRows))
+	}
 	var fails []string
 	nFails, nDynamic := 0, 0
 	for start := 0; start < lastRow; start += 32 {
@@ -403,7 +433,7 @@ func (x *writer) sheetRecords(si int, sh *model.Sheet) []byte {
 			first, last := -1, -1
 			for c := 0; c < min(sh.RowLen(r), xlsMaxCols); c++ {
 				cell := sh.Get(r, c)
-				if isBlank(cell) && cell.Style == 0 {
+				if cell.IsBlank() && cell.Style == 0 {
 					continue
 				}
 				if first < 0 {
@@ -424,17 +454,28 @@ func (x *writer) sheetRecords(si int, sh *model.Sheet) []byte {
 				}
 			}
 			h, custom := sh.RowHeight[r]
-			if first < 0 && !custom {
+			filtered := sh.Filtered[r]
+			level, collapsed := sh.Level(true, r), sh.IsCollapsed(true, r)
+			if first < 0 && !custom && !filtered && level == 0 && !collapsed {
 				continue
 			}
-			flags := 0x0100 | defaultXF<<16
+			flags := 0x0100 | defaultXF<<16 | level
+			if collapsed {
+				flags |= 0x10
+			}
 			height := defTw
 			switch {
 			case custom && h == 0:
 				flags |= 0x20 | 0x40
+				if show := sh.Outline.RowShowSize[r]; show > 0 {
+					height = min(pxToTwips(show), 8192) // its height when shown
+				}
 			case custom:
 				flags |= 0x40
 				height = min(pxToTwips(h), 8192)
+			}
+			if filtered {
+				flags |= 0x20 // hidden by the AutoFilter
 			}
 			colMic, colMac := 0, 0
 			if first >= 0 {
@@ -459,42 +500,88 @@ func (x *writer) sheetRecords(si int, sh *model.Sheet) []byte {
 	b = x.window(b, si, sh)
 	b = x.merges(b, sh)
 	b = x.annotations(b, sh)
+	b = x.validations(b, si, sh)
 	return rec(b, recEOF, nil)
 }
-
-// isBlank reports whether a cell has neither a value nor a formula.
-func isBlank(c *model.Cell) bool { return c.Kind == model.KindEmpty && c.Formula == "" }
 
 func pxToTwips(px float32) int { return int(math.Round(float64(px) * 15)) }
 
 // colInfo writes COLINFO records for runs of columns with equal widths.
 func (x *writer) colInfo(b []byte, sh *model.Sheet) []byte {
-	var cols []int
+	set := map[int]bool{}
 	for c := range sh.ColWidth {
+		set[c] = true
+	}
+	for c := range sh.Outline.ColLevel {
+		set[c] = true
+	}
+	for c := range sh.Outline.ColCollapsed {
+		set[c] = true
+	}
+	var cols []int
+	for c := range set {
 		if c >= 0 && c < xlsMaxCols {
 			cols = append(cols, c)
 		}
 	}
 	slices.Sort(cols)
-	hiddenWidth := sh.DefaultColWidth
-	if hiddenWidth <= 0 {
-		hiddenWidth = sh.BaseColWidth + 0.71
+	defWidth := sh.DefaultColWidth
+	if defWidth <= 0 {
+		defWidth = sh.BaseColWidth + 0.71
+	}
+	// A column's width (in 1/256 characters) and option flags: hidden,
+	// outline level, collapsed.
+	type colRec struct{ width, flags int }
+	recOf := func(c int) colRec {
+		w, ok := sh.ColWidth[c]
+		flags := sh.Level(false, c) << 8
+		switch {
+		case !ok:
+			w = defWidth
+		case w == 0:
+			flags |= 1
+			w = defWidth
+			if show := sh.Outline.ColShowSize[c]; show > 0 {
+				w = show
+				flags |= 2 // a width of its own to show it with
+			}
+		case flags != 0:
+			flags |= 2 // a width of its own, apart from the outline's
+		}
+		if sh.IsCollapsed(false, c) {
+			flags |= 0x1000
+		}
+		return colRec{min(int(math.Round(float64(w)*256)), 0xFFFF), flags}
 	}
 	for i := 0; i < len(cols); {
-		lo, w := cols[i], sh.ColWidth[cols[i]]
+		lo, cr := cols[i], recOf(cols[i])
 		j := i + 1
-		for j < len(cols) && cols[j] == cols[j-1]+1 && sh.ColWidth[cols[j]] == w {
+		for j < len(cols) && cols[j] == cols[j-1]+1 && recOf(cols[j]) == cr {
 			j++
 		}
-		flags := 0
-		if w == 0 {
-			flags, w = 1, hiddenWidth
-		}
-		width := min(int(math.Round(float64(w)*256)), 0xFFFF)
-		b = rec(b, recColInfo, le(lo, cols[j-1], width, defaultXF, flags, 0))
+		b = rec(b, recColInfo, le(lo, cols[j-1], cr.width, defaultXF, cr.flags, 0))
 		i = j
 	}
 	return b
+}
+
+// guts is the GUTS record: the outline gutters' size in pixels and the
+// number of level buttons (levels + 1, or 0 without an outline).
+func guts(sh *model.Sheet) []byte {
+	lr, lc := sh.MaxLevel(true), sh.MaxLevel(false)
+	size := func(levels int) int {
+		if levels == 0 {
+			return 0
+		}
+		return 16*(levels+1) + 4 // as the grid draws it at 100%
+	}
+	buttons := func(levels int) int {
+		if levels == 0 {
+			return 0
+		}
+		return levels + 1
+	}
+	return le(size(lr), size(lc), buttons(lr), buttons(lc))
 }
 
 // cell appends the records of one cell. A formula that cannot be encoded
@@ -1043,7 +1130,7 @@ func stringRecords(b []byte, id int, head []byte, strs []string, mark func(i, po
 		wide := !isLatin1(s)
 		var units []uint16
 		if wide {
-			units = utf16Units(s)
+			units = utf16.Encode([]rune(s))
 		} else {
 			for _, c := range s {
 				units = append(units, uint16(c))
@@ -1080,19 +1167,6 @@ func stringRecords(b []byte, id int, head []byte, strs []string, mark func(i, po
 	}
 	binary.LittleEndian.PutUint16(b[recStart+2:], uint16(len(b)-recStart-4))
 	return b
-}
-
-func utf16Units(s string) []uint16 {
-	var u []uint16
-	for _, c := range s {
-		if c >= 0x10000 {
-			c -= 0x10000
-			u = append(u, uint16(0xD800+(c>>10)), uint16(0xDC00+(c&0x3FF)))
-		} else {
-			u = append(u, uint16(c))
-		}
-	}
-	return u
 }
 
 // --- encoding helpers ---

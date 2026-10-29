@@ -315,7 +315,7 @@ func (d *window) drawDropCaret(gtx layout.Context, px int) {
 	}
 	v := &d.v
 	pg := d.ceng().Pages[c.Page]
-	x := px + int(math.Round(c.X*v.scale))
+	x := px + int(math.Round((pg.X+c.X)*v.scale))
 	y0 := int(math.Round((pg.Top + c.Y - v.scrollY) * v.scale))
 	y1 := int(math.Round((pg.Top + c.Y + c.H - v.scrollY) * v.scale))
 	gui.DashedLine(gtx.Ops, x, y0, x, y1, max(1, gtx.Dp(1)), 2, 2, dropCaretColor)
@@ -397,7 +397,7 @@ func (d *window) drawBorderGuide(gtx layout.Context, px int) {
 	}
 	v := &d.v
 	pg := d.eng.Pages[m.page]
-	vx := func(x float64) int { return px + int(math.Round(x*v.scale)) }
+	vx := func(x float64) int { return px + int(math.Round((pg.X+x)*v.scale)) }
 	vy := func(y float64) int { return int(math.Round((pg.Top + y - v.scrollY) * v.scale)) }
 	b := m.border
 	w := max(1, gtx.Dp(1))
@@ -522,7 +522,7 @@ func (d *window) previewMouse(what string) {
 	caretPt := func(p model.Pos) image.Point {
 		c, _ := d.eng.CaretAt(p)
 		pg := d.eng.Pages[c.Page]
-		return image.Pt(d.pageX()+int(c.X*d.v.scale), int((pg.Top+c.Y+c.H-d.v.scrollY)*d.v.scale))
+		return image.Pt(d.pageX()+int((pg.X+c.X)*d.v.scale), int((pg.Top+c.Y+c.H-d.v.scrollY)*d.v.scale))
 	}
 	switch what {
 	case "context":
@@ -549,7 +549,7 @@ func (d *window) previewMouse(what string) {
 	case "dragtext":
 		a, b := ed.WordAt(model.Pos{})
 		ed.Select(a, b)
-		_, end := d.eng.LineBounds(model.Pos{})
+		_, end, _ := d.eng.LineBounds(model.Pos{}, false)
 		m.pending, m.moving, m.drop, m.dropOK = true, true, end, b.Less(end)
 	}
 }

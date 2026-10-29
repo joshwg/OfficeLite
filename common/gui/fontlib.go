@@ -228,9 +228,11 @@ func (l *FontLibrary) Faces(families ...string) []font.FontFace {
 				if len(files) > 0 && !files[filepath.Dir(p)] {
 					continue
 				}
-				files[filepath.Dir(p)] = true
 				if b, err := os.ReadFile(p); err == nil {
 					if fs, err := opentype.ParseCollection(prepareFont(b)); err == nil {
+						// Only a folder whose file loaded wins: an unreadable
+						// or damaged one leaves the family to the next folder.
+						files[filepath.Dir(p)] = true
 						for i, f := range fs {
 							l.files[f.Face] = FaceFile{p, i}
 						}

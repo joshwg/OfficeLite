@@ -360,6 +360,41 @@ func TestTextPositions(t *testing.T) {
 	}
 }
 
+// TestTextAfterTab checks that the advance of a tab (or line break) moves
+// the glyphs after it, also when they use the same font as those before.
+func TestTextAfterTab(t *testing.T) {
+	d := New()
+	d.NoCompress = true
+	pg := d.AddPage(Letter)
+	f := d.Font(FontSpec{Family: "Go"})
+	w := pg.DrawText(Run{Font: f, Size: 10, X: 10, Y: 20, Text: "A\tB", Color: color.NRGBA{A: 255}, Adv: []float32{10, 30, 10}})
+	if w != 50 {
+		t.Fatalf("width %v, want 50", w)
+	}
+	s := pg.buf.String()
+	for _, tm := range []string{"1 0 0 1 10 772 Tm", "1 0 0 1 50 772 Tm"} {
+		if !strings.Contains(s, tm) {
+			t.Errorf("no %q in %q", tm, s)
+		}
+	}
+}
+
+// TestStrokeRectEmpty checks that StrokeRect draws nothing for an empty
+// rectangle or a zero or negative line width, and something otherwise.
+func TestStrokeRectEmpty(t *testing.T) {
+	black := color.NRGBA{A: 255}
+	for _, c := range []struct {
+		w, h, lw float64
+		drawn    bool
+	}{{0, 10, 1, false}, {10, -1, 1, false}, {10, 10, 0, false}, {10, 10, -1, false}, {10, 10, 1, true}} {
+		pg := New().AddPage(Letter)
+		pg.StrokeRect(5, 5, c.w, c.h, c.lw, black)
+		if got := pg.buf.Len() > 0; got != c.drawn {
+			t.Errorf("w %v h %v lw %v: drawn %v, want %v", c.w, c.h, c.lw, got, c.drawn)
+		}
+	}
+}
+
 // TestEmbedFontFiles embeds each font file listed in PDF_FONTS (OS path
 // list) and checks the result; with PDF_DUMP the PDF is kept for viewing.
 func TestEmbedFontFiles(t *testing.T) {

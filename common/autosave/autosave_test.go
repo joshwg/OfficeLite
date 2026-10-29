@@ -221,6 +221,67 @@ func TestError(t *testing.T) {
 	r.wantSaved("on again", 2)
 }
 
+// startBlocked starts a background save whose write waits on the returned
+// channel, and returns when the save holds the file.
+func startBlocked(r *rig) chan struct{} {
+	b := make(chan struct{})
+	r.block = b
+	r.edit()
+	r.clock.Advance(Delay)
+	waitPosted(r)
+	r.block = nil
+	for r.s.mu.TryLock() { // until the save holds the file
+		r.s.mu.Unlock()
+		time.Sleep(time.Millisecond)
+	}
+	return b
+}
+
+// ctrlS runs a Save that succeeds while the saver's background save is
+// finishing, which releases b shortly after.
+func ctrlS(r *rig, b chan struct{}) error {
+	go func() { time.Sleep(20 * time.Millisecond); close(b) }()
+	return r.s.Save(func() error {
+		r.mu.Lock()
+		r.saved = append(r.saved, 30)
+		r.mu.Unlock()
+		return nil
+	})
+}
+
+// TestSaveClearsAgain: a SaveNow queued behind a running save is dropped
+// when Ctrl+S saves everything meanwhile.
+func TestSaveClearsAgain(t *testing.T) {
+	r := newRig(t)
+	r.s.SetOn(true)
+	b := startBlocked(r)
+	r.s.SaveNow() // busy: queued
+	if err := ctrlS(r, b); err != nil {
+		t.Fatal(err)
+	}
+	r.run()
+	r.wantSaved("no save after Ctrl+S", 1, 30)
+}
+
+// TestStaleFailure: a background save that failed, made up for by a Ctrl+S
+// that succeeded before the failure was handled, neither turns AutoSave off
+// nor reports an error.
+func TestStaleFailure(t *testing.T) {
+	r := newRig(t)
+	r.s.SetOn(true)
+	r.fail = errors.New("locked")
+	b := startBlocked(r)
+	r.fail = nil
+	if err := ctrlS(r, b); err != nil {
+		t.Fatal(err)
+	}
+	r.run()
+	if !r.s.On() || len(r.errs) != 1 || r.errs[0] != nil {
+		t.Errorf("on %v, done %v", r.s.On(), r.errs)
+	}
+	r.wantSaved("Ctrl+S", 30)
+}
+
 // waitPosted runs the timer's posted call, which starts a save that may
 // block.
 func waitPosted(r *rig) {

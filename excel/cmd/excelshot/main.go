@@ -82,6 +82,9 @@ func main() {
 	for _, warn := range wb.Warnings {
 		log.Println("warning:", warn)
 	}
+	if *sheet < 0 || *sheet >= len(wb.Sheets) {
+		log.Fatalf("-sheet %d: the workbook has %d sheets", *sheet, len(wb.Sheets))
+	}
 	sh := wb.Sheets[*sheet]
 	fams := []string{"Segoe UI", "Tahoma"}
 	for _, st := range wb.Styles {
@@ -106,6 +109,18 @@ func main() {
 	v.Sel.Range.R1, v.Sel.Range.C1 = v.Sel.Active.Row, v.Sel.Active.Col
 	v.Sel.Range.R2, v.Sel.Range.C2 = v.Sel.Active.Row, v.Sel.Active.Col
 
+	winView := *page != "" || *menu >= 0 || *window || *typed != "" || *ask || *sel != "" || *ctx != "" || *drag != "" || *ribbon != "" || *filter != "" || *data != "" || *pivot != "" || *chartSel > 0 || *chartUI != "" || *undo != "" || *autoSave != ""
+	var chartRect image.Rectangle // -chart: the chart at its size times -zoom
+	if !winView && *chart >= 0 {
+		if *chart >= len(sh.Charts) {
+			log.Fatalf("the sheet has %d charts", len(sh.Charts))
+		}
+		x0, y0, x1, y1 := render.ChartBox(sh.Charts[*chart], v.Geo)
+		z := float32(*zoom)
+		chartRect = image.Rect(0, 0, int(float32(x1-x0)*z), int(float32(y1-y0)*z))
+		*w, *h = chartRect.Dx(), chartRect.Dy()
+	}
+
 	win, err := headless.NewWindow(*w, *h)
 	if err != nil {
 		log.Fatal(err)
@@ -117,7 +132,7 @@ func main() {
 		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
 		Constraints: layout.Exact(image.Pt(*w, *h)),
 	}
-	if *page != "" || *menu >= 0 || *window || *typed != "" || *ask || *sel != "" || *ctx != "" || *drag != "" || *ribbon != "" || *filter != "" || *data != "" || *pivot != "" || *chartSel > 0 || *chartUI != "" || *undo != "" || *autoSave != "" {
+	if winView {
 		list := recent.Open("")
 		for _, s := range []string{"Samples/leasing.xls", flag.Arg(0)} {
 			if abs, err := filepath.Abs(s); err == nil {
@@ -130,15 +145,8 @@ func main() {
 		ui.Preview(gtx, fonts, list, wb, path, ui.PreviewOptions{Page: *page, Menu: *menu, Edit: *typed, Ask: *ask,
 			Select: *sel, Context: *ctx, Drag: *drag, Ribbon: *ribbon, Filter: *filter, FilterSub: *filterSub, Dialog: *dialog, Data: *data, Sheet: *sheet, Pivot: *pivot, Chart: *chartSel, ChartUI: *chartUI, Undo: *undo, AutoSave: *autoSave})
 	} else if *chart >= 0 {
-		if *chart >= len(sh.Charts) {
-			log.Fatalf("the sheet has %d charts", len(sh.Charts))
-		}
-		c := sh.Charts[*chart]
-		x0, y0, x1, y1 := render.ChartBox(c, v.Geo)
-		z := float32(*zoom)
-		rc := image.Rect(0, 0, int(float32(x1-x0)*z), int(float32(y1-y0)*z))
-		gui.FillRect(gtx.Ops, image.Rect(0, 0, *w, *h), color.NRGBA{R: 255, G: 255, B: 255, A: 255})
-		render.PaintChart(gtx, shaper, wb, sh.Name, c, rc, z)
+		gui.FillRect(gtx.Ops, chartRect, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+		render.PaintChart(gtx, shaper, wb, sh.Name, sh.Charts[*chart], chartRect, float32(*zoom))
 	} else {
 		v.Draw(gtx)
 	}

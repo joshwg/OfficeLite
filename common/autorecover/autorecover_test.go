@@ -267,6 +267,32 @@ func TestOrphans(t *testing.T) {
 	}
 }
 
+// TestClaimAll checks that ClaimAll keeps the entries it claimed, drops one
+// another process claimed after it, and drops one that can't be written.
+func TestClaimAll(t *testing.T) {
+	dir := t.TempDir()
+	at := time.Now()
+	a := writeFake(t, dir, "A~01", Entry{Name: "A.docx", App: Word, Saved: at})
+	b := writeFake(t, dir, "B~02", Entry{Name: "B.docx", App: Word, Saved: at})
+	gone := a
+	gone.Sidecar = t.TempDir() // a directory: the claim can't replace it
+	got := ClaimAll([]Entry{a, gone, b})
+	if len(got) != 2 || got[0].Sidecar != a.Sidecar || got[1].Sidecar != b.Sidecar {
+		t.Fatalf("claimed %+v", got)
+	}
+	if o := Orphans(dir); len(o) != 0 {
+		t.Errorf("claimed entries still orphans: %+v", o)
+	}
+	// Another process claims b afterward: a re-claim by the first is
+	// the last writer, so ClaimAll reports who holds it now.
+	other := b
+	other.PID, other.Started = os.Getpid()+1, selfStart+1
+	writeEntry(other.Sidecar, other)
+	if got := ClaimAll([]Entry{b}); len(got) != 1 {
+		t.Errorf("re-claim %+v", got)
+	}
+}
+
 // TestReusedPID checks that a reused pid, alive but started later than the
 // process that wrote the entry, isn't taken for the writer (only Windows
 // can tell).

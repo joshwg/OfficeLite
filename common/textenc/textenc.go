@@ -11,14 +11,26 @@ import (
 
 	"golang.org/x/text/encoding/charmap"
 	"golang.org/x/text/encoding/unicode"
+	"golang.org/x/text/encoding/unicode/utf32"
 )
 
-// Decode converts data to UTF-8, honoring byte-order marks and falling back
-// to Windows-1252 (what Office assumes on a US system) for invalid UTF-8.
+// Decode converts data to UTF-8, honoring byte-order marks (UTF-8, UTF-16
+// and UTF-32) and falling back to Windows-1252 (what Office assumes on a US
+// system) for invalid UTF-8, after a UTF-8 mark too.
 func Decode(data []byte) (string, error) {
 	switch {
 	case bytes.HasPrefix(data, []byte{0xEF, 0xBB, 0xBF}):
+		if rest := data[3:]; !utf8.Valid(rest) {
+			return Windows1252(rest), nil
+		}
 		return string(data[3:]), nil
+	// UTF-32 first: its little-endian mark begins with UTF-16's.
+	case bytes.HasPrefix(data, []byte{0xFF, 0xFE, 0, 0}):
+		b, err := utf32.UTF32(utf32.LittleEndian, utf32.ExpectBOM).NewDecoder().Bytes(data)
+		return string(b), err
+	case bytes.HasPrefix(data, []byte{0, 0, 0xFE, 0xFF}):
+		b, err := utf32.UTF32(utf32.BigEndian, utf32.ExpectBOM).NewDecoder().Bytes(data)
+		return string(b), err
 	case bytes.HasPrefix(data, []byte{0xFF, 0xFE}):
 		b, err := unicode.UTF16(unicode.LittleEndian, unicode.ExpectBOM).NewDecoder().Bytes(data)
 		return string(b), err

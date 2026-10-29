@@ -68,6 +68,9 @@ func readWinMetrics(ff FaceFile) winMetrics {
 	if h := read(0, 12); h == nil {
 		return winMetrics{}
 	} else if string(h[:4]) == "ttcf" {
+		if ff.Index < 0 || uint32(ff.Index) >= be.Uint32(h[8:]) {
+			return winMetrics{} // no such font in the collection
+		}
 		o := read(12+4*int64(ff.Index), 4)
 		if o == nil {
 			return winMetrics{}

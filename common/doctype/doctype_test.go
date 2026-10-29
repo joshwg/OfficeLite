@@ -94,3 +94,13 @@ func TestDetectCorruptOLE(t *testing.T) {
 		t.Errorf("corrupt file = %v, want extension fallback", k)
 	}
 }
+
+// TestKindString checks the names of the kinds, and that a value outside
+// them reads as unknown instead of panicking.
+func TestKindString(t *testing.T) {
+	for k, want := range map[Kind]string{Unknown: "unknown", Spreadsheet: "spreadsheet", Document: "document", Kind(7): "unknown", Kind(-1): "unknown"} {
+		if got := k.String(); got != want {
+			t.Errorf("Kind(%d).String() = %q, want %q", int(k), got, want)
+		}
+	}
+}

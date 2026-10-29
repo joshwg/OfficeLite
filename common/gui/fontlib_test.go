@@ -4,6 +4,7 @@
 package gui
 
 import (
+	"encoding/binary"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -13,6 +14,7 @@ import (
 	"weak"
 
 	"gioui.org/font/gofont"
+	"golang.org/x/image/font/gofont/goregular"
 )
 
 // TestParseNameTableTruncated checks that a name table claiming more
@@ -66,6 +68,85 @@ func goRegularPath(t *testing.T) string {
 		return ""
 	}
 	return matches[0]
+}
+
+// TestFacesFallsBackPastBadFile checks that a family whose file in the
+// first folder is damaged or unreadable is loaded from the next folder,
+// and that a good first folder still wins over the later ones.
+func TestFacesFallsBackPastBadFile(t *testing.T) {
+	good := goregular.TTF
+	first, second := t.TempDir(), t.TempDir()
+	damaged := filepath.Join(first, "Go-Regular.ttf")
+	fallback := filepath.Join(second, "Go-Regular.ttf")
+	for _, c := range []struct {
+		name  string
+		first []byte // the first folder's file; nil: missing
+		from  string // the folder the face must come from
+	}{
+		{"damaged", good[:100], fallback},
+		{"empty", []byte{}, fallback},
+		{"unreadable", nil, fallback},
+		{"good", good, damaged},
+	} {
+		os.Remove(damaged)
+		if c.first != nil {
+			os.WriteFile(damaged, c.first, 0o644)
+		}
+		os.WriteFile(fallback, good, 0o644)
+		l := NewFontLibrary(first, second)
+		l.scanned = true
+		l.index["go"] = []string{damaged, fallback} // as the scan would list them
+		faces := l.Faces("Go")
+		if len(faces) == 0 {
+			t.Errorf("%s: no faces", c.name)
+			continue
+		}
+		if got := l.files[faces[0].Face].Path; got != c.from {
+			t.Errorf("%s: face from %s, want %s", c.name, got, c.from)
+		}
+	}
+}
+
+// TestWinMetricsCollectionIndex checks that readWinMetrics reads a face of
+// a collection by its index and refuses an index past the collection's
+// font count, whatever the offset table's next bytes hold.
+func TestWinMetricsCollectionIndex(t *testing.T) {
+	ttf := goregular.TTF
+	src := filepath.Join(t.TempDir(), "Go-Regular.ttf")
+	if err := os.WriteFile(src, ttf, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A collection of one font that leaves room for a second offset (which
+	// points at the same font), then the font with its table offsets moved.
+	const head = 20
+	be := binary.BigEndian
+	ttc := make([]byte, head, head+len(ttf))
+	copy(ttc, "ttcf")
+	be.PutUint32(ttc[4:], 0x00010000)
+	be.PutUint32(ttc[8:], 1) // one font
+	be.PutUint32(ttc[12:], head)
+	be.PutUint32(ttc[16:], head)
+	ttc = append(ttc, ttf...)
+	for k := range int(be.Uint16(ttf[4:])) {
+		rec := head + 12 + 16*k + 8
+		be.PutUint32(ttc[rec:], be.Uint32(ttc[rec:])+head)
+	}
+	path := filepath.Join(t.TempDir(), "Go.ttc")
+	if err := os.WriteFile(path, ttc, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	want := readWinMetrics(FaceFile{Path: src})
+	if !want.ok {
+		t.Fatal("no metrics for the plain font")
+	}
+	if got := readWinMetrics(FaceFile{Path: path, Index: 0}); got != want {
+		t.Errorf("index 0 = %+v, want %+v", got, want)
+	}
+	for _, i := range []int{1, 2, -1} {
+		if got := readWinMetrics(FaceFile{Path: path, Index: i}); got.ok {
+			t.Errorf("index %d past the collection's one font gave %+v", i, got)
+		}
+	}
 }
 
 // TestPrepareFontHidesBitmaps checks that prepareFont renames a bitmap

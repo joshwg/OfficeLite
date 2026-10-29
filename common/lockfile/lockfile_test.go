@@ -241,6 +241,43 @@ func TestRegistryInProcess(t *testing.T) {
 	nilDoc.Close()
 }
 
+// TestRegistryTwoWindows checks that a file open in two windows of this
+// process stays reachable until the last one closes, whichever closes
+// first, and that Activate raises the oldest.
+func TestRegistryTwoWindows(t *testing.T) {
+	for _, firstCloses := range []bool{true, false} {
+		dir := useRegistry(t)
+		path := filepath.Join(t.TempDir(), "Twice.xlsx")
+		var r1, r2 atomic.Int32
+		d1 := NewDoc(func() { r1.Add(1) })
+		d2 := NewDoc(func() { r2.Add(1) })
+		d1.Set(path, false)
+		d2.Set(path, false) // Open Read-Only, say
+		if !Activate(path) || r1.Load() != 1 || r2.Load() != 0 {
+			t.Fatalf("both open: raised %d, %d", r1.Load(), r2.Load())
+		}
+		gone, left, rLeft := d1, d2, &r2
+		if !firstCloses {
+			gone, left, rLeft = d2, d1, &r1
+		}
+		gone.Close()
+		before := rLeft.Load()
+		if !Activate(path) || rLeft.Load() != before+1 {
+			t.Errorf("firstCloses=%v: remaining window not raised", firstCloses)
+		}
+		if es, _ := os.ReadDir(dir); len(es) != 1 {
+			t.Errorf("firstCloses=%v: registry holds %v", firstCloses, es)
+		}
+		left.Close()
+		if Activate(path) {
+			t.Errorf("firstCloses=%v: closed file activated", firstCloses)
+		}
+		if es, _ := os.ReadDir(dir); len(es) != 0 {
+			t.Errorf("firstCloses=%v: registry left %v", firstCloses, es)
+		}
+	}
+}
+
 // TestRegistryStale checks that a dead process's entry is dropped and an
 // unreachable live one counts as open elsewhere.
 func TestRegistryStale(t *testing.T) {
@@ -336,6 +373,12 @@ func TestCrossProcess(t *testing.T) {
 	}
 	cmd := exec.Command(testExe(t), "-test.run=^TestHelperProcess$")
 	cmd.Env = append(os.Environ(), "LOCKFILE_HELPER_PATH="+path, "LOCKFILE_HELPER_REG="+dir)
+	// A directory deeper than this process's, so that a relative path
+	// resolves to something else there instead of climbing to the root.
+	cmd.Dir = filepath.Join(t.TempDir(), strings.Repeat("d/", 12))
+	if err := os.MkdirAll(cmd.Dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	stdin, _ := cmd.StdinPipe()
 	stdout, _ := cmd.StdoutPipe()
 	if err := cmd.Start(); err != nil {
@@ -353,6 +396,15 @@ func TestCrossProcess(t *testing.T) {
 	}
 	if line, _ := out.ReadString('\n'); line != "raised\n" {
 		t.Errorf("helper said %q", line)
+	}
+	// A relative path means something else in the helper's directory.
+	wd, _ := os.Getwd()
+	if rel, err := filepath.Rel(wd, path); err == nil && !filepath.IsAbs(rel) {
+		if !Activate(rel) {
+			t.Error("relative path not handed off")
+		} else if line, _ := out.ReadString('\n'); line != "raised\n" {
+			t.Errorf("helper said %q after a relative path", line)
+		}
 	}
 	stdin.Close()
 	cmd.Wait()

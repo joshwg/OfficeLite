@@ -260,36 +260,9 @@ func (d *Document) readTable(id uint64) (*Table, error) {
 				unsupported++ // pre-BNC (Numbers 3) storage
 				continue
 			}
-			wide := ri.Bool(8)
-			n := len(offs) / 2
-			starts := make([]int, n)
-			for i := range n {
-				o := int(int16(binary.LittleEndian.Uint16(offs[2*i:])))
-				if o >= 0 && wide {
-					o *= 4
-				}
-				starts[i] = o
-			}
-			for col := range n {
-				s := starts[col]
-				if s < 0 || s >= len(buf) {
-					continue
-				}
-				e := len(buf)
-				for k := col + 1; k < n; k++ {
-					if starts[k] >= 0 {
-						e = starts[k]
-						break
-					}
-				}
-				if e < s {
-					e = len(buf)
-				}
-				c, ok := decodeCell(buf[s:e])
-				if !ok {
-					unsupported++
-					continue
-				}
+			cells, bad := decodeRow(buf, offs, ri.Bool(8))
+			unsupported += bad
+			for col, c := range cells {
 				d.resolveCell(c, strs, styles, formulas, formats, rich)
 				t.Cells[[2]int{row, col}] = c.Cell
 			}
@@ -303,6 +276,37 @@ func (d *Document) readTable(id uint64) (*Table, error) {
 		t.Warnings = append(t.Warnings, "conditional highlighting was not imported")
 	}
 	return t, nil
+}
+
+// missingCell is the offset that marks a column with no cell.
+const missingCell = 0xFFFF
+
+// decodeRow decodes the cells of a row from its storage buf and its
+// column offsets (16-bit little-endian, in units of 4 bytes when wide). It
+// returns the cells by column and how many it couldn't read. Offsets are
+// unsigned, with only 0xFFFF meaning no cell, and in no particular order;
+// each cell tells its own length, so it is read from its offset onward.
+func decodeRow(buf, offs []byte, wide bool) (cells map[int]rawCell, unsupported int) {
+	cells = map[int]rawCell{}
+	for col := range len(offs) / 2 {
+		o := int(binary.LittleEndian.Uint16(offs[2*col:]))
+		if o == missingCell {
+			continue
+		}
+		if wide {
+			o *= 4
+		}
+		if o >= len(buf) {
+			continue
+		}
+		c, ok := decodeCell(buf[o:])
+		if !ok {
+			unsupported++
+			continue
+		}
+		cells[col] = c
+	}
+	return cells, unsupported
 }
 
 // rawCell is a decoded cell storage record with the keys into the

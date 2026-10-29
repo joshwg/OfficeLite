@@ -219,9 +219,11 @@ func (p *Page) FillRect(x, y, w, h float64, c color.NRGBA) {
 	p.op(p.rect(x, y, w, h), "f")
 }
 
-// StrokeRect outlines a rectangle with a line of width lw.
+// StrokeRect outlines a rectangle with a line of width lw. Nothing is
+// drawn for an empty rectangle or a line without width (PDF would draw a
+// hairline for 0).
 func (p *Page) StrokeRect(x, y, w, h, lw float64, c color.NRGBA) {
-	if c.A == 0 {
+	if w <= 0 || h <= 0 || lw <= 0 || c.A == 0 {
 		return
 	}
 	p.setStroke(c)
@@ -342,6 +344,7 @@ func (p *Page) DrawText(r Run) float64 {
 	var segs []*seg
 	x := r.X
 	i := 0
+	gap := false // a tab or line break since the last glyph: start a segment at x
 	for _, ch := range r.Text {
 		m, g := r.Font.pick(ch)
 		w := m.face.advance(g) * r.Size / 1000 * hs
@@ -352,15 +355,17 @@ func (p *Page) DrawText(r Run) float64 {
 		i++
 		if ch == '\n' || ch == '\r' || ch == '\t' {
 			x += adv
+			gap = true
 			continue
 		}
 		var s *seg
-		if n := len(segs); n > 0 && segs[n-1].m == m {
+		if n := len(segs); n > 0 && segs[n-1].m == m && !gap {
 			s = segs[n-1]
 		} else {
 			s = &seg{m: m, x: x}
 			segs = append(segs, s)
 		}
+		gap = false
 		if _, ok := m.descendants.used[g]; !ok {
 			m.descendants.used[g] = string(ch)
 		}

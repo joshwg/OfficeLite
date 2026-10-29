@@ -11,7 +11,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gioui.org/app"
@@ -38,6 +40,11 @@ func main() {
 		flag.PrintDefaults()
 	}
 	flag.Parse()
+	if *excel && *word {
+		fmt.Fprintln(flag.CommandLine.Output(), "officelite: --excel and --word can't be used together")
+		flag.Usage()
+		os.Exit(2)
+	}
 	if *showVersion {
 		fmt.Println(version.String())
 		return
@@ -45,15 +52,19 @@ func main() {
 
 	fonts := gui.NewFontLibrary(gui.DefaultFontDirs()...)
 	var windows sync.WaitGroup
+	var started atomic.Int32 // windows this process has started
 	// Recovery copies left by an OfficeLite that crashed, found before
 	// this one's windows write their own.
-	orphans := autorecover.Orphans("")
+	// Claimed at once, so that an OfficeLite started at the same moment
+	// doesn't list them too.
+	orphans := autorecover.ClaimAll(autorecover.Orphans(""))
 	// open starts a window; windows call it for New, Open and recent files.
 	// A file already open in a window (of this process or another
 	// OfficeLite's) brings that window to the front instead.
 	var open func(kind doctype.Kind, path string)
 	// start opens a window for a file or, with rec, a recovered copy.
 	start := func(kind doctype.Kind, path string, rec *autorecover.Entry) {
+		started.Add(1)
 		windows.Add(1)
 		go func() {
 			defer windows.Done()
@@ -75,20 +86,6 @@ func main() {
 		}
 		start(kind, path, nil)
 	}
-	if len(orphans) > 0 {
-		windows.Add(1)
-		go func() {
-			defer windows.Done()
-			runRecovery(new(app.Window), fonts, orphans, func(e autorecover.Entry) {
-				kind := doctype.Spreadsheet
-				if e.App == autorecover.Word {
-					kind = doctype.Document
-				}
-				start(kind, "", &e)
-			})
-		}()
-	}
-
 	forced := doctype.Unknown
 	switch {
 	case *excel:
@@ -103,7 +100,16 @@ func main() {
 		}
 		open(kind, "")
 	}
+	var opened []os.FileInfo
 	for _, path := range flag.Args() {
+		// A window registers its file only once it is up, so the same file
+		// named twice would get two windows; open it once.
+		if fi, err := os.Stat(path); err == nil {
+			if slices.ContainsFunc(opened, func(o os.FileInfo) bool { return os.SameFile(o, fi) }) {
+				continue
+			}
+			opened = append(opened, fi)
+		}
 		kind := forced
 		if kind == doctype.Unknown {
 			// Unreadable or unrecognized files go to the spreadsheet window,
@@ -111,6 +117,27 @@ func main() {
 			kind, _ = doctype.DetectFile(path)
 		}
 		open(kind, path)
+	}
+
+	// Recovery is offered only by an OfficeLite that stays: when every file
+	// went to another one, the copies wait for the next start.
+	if len(orphans) > 0 && started.Load() == 0 {
+		for _, e := range orphans {
+			autorecover.Release(e)
+		}
+	}
+	if len(orphans) > 0 && started.Load() > 0 {
+		windows.Add(1)
+		go func() {
+			defer windows.Done()
+			runRecovery(new(app.Window), fonts, orphans, func(e autorecover.Entry) {
+				kind := doctype.Spreadsheet
+				if e.App == autorecover.Word {
+					kind = doctype.Document
+				}
+				start(kind, "", &e)
+			})
+		}()
 	}
 
 	// With every file handed to the OfficeLite that has it open, there is

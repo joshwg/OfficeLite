@@ -34,6 +34,18 @@ const (
 // autoPlaces is the decimal_places value meaning "as many as needed".
 const autoPlaces = 253
 
+// maxPlaces is the most decimals a format asks for; a larger decimal_places
+// (damaged or hostile) is cut to it.
+const maxPlaces = 15
+
+// placesOf is the format's decimal places: autoPlaces or 0..maxPlaces.
+func placesOf(f Message) int {
+	if p := f.Uint(2); p != autoPlaces {
+		return int(min(p, maxPlaces))
+	}
+	return autoPlaces
+}
+
 // Epoch is the origin of iWork dates: 2001-01-01 00:00 UTC.
 var Epoch = time.Date(2001, 1, 1, 0, 0, 0, 0, time.UTC)
 
@@ -92,7 +104,7 @@ func (d *Document) ExcelFormat(f Message) string {
 		return ""
 	}
 	f = d.resolveFormat(f)
-	places := int(f.Uint(2))
+	places := placesOf(f)
 	digits := func(def int) string {
 		p := places
 		if p == autoPlaces {
@@ -103,7 +115,7 @@ func (d *Document) ExcelFormat(f Message) string {
 			code = "#,##0"
 		}
 		if p > 0 {
-			code += "." + strings.Repeat("0", min(p, 15))
+			code += "." + strings.Repeat("0", p)
 		}
 		return code
 	}
@@ -312,13 +324,17 @@ func (d *Document) Display(c *Cell) string {
 		return FormatDateTime(t, pattern)
 	case CellDuration:
 		s := int64(math.Round(c.Num))
-		return fmt.Sprintf("%d:%02d:%02d", s/3600, s/60%60, s%60)
+		sign := ""
+		if s < 0 {
+			sign, s = "-", -s
+		}
+		return fmt.Sprintf("%s%d:%02d:%02d", sign, s/3600, s/60%60, s%60)
 	case CellNumber, CellCurrency:
 	default:
 		return ""
 	}
 	v := c.Num
-	places := int(f.Uint(2))
+	places := placesOf(f)
 	if f == nil {
 		places = autoPlaces
 	}
@@ -345,15 +361,27 @@ func (d *Document) Display(c *Cell) string {
 		}
 		return s
 	case FormatRating:
-		return strings.Repeat("★", int(v))
+		return stars(v)
 	}
 	if c.Type == CellCurrency {
 		if places == autoPlaces {
 			places = 2
 		}
-		return "$" + formatNumber(v, places, true, 0)
+		s := "$" + formatNumber(math.Abs(v), places, true, 0)
+		if v < 0 {
+			s = "-" + s
+		}
+		return s
 	}
 	return formatNumber(v, places, thousands, f.Uint(4))
+}
+
+// stars is the display of a rating: v rounded to 0..5 stars (none for NaN).
+func stars(v float64) string {
+	if math.IsNaN(v) {
+		return ""
+	}
+	return strings.Repeat("★", int(max(0, min(math.Round(v), 5))))
 }
 
 // formatNumber formats v with places decimals (autoPlaces: as many as
@@ -401,6 +429,31 @@ func mustParse(s string) float64 {
 	return v
 }
 
+// icuLiteral reads the quote at rs[i] of an ICU date pattern: a doubled
+// quote is one quote, and '...' is literal text in which a doubled quote
+// is also one quote. It returns the text and the index after it (an unclosed literal runs to the
+// end).
+func icuLiteral(rs []rune, i int) (string, int) {
+	if i+1 < len(rs) && rs[i+1] == '\'' {
+		return "'", i + 2
+	}
+	var lit strings.Builder
+	j := i + 1
+	for j < len(rs) {
+		if rs[j] == '\'' {
+			if j+1 < len(rs) && rs[j+1] == '\'' {
+				lit.WriteRune('\'')
+				j += 2
+				continue
+			}
+			break
+		}
+		lit.WriteRune(rs[j])
+		j++
+	}
+	return lit.String(), j + 1
+}
+
 // FormatDateTime renders t with a Unicode (ICU) date pattern.
 func FormatDateTime(t time.Time, pattern string) string {
 	var b strings.Builder
@@ -408,15 +461,9 @@ func FormatDateTime(t time.Time, pattern string) string {
 	for i := 0; i < len(rs); {
 		c := rs[i]
 		if c == '\'' {
-			j := i + 1
-			for j < len(rs) && rs[j] != '\'' {
-				b.WriteRune(rs[j])
-				j++
-			}
-			if j == i+1 && j < len(rs) {
-				b.WriteRune('\'')
-			}
-			i = j + 1
+			var lit string
+			lit, i = icuLiteral(rs, i)
+			b.WriteString(lit)
 			continue
 		}
 		n := 1

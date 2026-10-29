@@ -3,7 +3,11 @@
 
 package gui
 
-import "testing"
+import (
+	"errors"
+	"fmt"
+	"testing"
+)
 
 // TestWindowHelpers checks ByteSize, OrNone, FormatPt and MenuItems.
 func TestWindowHelpers(t *testing.T) {
@@ -63,5 +67,27 @@ func TestCallQueuePostFromUI(t *testing.T) {
 	q.Run()
 	if n != 80 {
 		t.Errorf("ran %d calls, want 80", n)
+	}
+}
+
+// TestDeclined checks that only the dialog's own error counts as a cancel,
+// and that a success never does, whether or not Declined is set.
+func TestDeclined(t *testing.T) {
+	dec := errors.New("user declined")
+	other := errors.New("disk full")
+	for _, tt := range []struct {
+		err, target error
+		want        bool
+	}{
+		{nil, nil, false},
+		{nil, dec, false},
+		{dec, dec, true},
+		{fmt.Errorf("wrapped: %w", dec), dec, true},
+		{other, dec, false},
+		{other, nil, false},
+	} {
+		if got := declined(tt.err, tt.target); got != tt.want {
+			t.Errorf("declined(%v, %v) = %v, want %v", tt.err, tt.target, got, tt.want)
+		}
 	}
 }

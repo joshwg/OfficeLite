@@ -164,6 +164,7 @@ type ColorPicker struct {
 	more   widget.Clickable
 	custom customColor
 	tipped bool
+	tips   tipper // the swatch under the pointer, for its tooltip
 }
 
 // IsOpen reports whether the menu is showing.
@@ -198,6 +199,7 @@ func (p *ColorPicker) SplitButton(gtx layout.Context, th *Theme, btn *widget.Cli
 				}
 				return d, done
 			})
+			p.syncCustom()
 			return layout.Dimensions{Size: p.dd.size}
 		}),
 	)
@@ -244,7 +246,17 @@ func (p *ColorPicker) Combo(gtx layout.Context, th *Theme, width unit.Dp, curren
 		}
 		return d, done
 	})
+	p.syncCustom()
 	return choice, ok, layout.Dimensions{Size: p.dd.size}
+}
+
+// syncCustom ends More Colors... when the menu has closed any way but its
+// own OK and Cancel (a click outside, the arrow, Close), so that the menu
+// opens on the palette next time.
+func (p *ColorPicker) syncCustom() {
+	if !p.dd.open {
+		p.custom.open = false
+	}
 }
 
 // panel draws the open menu. It returns the color chosen, if any, and
@@ -312,9 +324,14 @@ func (p *ColorPicker) panel(gtx layout.Context, th *Theme, noneLabel string) (la
 				strokeRect(gtx.Ops, r, ChromeLine) // light swatches need an edge
 			}
 			pointer.CursorPointer.Add(gtx.Ops)
-			// The tip's handler goes inside the swatch's area: on top of
-			// it, it would take the swatch's clicks.
-			tipButton(gtx, btn, btn.Hovered(), r.Size())
+			// The swatch reports its own place to the picker's tipper, as
+			// menu items do: the popup is outside the ribbon's area, which
+			// is where a tipper would learn the pointer's position.
+			if btn.Hovered() {
+				if tip, ok := tipFor(btn); ok {
+					p.tips.hover(gtx, btn, tip, image.Rect(x, y, x+sw, y+sw))
+				}
+			}
 			return layout.Dimensions{Size: r.Size()}
 		})
 		off.Pop()
@@ -361,6 +378,7 @@ func (p *ColorPicker) panel(gtx layout.Context, th *Theme, noneLabel string) (la
 	}
 	entry(&p.none, noneLabel)
 	entry(&p.more, "More Colors...")
+	p.tips.layout(gtx, th, image.Rect(0, 0, w, 1<<15), false)
 	return layout.Dimensions{Size: image.Pt(w, y+gtx.Dp(4))}, nil, false
 }
 
@@ -597,7 +615,11 @@ func toHSV(c color.NRGBA) (h, s, v float64) {
 // fromHSV returns the opaque color of hue h (wrapped into [0, 1)),
 // saturation s and value v.
 func fromHSV(h, s, v float64) color.NRGBA {
-	h = math.Mod(h, 1) * 6
+	h -= math.Floor(h) // negative hues wrap too
+	if !(h < 1) {      // rounding up to 1 for a hue just below 0, or NaN
+		h = 0
+	}
+	h *= 6
 	i := math.Floor(h)
 	f := h - i
 	p, q, t := v*(1-s), v*(1-s*f), v*(1-s*(1-f))

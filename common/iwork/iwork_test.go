@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -178,6 +179,41 @@ func TestDecodeCell(t *testing.T) {
 	}
 }
 
+// TestDecodeRow checks decodeRow on offsets out of order, a missing cell,
+// offsets past the storage (no panic), offsets of 0x8000 and up (not
+// negative) and 4-byte units in a wide row.
+func TestDecodeRow(t *testing.T) {
+	date := func(days float64) []byte {
+		b := []byte{5, byte(CellDate), 0, 0, 0, 0, 0, 0}
+		b = binary.LittleEndian.AppendUint32(b, 0x4)
+		return binary.LittleEndian.AppendUint64(b, math.Float64bits(days*86400))
+	}
+	offsets := func(os ...uint16) []byte {
+		var b []byte
+		for _, o := range os {
+			b = binary.LittleEndian.AppendUint16(b, o)
+		}
+		return b
+	}
+	buf := append(date(1), date(2)...) // at 0 and 20
+	cells, bad := decodeRow(buf, offsets(20, 0, 0xFFFF, 0xFFF0, 0x8000, 19), false)
+	if bad != 1 || len(cells) != 2 || cells[0].Seconds != 2*86400 || cells[1].Seconds != 86400 {
+		t.Errorf("row = %v, %d unreadable", cells, bad)
+	}
+	// The cell at 19 starts inside the first and can't be read; the ones
+	// past the end or missing are skipped quietly.
+	cells, bad = decodeRow(buf, offsets(5, 0), true) // 5 × 4 = 20
+	if bad != 0 || len(cells) != 2 || cells[0].Seconds != 2*86400 {
+		t.Errorf("wide row = %v, %d unreadable", cells, bad)
+	}
+	// Past 0x7FFF: an offset that a signed read would take for none.
+	big := append(make([]byte, 40000), date(3)...)
+	cells, _ = decodeRow(big, offsets(40000), false)
+	if len(cells) != 1 || cells[0].Seconds != 3*86400 {
+		t.Errorf("row with an offset of 40000 = %v", cells)
+	}
+}
+
 // TestExcelDateFormat checks the conversion of ICU date patterns to Excel
 // codes, and FormatDateTime's rendering of them.
 func TestExcelDateFormat(t *testing.T) {
@@ -204,6 +240,68 @@ func TestExcelDateFormat(t *testing.T) {
 	} {
 		if got := FormatDateTime(d, in); got != want {
 			t.Errorf("FormatDateTime(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestFormatBounds checks that a rating is 0..5 stars whatever the cell
+// holds, and that a huge decimal_places is cut instead of allocating
+// without limit.
+func TestFormatBounds(t *testing.T) {
+	for v, want := range map[float64]int{-3: 0, 0: 0, 2.6: 3, 5: 5, 1e18: 5, math.Inf(1): 5, math.Inf(-1): 0, math.NaN(): 0} {
+		if got := strings.Count(stars(v), "★"); got != want {
+			t.Errorf("stars(%v) = %d stars, want %d", v, got, want)
+		}
+	}
+	d := &Document{}
+	for _, kind := range []uint64{FormatScientific, FormatDecimal} {
+		f := Message{{Num: 1, Wire: wireVarint, V: kind}, {Num: 2, Wire: wireVarint, V: 4000000000}}
+		if code := d.ExcelFormat(f); len(code) > 40 {
+			t.Errorf("format %d with 4e9 places: %d characters", kind, len(code))
+		}
+	}
+	if placesOf(Message{{Num: 2, Wire: wireVarint, V: autoPlaces}}) != autoPlaces || placesOf(nil) != 0 {
+		t.Error("placesOf lost the automatic setting or the default")
+	}
+}
+
+// TestDisplayNegative checks the sign of negative durations and of
+// currency cells with no format of their own.
+func TestDisplayNegative(t *testing.T) {
+	d := &Document{}
+	for _, tt := range []struct {
+		c    Cell
+		want string
+	}{
+		{Cell{Type: CellDuration, Num: 3725}, "1:02:05"},
+		{Cell{Type: CellDuration, Num: -65}, "-0:01:05"},
+		{Cell{Type: CellDuration, Num: -0.4}, "0:00:00"},
+		{Cell{Type: CellCurrency, Num: 10}, "$10.00"},
+		{Cell{Type: CellCurrency, Num: -1234.5}, "-$1,234.50"},
+	} {
+		if got := d.Display(&tt.c); got != tt.want {
+			t.Errorf("%v %v = %q, want %q", tt.c.Type, tt.c.Num, got, tt.want)
+		}
+	}
+}
+
+// TestDatePatternQuotes checks that a doubled quote is a quote, outside
+// and inside a quoted literal, in both the displayed text and the Excel code.
+func TestDatePatternQuotes(t *testing.T) {
+	tm := time.Date(2024, 3, 5, 14, 7, 0, 0, time.UTC)
+	for _, tt := range []struct{ pattern, display, excel string }{
+		{`h 'o''clock'`, "2 o'clock", `h "o'clock"`},
+		{`'it''s'`, "it's", `"it's"`},
+		{`'a''' h`, "a' 2", `"a'" h`},
+		{`''yy`, "'24", `\'yy`},
+		{`'''o'`, "'o", `\'"o"`},
+		{`h:mm 'unclosed`, "2:07 unclosed", `h:mm "unclosed"`},
+	} {
+		if got := FormatDateTime(tm, tt.pattern); got != tt.display {
+			t.Errorf("FormatDateTime(%q) = %q, want %q", tt.pattern, got, tt.display)
+		}
+		if got := ExcelDateFormat(tt.pattern); got != tt.excel {
+			t.Errorf("ExcelDateFormat(%q) = %q, want %q", tt.pattern, got, tt.excel)
 		}
 	}
 }
@@ -300,6 +398,60 @@ func TestOpenSamples(t *testing.T) {
 		}
 		if got := Detect(bytes.NewReader(data), int64(len(data))); got != app {
 			t.Errorf("%s: Detect = %v", name, got)
+		}
+	}
+}
+
+// TestDetectIndexZip checks that Detect and Open see through an inner
+// Index.zip, as in a bundle zipped from a directory, to the same app.
+func TestDetectIndexZip(t *testing.T) {
+	for name, app := range map[string]App{"PagesInvoice.pages": Pages, "Sample1.numbers": Numbers} {
+		data, err := os.ReadFile(filepath.Join("..", "..", "Samples", name))
+		if err != nil {
+			t.Skip(err)
+		}
+		zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var inner bytes.Buffer
+		iw := zip.NewWriter(&inner)
+		for _, f := range zr.File {
+			if f.FileInfo().IsDir() {
+				continue
+			}
+			b, err := readZipFile(f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			w, _ := iw.Create(f.Name)
+			w.Write(b)
+		}
+		iw.Close()
+		var outer bytes.Buffer
+		ow := zip.NewWriter(&outer)
+		w, _ := ow.Create("Index.zip")
+		w.Write(inner.Bytes())
+		w, _ = ow.Create("Metadata/Properties.plist")
+		w.Write([]byte("x"))
+		ow.Close()
+		b := outer.Bytes()
+		if got := Detect(bytes.NewReader(b), int64(len(b))); got != app {
+			t.Errorf("%s in Index.zip: Detect = %v, want %v", name, got, app)
+		}
+		if d, err := Open(b); err != nil || d.App != app {
+			t.Errorf("%s in Index.zip: Open = %v, %v", name, d, err)
+		}
+	}
+	// An Index.zip that isn't an archive, and one with nothing in it.
+	for _, content := range [][]byte{[]byte("not a zip"), nil} {
+		var outer bytes.Buffer
+		ow := zip.NewWriter(&outer)
+		w, _ := ow.Create("Index.zip")
+		w.Write(content)
+		ow.Close()
+		if got := Detect(bytes.NewReader(outer.Bytes()), int64(outer.Len())); got != Unknown {
+			t.Errorf("Index.zip of %q: Detect = %v", content, got)
 		}
 	}
 }

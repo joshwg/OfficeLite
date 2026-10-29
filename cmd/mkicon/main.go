@@ -78,7 +78,7 @@ func writePreview(path string, images []*image.RGBA) {
 		w += n*zoom + gap
 		h = max(h, n*zoom)
 	}
-	h = 2*h + 3*gap
+	h = 2*h + 4*gap // two bands, each its tallest image with a gap above and below
 	out := image.NewRGBA(image.Rect(0, 0, w, h))
 	draw.Draw(out, image.Rect(0, 0, w, h/2), image.White, image.Point{}, draw.Src)
 	draw.Draw(out, image.Rect(0, h/2, w, h), image.NewUniform(color.Gray{0x20}), image.Point{}, draw.Src)
@@ -89,7 +89,7 @@ func writePreview(path string, images []*image.RGBA) {
 		if n >= 64 {
 			zoom = 1
 		}
-		for _, y0 := range []int{gap, h/2 + gap/2} {
+		for _, y0 := range []int{gap, h/2 + gap} {
 			for y := 0; y < n*zoom; y++ {
 				for xx := 0; xx < n*zoom; xx++ {
 					c := img.RGBAAt(xx/zoom, y/zoom)

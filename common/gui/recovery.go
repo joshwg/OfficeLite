@@ -190,7 +190,7 @@ func (r *Recovery) SaveAs(i int) {
 			if wc != nil {
 				wc.Close()
 			}
-			if errors.Is(err, r.cfg.Declined) {
+			if declined(err, r.cfg.Declined) {
 				err = ErrCancelled
 			}
 		}

@@ -55,7 +55,12 @@ func linkAllowed(target string) bool {
 	if p == "" {
 		return false
 	}
-	name := path.Base(strings.ReplaceAll(p, `\`, "/"))
+	// Cleaned the way Windows resolves it, so that "calc.exe/." or
+	// "calc.exe\." can't hide the name.
+	name := path.Base(path.Clean(strings.ReplaceAll(p, `\`, "/")))
+	if isDrive(name) {
+		return true // a drive's root folder
+	}
 	// Windows ignores trailing dots and spaces ("calc.exe. "), and a colon
 	// in the name selects an alternate data stream: refuse rather than
 	// guess what would run.
@@ -66,5 +71,10 @@ func linkAllowed(target string) bool {
 	if executableExts[strings.ToLower(path.Ext(name))] {
 		return false
 	}
-	return !isExecutableFile(p)
+	return !isExecutableFile(path.Clean(p))
+}
+
+// isDrive reports whether name is just a drive designator such as "C:".
+func isDrive(name string) bool {
+	return len(name) == 2 && name[1] == ':' && (name[0]|0x20 >= 'a' && name[0]|0x20 <= 'z')
 }

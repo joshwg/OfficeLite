@@ -255,13 +255,18 @@ func (s *Saver) start() {
 		defer pending.Done()
 		defer s.writing.Done()
 		err := s.write(seq, write)
-		s.post(func() { s.finish(err) })
+		s.post(func() { s.finish(seq, err) })
 	}()
 }
 
-// finish runs on the UI goroutine when a background save ends.
-func (s *Saver) finish(err error) {
+// finish runs on the UI goroutine when the background save numbered seq
+// ends. A failure that a newer write has since made up for (Ctrl+S) is
+// not one: the file holds the later state.
+func (s *Saver) finish(seq uint64, err error) {
 	s.busy = false
+	if err != nil && s.writtenSeq() > seq {
+		err = nil
+	}
 	if err != nil {
 		s.on, s.pending, s.again = false, false, false
 		s.stopTimer()
@@ -294,6 +299,13 @@ func (s *Saver) write(seq uint64, write func() error) error {
 	return err
 }
 
+// writtenSeq is the number of the last write that succeeded.
+func (s *Saver) writtenSeq() uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.written
+}
+
 // Save is a save the user asked for (Ctrl+S), on the UI goroutine: write
 // runs after a background save still going on, and takes the place of
 // the edits waiting for one.
@@ -304,7 +316,7 @@ func (s *Saver) Save(write func() error) error {
 	s.seq++
 	err := s.write(s.seq, write)
 	if err == nil {
-		s.pending = false
+		s.pending, s.again = false, false
 		s.stopTimer()
 	}
 	return err

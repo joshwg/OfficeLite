@@ -294,16 +294,9 @@ func readZipFile(f *zip.File) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(rc, 1<<30))
 }
 
-// Detect tells which iWork app a zip belongs to without decoding the
-// whole document: Unknown when it isn't an iWork document. Old iWork '09
-// packages are recognized by their name's extension only.
-func Detect(r io.ReaderAt, size int64) App {
-	zr, err := zip.NewReader(r, size)
-	if err != nil {
-		return Unknown
-	}
-	var doc *zip.File
-	keynote := false
+// findDocument finds the Index/Document.iwa entry of a zip, and whether it
+// has Keynote's slide archives.
+func findDocument(zr *zip.Reader) (doc *zip.File, keynote bool) {
 	for _, f := range zr.File {
 		name := strings.TrimPrefix(f.Name, "/")
 		switch {
@@ -312,6 +305,34 @@ func Detect(r io.ReaderAt, size int64) App {
 		case strings.HasPrefix(name, "Index/Slide"), strings.HasPrefix(name, "Index/MasterSlide"):
 			keynote = true
 		}
+	}
+	return doc, keynote
+}
+
+// Detect tells which iWork app a zip belongs to without decoding the
+// whole document: Unknown when it isn't an iWork document. Old iWork '09
+// packages are recognized by their name's extension only.
+func Detect(r io.ReaderAt, size int64) App {
+	zr, err := zip.NewReader(r, size)
+	if err != nil {
+		return Unknown
+	}
+	doc, keynote := findDocument(zr)
+	if doc == nil {
+		// A package zipped from a directory bundle keeps them in Index.zip.
+		var inner *zip.Reader
+		for _, f := range zr.File {
+			if strings.TrimPrefix(f.Name, "/") == "Index.zip" {
+				if b, err := readZipFile(f); err == nil {
+					inner, _ = zip.NewReader(bytes.NewReader(b), int64(len(b)))
+				}
+				break
+			}
+		}
+		if inner == nil {
+			return Unknown
+		}
+		doc, keynote = findDocument(inner)
 	}
 	if doc == nil {
 		return Unknown

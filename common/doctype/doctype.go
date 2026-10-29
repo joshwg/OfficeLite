@@ -25,7 +25,11 @@ const (
 
 // String is the kind's lower-case name.
 func (k Kind) String() string {
-	return [...]string{"unknown", "spreadsheet", "document"}[k]
+	names := [...]string{"unknown", "spreadsheet", "document"}
+	if k < 0 || int(k) >= len(names) {
+		return names[Unknown]
+	}
+	return names[k]
 }
 
 // DetectFile inspects the file at path, reading only what it needs: the

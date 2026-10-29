@@ -111,6 +111,57 @@ func TestTooltipTiming(t *testing.T) {
 	}
 }
 
+// TestNoTipOverOpenMenu checks that a drop button shows its tip when
+// hovered closed, but not while its menu is open (the tip would be drawn
+// over the menu), and that a checked toggle button still shows its tip.
+func TestNoTipOverOpenMenu(t *testing.T) {
+	g := newTipRig()
+	var dd DropDown
+	SetTip(&dd, "Borders", "", "Add borders to the cells.")
+	items := []DropItem{{Label: "Bottom Border"}, {Label: "Top Border"}}
+	frame := func() {
+		g.ops.Reset()
+		gtx := layout.Context{Ops: &g.ops, Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1},
+			Constraints: layout.Exact(image.Pt(800, 300)), Source: g.r.Source(), Now: g.now}
+		g.ribbon.Layout(gtx, g.th, RibbonGroup{Caption: "Font", Content: RibbonRow(
+			func(gtx layout.Context) layout.Dimensions {
+				_, d := DropButton(gtx, g.th, &dd, IconBold, "Borders", color.NRGBA{}, items, 120)
+				return d
+			},
+			func(gtx layout.Context) layout.Dimensions {
+				return ToolButton(gtx, g.th, &g.b, IconItalic, "", true, color.NRGBA{}) // checked
+			},
+		)})
+		g.r.Frame(&g.ops)
+	}
+	frame()
+	g.r.Queue(pointer.Event{Kind: pointer.Move, Source: pointer.Mouse, Position: f32.Pt(20, 15)})
+	frame()
+	g.now = g.now.Add(time.Second)
+	frame()
+	if g.ribbon.tips.key != &dd.btn || !g.shown() {
+		t.Fatalf("closed: key %v shown %v", g.ribbon.tips.key, g.shown())
+	}
+	dd.open = true
+	g.now = g.now.Add(time.Second)
+	frame()
+	g.now = g.now.Add(time.Second)
+	frame()
+	if g.shown() || g.ribbon.tips.key == &dd.btn {
+		t.Errorf("open menu: key %v shown %v", g.ribbon.tips.key, g.shown())
+	}
+	dd.Close()
+	frame()
+	// The checked Italic button, at the right of the drop button.
+	g.r.Queue(pointer.Event{Kind: pointer.Move, Source: pointer.Mouse, Position: f32.Pt(float32(dd.size.X)+20, 15)})
+	frame()
+	g.now = g.now.Add(time.Second)
+	frame()
+	if g.ribbon.tips.key != &g.b || !g.shown() {
+		t.Errorf("checked toggle: key %v shown %v", g.ribbon.tips.key, g.shown())
+	}
+}
+
 // TestMenuTip checks that a hovered context-menu item shows its Tip.
 func TestMenuTip(t *testing.T) {
 	th := NewTheme(NewFontLibrary(), ChromeText, ChromeText)

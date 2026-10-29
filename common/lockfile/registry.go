@@ -14,11 +14,14 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"officelite/common/atomicfile"
 )
 
 // Doc is the document a window has open. It registers the file in this
@@ -86,18 +89,16 @@ func (d *Doc) Path() string {
 // Close lets the file go, when the window closes.
 func (d *Doc) Close() { d.Set("", false) }
 
-// register adds d under its path to this process's registry (unless
-// another window has it) and writes its per-user registry file. d.mu is
-// held.
+// register adds d under its path to this process's registry (after any
+// other window with the file) and writes its per-user registry file. d.mu
+// is held.
 func (d *Doc) register() {
 	d.key = key(d.path)
 	reg.Lock()
 	if reg.docs == nil {
-		reg.docs = map[string]*Doc{}
+		reg.docs = map[string][]*Doc{}
 	}
-	if _, ok := reg.docs[d.key]; !ok {
-		reg.docs[d.key] = d
-	}
+	reg.docs[d.key] = append(reg.docs[d.key], d)
 	reg.Unlock()
 	port, token := listen()
 	dir, err := registryDir()
@@ -106,7 +107,7 @@ func (d *Doc) register() {
 	}
 	b, _ := json.Marshal(entry{PID: os.Getpid(), Path: d.path, Port: port, Token: token})
 	name := filepath.Join(dir, hashKey(d.key)+"-"+strconv.Itoa(os.Getpid())+"-"+strconv.Itoa(int(docSeq.Add(1))))
-	if os.WriteFile(name, b, 0o600) == nil {
+	if atomicfile.WriteFile(name, b, 0o600) == nil {
 		d.entry = name
 	}
 }
@@ -117,7 +118,9 @@ func (d *Doc) unregister() {
 		return
 	}
 	reg.Lock()
-	if reg.docs[d.key] == d {
+	if rest := slices.DeleteFunc(slices.Clone(reg.docs[d.key]), func(o *Doc) bool { return o == d }); len(rest) > 0 {
+		reg.docs[d.key] = rest
+	} else {
 		delete(reg.docs, d.key)
 	}
 	reg.Unlock()
@@ -130,7 +133,7 @@ func (d *Doc) unregister() {
 // reg is this process's open documents, and its hand-off listener.
 var reg struct {
 	sync.Mutex
-	docs   map[string]*Doc // by key
+	docs   map[string][]*Doc // by key: every window with the file, oldest first
 	port   int
 	token  string
 	listed bool
@@ -177,19 +180,28 @@ func hashKey(k string) string {
 // was one. Callers open the file only when there wasn't.
 func Activate(path string) bool {
 	k := key(path)
-	reg.Lock()
-	d := reg.docs[k]
-	reg.Unlock()
-	if d != nil {
+	if d := inProcess(k); d != nil {
 		d.raise()
 		return true
 	}
 	for _, e := range others(k) {
-		if handOff(e, path) {
+		// e.Path is absolute; the other process's directory isn't ours.
+		if handOff(e, e.Path) {
 			return true
 		}
 	}
 	return false
+}
+
+// inProcess returns the oldest window of this process with the file of key
+// k open, or nil.
+func inProcess(k string) *Doc {
+	reg.Lock()
+	defer reg.Unlock()
+	if ds := reg.docs[k]; len(ds) > 0 {
+		return ds[0]
+	}
+	return nil
 }
 
 // PIDAlive reports whether process pid is running; 0 and negative pids
@@ -210,6 +222,9 @@ func others(k string) []entry {
 	names, _ := filepath.Glob(filepath.Join(dir, hashKey(k)+"-*"))
 	var out []entry
 	for _, name := range names {
+		if strings.HasSuffix(name, ".tmp") { // a write in progress
+			continue
+		}
 		var e entry
 		b, err := os.ReadFile(name)
 		if err != nil || json.Unmarshal(b, &e) != nil || key(e.Path) != k {
@@ -270,9 +285,7 @@ func serve(ln net.Listener, token string) {
 				return
 			}
 			k := key(strings.TrimSuffix(path, "\n"))
-			reg.Lock()
-			d := reg.docs[k]
-			reg.Unlock()
+			d := inProcess(k)
 			if d == nil {
 				c.Write([]byte("no\n"))
 				return

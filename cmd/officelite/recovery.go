@@ -19,13 +19,10 @@ import (
 )
 
 // runRecovery shows the Document Recovery window for the copies a crashed
-// OfficeLite left. They are this process's while it is open (so another
-// OfficeLite started meanwhile doesn't list them too); Close lets the rest
-// go for the next start.
+// OfficeLite left, which the caller has claimed (so another OfficeLite
+// started meanwhile doesn't list them too); Close lets the rest go for the
+// next start.
 func runRecovery(w *app.Window, fonts *gui.FontLibrary, entries []autorecover.Entry, open func(autorecover.Entry)) {
-	for _, e := range entries {
-		autorecover.Claim(e)
-	}
 	w.Option(app.Title("Document Recovery - OfficeLite"), app.Size(unit.Dp(680), unit.Dp(480)))
 	expl := explorer.NewExplorer(w)
 	r := gui.NewRecovery(gui.RecoveryConfig{
@@ -60,7 +57,8 @@ func runRecovery(w *app.Window, fonts *gui.FontLibrary, entries []autorecover.En
 }
 
 // saveRecovered writes a recovered copy to path in the format of path's
-// extension (.xlsx / .docx when it names none OfficeLite writes).
+// extension (.xlsx / .docx when it names none OfficeLite writes). A
+// single-sheet format (.csv, .tsv) gets the first visible sheet.
 func saveRecovered(e autorecover.Entry, path string) error {
 	if e.App == autorecover.Word {
 		doc, err := wordio.Open(e.Copy)
@@ -81,5 +79,14 @@ func saveRecovered(e autorecover.Entry, path string) error {
 	if !ok {
 		f = excelio.XLSX
 	}
-	return excelio.SaveFile(wb, path, f, 0)
+	// A single-sheet format gets the sheet the copy opens on: the first
+	// visible one.
+	sheet := 0
+	for i, sh := range wb.Sheets {
+		if !sh.Hidden {
+			sheet = i
+			break
+		}
+	}
+	return excelio.SaveFile(wb, path, f, sheet)
 }

@@ -138,7 +138,7 @@ func Draw(size int) *image.RGBA {
 		if size >= 64 {
 			c.fill(shadow, offset(feather(0, true), 3, 5))
 		}
-		line := max(featherLine/c.scale, 1.5)
+		line := featherLine / c.scale
 		c.fill(featherInk, feather(0, detail))
 		c.fill(white, feather(line, detail))
 		if detail {

@@ -26,3 +26,18 @@ func TestHex(t *testing.T) {
 		}
 	}
 }
+
+// TestMixClamps checks that a fraction outside [0, 1] gives the nearer
+// end instead of overflowing a channel.
+func TestMixClamps(t *testing.T) {
+	a, b := color.NRGBA{R: 10, G: 200, B: 0, A: 7}, color.NRGBA{R: 250, G: 20, B: 255, A: 9}
+	for frac, want := range map[float64]color.NRGBA{
+		-0.5: {R: 10, G: 200, B: 0, A: 255}, 0: {R: 10, G: 200, B: 0, A: 255},
+		1: {R: 250, G: 20, B: 255, A: 255}, 3: {R: 250, G: 20, B: 255, A: 255},
+		0.5: {R: 130, G: 110, B: 128, A: 255},
+	} {
+		if got := Mix(a, b, frac); got != want {
+			t.Errorf("Mix(frac %v) = %v, want %v", frac, got, want)
+		}
+	}
+}

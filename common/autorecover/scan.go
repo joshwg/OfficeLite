@@ -107,6 +107,23 @@ func Claim(e Entry) error {
 	return writeEntry(e.Sidecar, e)
 }
 
+// ClaimAll claims each entry, then reads its sidecar back and returns the
+// ones that are still this process's: when two OfficeLites claim the same
+// copy at once the last writer keeps it and the other drops it. Entries that
+// can't be claimed are left out.
+func ClaimAll(entries []Entry) []Entry {
+	var mine []Entry
+	for _, e := range entries {
+		if Claim(e) != nil {
+			continue
+		}
+		if got, err := readEntry(e.Sidecar); err == nil && got.PID == os.Getpid() && got.Started == selfStart {
+			mine = append(mine, e)
+		}
+	}
+	return mine
+}
+
 // Release lets e go again (Document Recovery's Close keeps it for the next
 // start).
 func Release(e Entry) error {

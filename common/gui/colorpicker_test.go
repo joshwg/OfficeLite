@@ -5,6 +5,7 @@ package gui
 import (
 	"image"
 	"image/color"
+	"math"
 	"testing"
 	"time"
 
@@ -102,5 +103,101 @@ func TestColorPickerPicks(t *testing.T) {
 	}
 	if g.p.dd.IsOpen() {
 		t.Error("picker still open after a pick")
+	}
+}
+
+// TestColorPickerCustomClosedOutside checks that dismissing the menu from
+// More Colors... (a click outside, the arrow, Close) opens it on the
+// palette next time, not on the custom color panel.
+func TestColorPickerCustomClosedOutside(t *testing.T) {
+	g := &pickerRig{th: NewTheme(NewFontLibrary(), ChromeText, ChromeText)}
+	g.frame()
+	arrow := g.p.dd.size
+	arrowAt := func() (float32, float32) { return float32(RibbonRowHeight) + float32(arrow.X)/2, float32(arrow.Y) / 2 }
+	for name, dismiss := range map[string]func(){
+		"click outside": func() { g.click(500, 500) },
+		"the arrow":     func() { g.click(arrowAt()) },
+		"Close":         func() { g.p.dd.Close(); g.frame() },
+	} {
+		g.p.dd.open = true
+		g.frame()
+		g.p.custom.start(themeColors[5].c)
+		g.frame()
+		if !g.p.custom.open || !g.p.dd.IsOpen() {
+			t.Fatalf("%s: More Colors... didn't open", name)
+		}
+		dismiss()
+		if g.p.dd.IsOpen() {
+			t.Fatalf("%s: the menu didn't close", name)
+		}
+		if g.p.custom.open {
+			t.Errorf("%s: More Colors... still open after the menu closed", name)
+		}
+		g.p.dd.open = true // opened again
+		g.frame()
+		if g.p.custom.open {
+			t.Errorf("%s: the menu reopened on More Colors...", name)
+		}
+		g.p.dd.Close()
+		g.frame()
+	}
+}
+
+// TestColorPickerSwatchTip checks that hovering a swatch in the open menu
+// shows its tooltip at the swatch's own place, though nothing here tracks
+// the pointer outside the menu (as in a ribbon, where the menu is drawn
+// beyond the ribbon's area, and in a Combo, which has no ribbon).
+func TestColorPickerSwatchTip(t *testing.T) {
+	g := &pickerRig{th: NewTheme(NewFontLibrary(), ChromeText, ChromeText)}
+	g.p.tips.force = true
+	g.frame()
+	arrow := g.p.dd.size
+	btnW := float32(RibbonRowHeight)
+	g.click(btnW+float32(arrow.X)/2, float32(arrow.Y)/2)
+	if !g.p.dd.IsOpen() {
+		t.Fatal("the arrow didn't open the picker")
+	}
+	x := btnW + 10 + 4*21 + 8 // the fifth theme color, Blue, Accent 1
+	for y := float32(arrow.Y) + 4; y < float32(arrow.Y)+60; y += 2 {
+		g.r.Queue(pointer.Event{Kind: pointer.Move, Source: pointer.Mouse, Position: f32.Pt(x, y)})
+		g.frame()
+		g.frame()
+		if g.p.tips.key != &g.p.cells[4] {
+			continue
+		}
+		if r := g.p.tips.rect; r.Min.X != 10+4*21 || r.Dx() != 16 || r.Dy() != 16 {
+			t.Errorf("tip anchored at %v, want the swatch at x %d, 16 wide", r, 10+4*21)
+		}
+		if g.p.tips.tip.Name != themeColors[4].name {
+			t.Errorf("tip %q, want %q", g.p.tips.tip.Name, themeColors[4].name)
+		}
+		if g.p.tips.lastShow.IsZero() {
+			t.Error("the tip was never drawn")
+		}
+		return
+	}
+	t.Fatal("hovering the swatch never reported it to the tipper")
+}
+
+// TestFromHSVWraps checks that hues outside [0, 1), negative ones
+// included, give the color of the same hue within it.
+func TestFromHSVWraps(t *testing.T) {
+	for _, h := range []float64{0, 0.1, 0.5, 0.9, 0.999} {
+		want := fromHSV(h, 0.8, 0.9)
+		for _, shift := range []float64{-3, -1, 1, 2} {
+			if got := fromHSV(h+shift, 0.8, 0.9); got != want {
+				t.Errorf("fromHSV(%v) = %v, want %v (hue %v)", h+shift, got, want, h)
+			}
+		}
+	}
+	red := color.NRGBA{R: 255, G: 0, B: 0, A: 255}
+	for _, h := range []float64{0, 1, -1e-20, math.NaN()} {
+		if got := fromHSV(h, 1, 1); got != red {
+			t.Errorf("fromHSV(%v, 1, 1) = %v, want red", h, got)
+		}
+	}
+	// A quarter turn back from red is violet-pink, not the default case's.
+	if got := fromHSV(-0.25, 1, 1); got != (color.NRGBA{R: 128, G: 0, B: 255, A: 255}) {
+		t.Errorf("fromHSV(-0.25, 1, 1) = %v", got)
 	}
 }

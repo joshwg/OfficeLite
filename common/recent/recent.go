@@ -122,8 +122,15 @@ func (l *List) Add(path string, kind Kind) error {
 	})
 }
 
-// Remove drops path from the list and saves it, as Add does.
+// Remove drops path from the list and saves it, as Add does. A relative
+// path means the one Add would have stored for it.
 func (l *List) Remove(path string) error {
+	if path == "" {
+		return nil
+	}
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
+	}
 	return l.update(func(list []Entry) []Entry {
 		return slices.DeleteFunc(list, func(e Entry) bool { return samePath(e.Path, path) })
 	})

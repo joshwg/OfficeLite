@@ -45,9 +45,6 @@ func main() {
 	dialog := flag.String("dialog", "", "dialog to show: style or close (-window)")
 	marks := flag.Bool("marks", false, "show formatting marks (Show/Hide ¶)")
 	flag.Parse()
-	if *marks && *window && *dialog == "" {
-		*dialog = "marks"
-	}
 
 	var doc *model.Document
 	path := ""
@@ -73,7 +70,7 @@ func main() {
 		gtx := layout.Context{Ops: &ops, Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Constraints: layout.Exact(image.Pt(width, height))}
 		var router input.Router
 		gtx.Source = router.Source()
-		ui.Preview(gtx, fonts, recent.Open(""), doc, path, *backstage, *menu, *dialog)
+		ui.Preview(gtx, fonts, recent.Open(""), doc, path, *backstage, *menu, *dialog, *marks)
 	} else {
 		fams := []string{"Calibri", "Calibri Light", "Aptos", "Times New Roman", "Arial", "Symbol", "Courier New"}
 		doc.Paragraphs(func(p *model.Paragraph) bool {

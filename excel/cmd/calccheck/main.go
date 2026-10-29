@@ -128,11 +128,23 @@ func show(s saved) string {
 }
 
 // unknownFunctions lists function names in a formula that the registry
-// lacks.
+// lacks. Text in "string literals" and 'sheet names' isn't scanned; a
+// doubled quote inside one is an escaped quote and stays inside it.
 func unknownFunctions(src string) []string {
 	var out []string
 	reg := functions.Default()
+	var quote byte // the quote character of the literal being skipped
 	for i := 0; i < len(src); i++ {
+		if quote != 0 {
+			if src[i] == quote {
+				quote = 0 // a doubled quote reopens at the next character
+			}
+			continue
+		}
+		if src[i] == '"' || src[i] == '\'' {
+			quote = src[i]
+			continue
+		}
 		if src[i] != '(' {
 			continue
 		}
@@ -150,6 +162,7 @@ func unknownFunctions(src string) []string {
 	return out
 }
 
+// isNameChar reports whether c can be part of a function name.
 func isNameChar(c byte) bool {
 	return c == '.' || c == '_' || c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z'
 }

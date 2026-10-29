@@ -10,6 +10,27 @@ import (
 	"testing"
 )
 
+// TestRemoveRelative checks that Remove matches the absolute path Add
+// stored for a relative or uncleaned one, and that an empty path does
+// nothing.
+func TestRemoveRelative(t *testing.T) {
+	l := Open(filepath.Join(t.TempDir(), "recent.json"))
+	l.Add("docs/a.xlsx", Spreadsheet)
+	l.Add("b.docx", Document)
+	l.Remove("")
+	if len(l.Entries()) != 2 {
+		t.Fatalf("Remove of an empty path changed %+v", l.Entries())
+	}
+	l.Remove("docs/../docs/a.xlsx")
+	if e := l.Entries(); len(e) != 1 || e[0].Name() != "b.docx" {
+		t.Fatalf("after removing an uncleaned path: %+v", e)
+	}
+	l.Remove("./b.docx")
+	if e := l.Entries(); len(e) != 0 {
+		t.Errorf("after removing a relative path: %+v", e)
+	}
+}
+
 // TestList checks that Add moves a file to the top without duplicates, the
 // list reloads from its file, Remove drops a file, and the list stays
 // within Max.

@@ -20,10 +20,14 @@ import (
 // menu, a table border being dragged and selected text being dragged;
 // "undo" and "redo" make a few changes and open the Undo (or Redo) list;
 // "autosave" and "autosave-saved" turn the title bar's AutoSave switch on
-// (and show it just saved).
-func Preview(gtx layout.Context, fonts *gui.FontLibrary, list *recent.List, doc *model.Document, path, page string, menu int, dialog string) {
+// (and show it just saved). marks turns on Show/Hide ¶ whatever else is
+// shown.
+func Preview(gtx layout.Context, fonts *gui.FontLibrary, list *recent.List, doc *model.Document, path, page string, menu int, dialog string, marks bool) {
 	d := newWindow(nil, Config{Fonts: fonts, Recent: list})
 	d.setDoc(doc, fonts.Shaper(docFonts(doc)...), docFonts(doc))
+	if marks && dialog != "marks" { // that dialog turns them on itself
+		d.toggleMarks()
+	}
 	d.path = path
 	if path != "" {
 		d.fileInfo, _ = os.Stat(path)

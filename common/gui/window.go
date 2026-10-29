@@ -138,12 +138,18 @@ func SavePDF(j PDFSave) {
 		case errors.Is(err, ErrCancelled):
 			j.Busy.Store(false)
 			return
+		case !errors.Is(err, ErrNoFileDialog) || j.Create == nil:
+			j.Calls.Post(func() {
+				defer j.Busy.Store(false)
+				j.Report(pdfDone("", 0, err, false))
+			})
+			return
 		}
 		// No native dialog: the fallback Save dialog.
 		wc, err := j.Create(name)
 		j.Calls.Post(func() {
 			defer j.Busy.Store(false)
-			if errors.Is(err, j.Declined) {
+			if declined(err, j.Declined) {
 				return
 			}
 			var pages int
@@ -164,6 +170,13 @@ func SavePDF(j PDFSave) {
 			j.Report(pdfDone(path, pages, err, j.Open && filepath.IsAbs(path)))
 		})
 	}()
+}
+
+// declined reports whether err is the fallback dialog's error for a
+// canceled dialog. With no such error to compare with (target nil) nothing
+// is: errors.Is(nil, nil) alone would take a success for a cancel.
+func declined(err, target error) bool {
+	return err != nil && target != nil && errors.Is(err, target)
 }
 
 // pdfDone is the outcome of an export, as a notice or an error message.

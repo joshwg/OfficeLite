@@ -1,3 +1,6 @@
+// Tests for the criteria functions (SUMIF(S), COUNTIF(S), AVERAGEIF(S),
+// MINIFS, MAXIFS).
+
 package mathtrig
 
 import (
@@ -14,6 +17,7 @@ import (
 //	Sheet1!E1:F5  Property value / Commission (SUMIF, AVERAGEIF)
 //	Sheet1!H1:I5  Fruit / Count (COUNTIF)
 //	Sheet1!K1:L6  Grade / Weight (MINIFS, MAXIFS)
+//	Sheet1!M1     #DIV/0!
 //	Sheet2!A1:C9  Quantity / Product / Salesperson (SUMIFS)
 func condData(ctx *f.TestContext) {
 	ctx.SetRange("A1", [][]any{
@@ -54,6 +58,8 @@ func condData(ctx *f.TestContext) {
 	})
 }
 
+// TestConditional checks the criteria functions on Microsoft's examples,
+// whole-column ranges, array criteria and shape mismatches.
 func TestConditional(t *testing.T) {
 	const rows = float64(model.MaxRows)
 	ftest.Run(t, registry(), condData, []ftest.Case{

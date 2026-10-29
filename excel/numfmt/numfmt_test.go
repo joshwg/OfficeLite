@@ -1,7 +1,10 @@
+// Tests for General and Formatter.Format, including the 1904 date system.
+
 package numfmt
 
 import "testing"
 
+// TestGeneral checks General's 11-character width and switch to scientific notation.
 func TestGeneral(t *testing.T) {
 	for _, c := range []struct {
 		v    float64
@@ -24,6 +27,7 @@ func TestGeneral(t *testing.T) {
 	}
 }
 
+// TestFormat checks built-in and custom formats in the 1900 date system.
 func TestFormat(t *testing.T) {
 	nf := New(false)
 	defer nf.Close()
@@ -47,6 +51,7 @@ func TestFormat(t *testing.T) {
 	}
 }
 
+// TestFormat1904 checks that 1904 serials shift only for calendar-date formats.
 func TestFormat1904(t *testing.T) {
 	nf := New(true)
 	defer nf.Close()

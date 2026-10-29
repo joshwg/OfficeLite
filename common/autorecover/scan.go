@@ -1,3 +1,6 @@
+// scan.go finds orphaned recovery copies (Orphans), cleans up stale and
+// stray files, and claims, releases and discards entries.
+
 package autorecover
 
 import (

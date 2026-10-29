@@ -1,3 +1,6 @@
+// FileDrop, which takes files dragged onto a window, and the sorting and
+// opening of what was dropped.
+
 package gui
 
 import (

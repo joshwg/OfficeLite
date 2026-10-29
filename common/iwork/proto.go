@@ -1,3 +1,5 @@
+// Schema-less protobuf decoding: Message and its field accessors by number.
+
 package iwork
 
 import (
@@ -10,7 +12,7 @@ const (
 	wireVarint  = 0
 	wireFixed64 = 1
 	wireBytes   = 2
-	wireGroup   = 3 // start group (deprecated groups are skipped)
+	wireGroup   = 3 // start group (group markers are skipped; deprecated, unused by iWork)
 	wireEnd     = 4
 	wireFixed32 = 5
 )
@@ -77,6 +79,7 @@ func Decode(b []byte) Message {
 	return m
 }
 
+// last returns the last occurrence of field n, and whether there is one.
 func (m Message) last(n int) (Field, bool) {
 	for i := len(m) - 1; i >= 0; i-- {
 		if m[i].Num == n {

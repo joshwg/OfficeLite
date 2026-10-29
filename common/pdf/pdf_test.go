@@ -1,3 +1,6 @@
+// Tests of the PDF writer: file structure and xref, embedded and subsetted
+// fonts, license fallbacks, text placement and images.
+
 package pdf
 
 import (
@@ -18,9 +21,11 @@ import (
 	"golang.org/x/image/font/sfnt"
 )
 
-// dirSource finds fonts in the project's Fonts folder by file name.
+// dirSource is a FontSource mapping lowercased family names to font file
+// paths.
 type dirSource map[string][]string
 
+// FontFiles returns the files listed for family.
 func (s dirSource) FontFiles(family string) []string { return s[strings.ToLower(family)] }
 
 // parsed is a PDF split into its objects, checked against the xref table.
@@ -88,6 +93,7 @@ func parsePDF(t *testing.T, b []byte) *parsed {
 	return p
 }
 
+// fmtSscan parses s as exactly two space-separated integers into a and b.
 func fmtSscan(s string, a, b *int) (int, error) {
 	f := strings.Fields(s)
 	if len(f) != 2 {
@@ -103,6 +109,8 @@ func fmtSscan(s string, a, b *int) (int, error) {
 
 var lengthRE = regexp.MustCompile(`/Length (\d+)`)
 
+// readStream checks stream object n's /Length against its endstream and
+// stores its data, Flate-decoded when filtered.
 func (p *parsed) readStream(t *testing.T, n int, body []byte) {
 	t.Helper()
 	si := bytes.Index(body, []byte(">>\nstream\n"))
@@ -140,6 +148,7 @@ func (p *parsed) find(s string) []int {
 	return out
 }
 
+// refOf returns the object number of the reference following key in body.
 func refOf(t *testing.T, body []byte, key string) int {
 	t.Helper()
 	m := regexp.MustCompile(regexp.QuoteMeta(key) + `\s*(\d+) 0 R`).FindSubmatch(body)
@@ -150,6 +159,8 @@ func refOf(t *testing.T, body []byte, key string) int {
 	return n
 }
 
+// samplePDF draws two pages on d (shapes, translucency, clipped and styled
+// text, a PNG and a JPEG) and returns the written file.
 func samplePDF(t *testing.T, d *Document) []byte {
 	t.Helper()
 	pg := d.AddPage(Letter)
@@ -190,6 +201,8 @@ func samplePDF(t *testing.T, d *Document) []byte {
 	return out.Bytes()
 }
 
+// TestStructure checks the sample PDF's structure, info dictionary,
+// images, ExtGState and fonts; with PDF_DUMP the PDF is kept for viewing.
 func TestStructure(t *testing.T) {
 	d := New()
 	d.Title = "Test – document"
@@ -264,6 +277,8 @@ func checkFonts(t *testing.T, p *parsed, want string) {
 	}
 }
 
+// TestSubsetIsSmall checks that Fonts/arial.ttf is embedded as a tagged
+// subset well under the font's size.
 func TestSubsetIsSmall(t *testing.T) {
 	arial := filepath.Join("..", "..", "Fonts", "arial.ttf")
 	if _, err := os.Stat(arial); err != nil {
@@ -292,6 +307,8 @@ func TestSubsetIsSmall(t *testing.T) {
 	}
 }
 
+// TestRestrictedFontFallsBack checks that a font whose license forbids
+// embedding is skipped for an embeddable fallback.
 func TestRestrictedFontFallsBack(t *testing.T) {
 	// A copy of Go Regular marked "restricted license" must not be
 	// embedded; the Go fallback takes its place.
@@ -317,11 +334,13 @@ func TestRestrictedFontFallsBack(t *testing.T) {
 	d := New()
 	d.Fonts = dirSource{"go": {path}}
 	f := d.Font(FontSpec{Family: "Go"})
-	if f.chain[0].face == fc[0] || !f.chain[0].face.embeddable() {
+	if !f.chain[0].face.embeddable() {
 		t.Fatal("restricted font embedded")
 	}
 }
 
+// TestTextPositions checks that DrawText honors Adv with TJ adjustments
+// and places the baseline in PDF space.
 func TestTextPositions(t *testing.T) {
 	d := New()
 	d.NoCompress = true

@@ -92,6 +92,7 @@ func Register(r *f.Registry) {
 // units returns s as UTF-16 code units, Excel's unit of text length.
 func units(s string) []uint16 { return utf16.Encode([]rune(s)) }
 
+// fromUnits converts UTF-16 code units back to a string.
 func fromUnits(u []uint16) string { return string(utf16.Decode(u)) }
 
 // ulen is the length of s in UTF-16 code units.
@@ -138,6 +139,7 @@ func arg(args []f.Value, i int) f.Value {
 	return f.Missing{}
 }
 
+// mapText wraps a string transform as a one-argument text function.
 func mapText(fn func(string) string) func(*f.Env, []f.Value) f.Value {
 	return func(_ *f.Env, a []f.Value) f.Value {
 		s, err := f.Str(a[0])
@@ -150,7 +152,7 @@ func mapText(fn func(string) string) func(*f.Env, []f.Value) f.Value {
 
 // --- length and slicing ---------------------------------------------------
 
-// LEN(text)
+// lenFn implements LEN(text), counting UTF-16 code units.
 func lenFn(_ *f.Env, a []f.Value) f.Value {
 	s, err := f.Str(a[0])
 	if err != nil {
@@ -159,7 +161,7 @@ func lenFn(_ *f.Env, a []f.Value) f.Value {
 	return f.Number(ulen(s))
 }
 
-// LEFT(text, [num_chars])
+// left implements LEFT(text, [num_chars]).
 func left(_ *f.Env, a []f.Value) f.Value {
 	s, err := f.Str(a[0])
 	if err != nil {
@@ -179,7 +181,7 @@ func left(_ *f.Env, a []f.Value) f.Value {
 	return f.String(fromUnits(u[:n]))
 }
 
-// RIGHT(text, [num_chars])
+// right implements RIGHT(text, [num_chars]).
 func right(_ *f.Env, a []f.Value) f.Value {
 	s, err := f.Str(a[0])
 	if err != nil {
@@ -199,7 +201,7 @@ func right(_ *f.Env, a []f.Value) f.Value {
 	return f.String(fromUnits(u[len(u)-n:]))
 }
 
-// MID(text, start_num, num_chars)
+// mid implements MID(text, start_num, num_chars).
 func mid(_ *f.Env, a []f.Value) f.Value {
 	s, err := f.Str(a[0])
 	if err != nil {
@@ -223,7 +225,7 @@ func mid(_ *f.Env, a []f.Value) f.Value {
 	return f.String(fromUnits(u[start-1 : min(len(u), start-1+n)]))
 }
 
-// REPLACE(old_text, start_num, num_chars, new_text)
+// replace implements REPLACE(old_text, start_num, num_chars, new_text).
 func replace(_ *f.Env, a []f.Value) f.Value {
 	s, err := f.Str(a[0])
 	if err != nil {
@@ -294,6 +296,7 @@ func find(a []f.Value, search bool) f.Value {
 	return f.ErrValue
 }
 
+// equalUnits reports whether a equals the first len(a) units of b.
 func equalUnits(a, b []uint16) bool {
 	for i := range a {
 		if a[i] != b[i] {
@@ -323,6 +326,8 @@ type wild struct {
 	c    uint16
 }
 
+// parseWild splits a SEARCH pattern into literal, '?' and '*' elements,
+// honoring ~ escapes.
 func parseWild(p []uint16) []wild {
 	var out []wild
 	for i := 0; i < len(p); i++ {
@@ -376,7 +381,7 @@ func wildMatch(p []wild, t []uint16) bool {
 	return i == len(p)
 }
 
-// SUBSTITUTE(text, old_text, new_text, [instance_num])
+// substitute implements SUBSTITUTE(text, old_text, new_text, [instance_num]).
 func substitute(_ *f.Env, a []f.Value) f.Value {
 	s, err := f.Str(a[0])
 	if err != nil {
@@ -420,7 +425,7 @@ func substitute(_ *f.Env, a []f.Value) f.Value {
 
 // --- transformations ------------------------------------------------------------
 
-// REPT(text, number_times)
+// rept implements REPT(text, number_times).
 func rept(_ *f.Env, a []f.Value) f.Value {
 	s, err := f.Str(a[0])
 	if err != nil {
@@ -480,7 +485,7 @@ func clean(s string) string {
 	}, s)
 }
 
-// EXACT(text1, text2) compares case-sensitively.
+// exact implements EXACT(text1, text2), a case-sensitive comparison.
 func exact(_ *f.Env, a []f.Value) f.Value {
 	x, err := f.Str(a[0])
 	if err != nil {
@@ -493,7 +498,8 @@ func exact(_ *f.Env, a []f.Value) f.Value {
 	return f.Bool(x == y)
 }
 
-// T(value) returns text unchanged and "" for anything else.
+// tFn implements T(value): text (or an error) unchanged, "" for anything
+// else.
 func tFn(_ *f.Env, a []f.Value) f.Value {
 	switch v := a[0].(type) {
 	case f.String, f.Error:
@@ -504,7 +510,8 @@ func tFn(_ *f.Env, a []f.Value) f.Value {
 
 // --- joining ---------------------------------------------------------------------
 
-// CONCATENATE(text1, ...) takes scalars (ranges lift).
+// concatenate implements CONCATENATE(text1, ...), which takes scalars
+// (ranges lift).
 func concatenate(_ *f.Env, a []f.Value) f.Value {
 	var b strings.Builder
 	for _, v := range a {
@@ -537,7 +544,8 @@ func flatten(e *f.Env, vals []f.Value, out []string) ([]string, f.Value) {
 	return out, nil
 }
 
-// CONCAT(text1, ...) joins ranges and arrays row by row.
+// concat implements CONCAT(text1, ...), joining ranges and arrays row by
+// row.
 func concat(e *f.Env, a []f.Value) f.Value {
 	parts, err := flatten(e, a, nil)
 	if err != nil {
@@ -546,8 +554,8 @@ func concat(e *f.Env, a []f.Value) f.Value {
 	return result(strings.Join(parts, ""))
 }
 
-// TEXTJOIN(delimiter, ignore_empty, text1, ...). An array of delimiters is
-// used in turn.
+// textJoin implements TEXTJOIN(delimiter, ignore_empty, text1, ...). An
+// array of delimiters is used in turn.
 func textJoin(e *f.Env, a []f.Value) f.Value {
 	delims, err := flatten(e, a[:1], nil)
 	if err != nil {
@@ -584,7 +592,7 @@ func textJoin(e *f.Env, a []f.Value) f.Value {
 
 // --- characters --------------------------------------------------------------------
 
-// CHAR(number): a character of the Windows-1252 code page (Excel on
+// char implements CHAR(number): a character of the Windows-1252 code page (Excel on
 // Windows). Its five unassigned bytes map to the C1 control characters of
 // the same number, as Windows does.
 func char(_ *f.Env, a []f.Value) f.Value {
@@ -598,7 +606,7 @@ func char(_ *f.Env, a []f.Value) f.Value {
 	return f.String(string(textenc.Windows1252Rune(byte(n))))
 }
 
-// CODE(text): the Windows-1252 code of the first character; characters
+// code implements CODE(text): the Windows-1252 code of the first character; characters
 // outside the code page give 63 ("?").
 func code(_ *f.Env, a []f.Value) f.Value {
 	s, err := f.Str(a[0])
@@ -615,7 +623,7 @@ func code(_ *f.Env, a []f.Value) f.Value {
 	return f.Number('?')
 }
 
-// UNICHAR(number)
+// unichar implements UNICHAR(number); surrogate code points are #N/A.
 func unichar(_ *f.Env, a []f.Value) f.Value {
 	n, err := intArg(a[0], 0)
 	if err != nil {
@@ -630,7 +638,7 @@ func unichar(_ *f.Env, a []f.Value) f.Value {
 	return f.String(string(rune(n)))
 }
 
-// UNICODE(text): the code point of the first character.
+// unicodeFn implements UNICODE(text): the code point of the first character.
 func unicodeFn(_ *f.Env, a []f.Value) f.Value {
 	s, err := f.Str(a[0])
 	if err != nil {
@@ -644,7 +652,7 @@ func unicodeFn(_ *f.Env, a []f.Value) f.Value {
 
 // --- other ------------------------------------------------------------------------------
 
-// PHONETIC(reference) returns the furigana of the top-left cell. Workbooks
+// phonetic implements PHONETIC(reference), returning the furigana of the top-left cell. Workbooks
 // here carry no phonetic data, so that is the cell's text.
 func phonetic(e *f.Env, a []f.Value) f.Value {
 	v := a[0]

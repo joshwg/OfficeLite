@@ -1,3 +1,5 @@
+// insert_test.go tests the Insert menu, Fill, the fill handle, Find / Go To / Sort, notes, links and Insert Cells.
+
 package ui
 
 import (
@@ -10,6 +12,8 @@ import (
 	"officelite/excel/render"
 )
 
+// TestInsertMenuAndFill checks the Insert menu exists and Ctrl+D fills down,
+// undoably.
 func TestInsertMenuAndFill(t *testing.T) {
 	h := newHarness(t)
 	a := h.a
@@ -26,6 +30,8 @@ func TestInsertMenuAndFill(t *testing.T) {
 	h.expect("undo", map[string]string{"A2": "", "A4": ""})
 }
 
+// TestFillHandleDrag checks dragging the fill handle extends a series and the
+// selection.
 func TestFillHandleDrag(t *testing.T) {
 	h := newHarness(t)
 	a := h.a
@@ -50,6 +56,8 @@ func TestFillHandleDrag(t *testing.T) {
 	}
 }
 
+// TestFindGoToSort checks Ctrl+F finds a cell, Esc closes it, Ctrl+G goes to a
+// reference and Sort Ascending sorts without a guessed header row.
 func TestFindGoToSort(t *testing.T) {
 	h := newHarness(t)
 	a := h.a
@@ -89,6 +97,8 @@ func TestFindGoToSort(t *testing.T) {
 	h.expect("sorted", map[string]string{"A1": "apple", "A2": "fig", "A3": "Name", "A4": "pear"})
 }
 
+// TestNotesAndLinksUI checks Ctrl+K adds a followable internal link and
+// Shift+F2 adds an undoable note.
 func TestNotesAndLinksUI(t *testing.T) {
 	h := newHarness(t)
 	a := h.a
@@ -133,10 +143,13 @@ func TestNotesAndLinksUI(t *testing.T) {
 	}
 }
 
+// followLinkTest follows the link in A1 of v, reporting whether there was one.
 func followLinkTest(a *App, v *render.View) bool {
 	return a.followLinkAt(v, render.Hit{Area: render.AreaCell, Row: 0, Col: 0})
 }
 
+// TestInsertCellsDialog checks Insert Cells shifts down by default and Delete
+// Cells shifts back up.
 func TestInsertCellsDialog(t *testing.T) {
 	h := newHarness(t)
 	a := h.a

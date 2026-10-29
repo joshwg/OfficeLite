@@ -1,3 +1,5 @@
+// recover.go is the window's AutoRecover side: periodic recovery copies and opening a recovered workbook.
+
 package ui
 
 import (

@@ -1,3 +1,7 @@
+// Tests for charts in the window: selecting, moving and sizing, inserting,
+// the Chart Design and Format tabs, the chart menu, title editing and chart
+// sheets.
+
 package ui
 
 import (
@@ -33,6 +37,7 @@ func (h *harness) chartPt(c *model.Chart, corner bool) f32.Point {
 	return f32.Pt(float32(rc.Min.X+rc.Max.X)/2, float32(gridTop+(rc.Min.Y+rc.Max.Y)/2))
 }
 
+// chartHarness is a harness showing the chartsample workbook.
 func chartHarness(t *testing.T) *harness {
 	h := newHarness(t)
 	h.a.setWorkbook(chartsample.Workbook())
@@ -41,6 +46,8 @@ func chartHarness(t *testing.T) *harness {
 	return h
 }
 
+// TestChartSelectDeleteUndo: a click selects a chart, not the cell under
+// it; Delete deletes it undoably; a click on a cell or Esc drops it.
 func TestChartSelectDeleteUndo(t *testing.T) {
 	h := chartHarness(t)
 	a := h.a
@@ -100,7 +107,8 @@ func TestChartSelectDeleteUndo(t *testing.T) {
 	}
 }
 
-// Inserting rows above a chart moves it and its references, undoably.
+// TestChartFollowsInsertedRows: inserting rows above a chart moves it and
+// its references, undoably.
 func TestChartFollowsInsertedRows(t *testing.T) {
 	h := chartHarness(t)
 	a := h.a
@@ -120,7 +128,8 @@ func TestChartFollowsInsertedRows(t *testing.T) {
 	}
 }
 
-// A chart sheet shows its chart; commands that change cells are off.
+// TestChartSheet: a chart sheet shows its chart; commands that change
+// cells are off.
 func TestChartSheet(t *testing.T) {
 	h := chartHarness(t)
 	a := h.a
@@ -188,8 +197,8 @@ func (h *harness) chartTable() {
 	h.frame()
 }
 
-// Insert > Column Chart, the Data ribbon's Combo, Alt+F1 and F11 make
-// charts from the data around the active cell, each one undo step.
+// TestInsertChart: Insert > Column Chart, the Data ribbon's Combo, Alt+F1
+// and F11 make charts from the data around the active cell, each one undo step.
 func TestInsertChart(t *testing.T) {
 	h := newHarness(t)
 	a := h.a
@@ -259,7 +268,7 @@ func TestInsertChart(t *testing.T) {
 	}
 }
 
-// Dragging a chart moves it, a handle sizes it (Shift keeps a corner's
+// TestChartMoveResize: dragging a chart moves it, a handle sizes it (Shift keeps a corner's
 // proportions, Alt snaps to the cells), an arrow nudges it; each is one
 // undo step.
 func TestChartMoveResize(t *testing.T) {
@@ -346,8 +355,8 @@ func TestChartMoveResize(t *testing.T) {
 	}
 }
 
-// The Chart Design tab's buttons change the selected chart, each one
-// undo step; Select Data's Cancel changes nothing, its OK the series.
+// TestChartDesignTab: the Chart Design tab's buttons change the selected
+// chart, each one undo step; Select Data's Cancel changes nothing, its OK the series.
 func TestChartDesignTab(t *testing.T) {
 	h := chartHarness(t)
 	a := h.a
@@ -474,8 +483,9 @@ func TestChartDesignTab(t *testing.T) {
 	}
 }
 
-// Right-clicking a chart selects it and opens its menu, whose items run
-// the chart commands; the Format tab's colours colour the selected part.
+// TestChartMenuAndFormat: right-clicking a chart selects it and opens its
+// menu, whose items run the chart commands; the Format tab's colors color
+// the selected part.
 func TestChartMenuAndFormat(t *testing.T) {
 	h := chartHarness(t)
 	a := h.a
@@ -536,7 +546,7 @@ func TestChartMenuAndFormat(t *testing.T) {
 	if len(sh.Charts) != n {
 		t.Fatalf("paste after cut: %d charts", len(sh.Charts))
 	}
-	// The Format tab: a series picked in Chart Elements, coloured.
+	// The Format tab: a series picked in Chart Elements, colored.
 	c := sh.Charts[0]
 	h.clickMods(h.chartPt(c, true), pointer.ButtonPrimary, 0)
 	a.tab = tabChartFormat
@@ -554,7 +564,8 @@ func TestChartMenuAndFormat(t *testing.T) {
 	}
 }
 
-// A click on a part of a chart selects it; a double-click on the title
+// TestChartTitleEdit: a click on a part of a chart selects it; a
+// double-click on the title
 // (or typing with it selected) edits it in place.
 func TestChartTitleEdit(t *testing.T) {
 	h := chartHarness(t)
@@ -611,7 +622,8 @@ func TestChartTitleEdit(t *testing.T) {
 	}
 }
 
-// Deleting a chart sheet (its tab's menu) is undoable.
+// TestDeleteChartSheet: deleting a chart sheet (its tab's menu) is
+// undoable.
 func TestDeleteChartSheet(t *testing.T) {
 	h := chartHarness(t)
 	a := h.a

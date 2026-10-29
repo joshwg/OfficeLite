@@ -1,3 +1,6 @@
+// Windows lock tests: network paths, owner-file liveness and share-mode
+// locks.
+
 package lockfile
 
 import (
@@ -8,6 +11,7 @@ import (
 	"testing"
 )
 
+// TestNetworkPath checks isNetwork on UNC, extended-length and local paths.
 func TestNetworkPath(t *testing.T) {
 	for path, want := range map[string]bool{
 		`\\server\share\a.docx`:        true,
@@ -22,6 +26,8 @@ func TestNetworkPath(t *testing.T) {
 	}
 }
 
+// TestOwnerFileLive checks that a held owner file is hidden and live, a
+// closed one stale, and that only this user's stale one is deleted.
 func TestOwnerFileLive(t *testing.T) {
 	useRegistry(t)
 	dir := t.TempDir()
@@ -68,6 +74,8 @@ func TestOwnerFileLive(t *testing.T) {
 	d.Close()
 }
 
+// TestInUseAndSaveError checks InUse against shared readers and Excel's
+// lock, and SaveError's message for a locked file.
 func TestInUseAndSaveError(t *testing.T) {
 	doc := filepath.Join(t.TempDir(), "Budget.xlsx")
 	os.WriteFile(doc, []byte("x"), 0o644)

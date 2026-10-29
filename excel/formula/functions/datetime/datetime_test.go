@@ -1,3 +1,6 @@
+// Tests for the date and time functions. Expected values are Excel's
+// results, most from Microsoft's documentation examples for each function.
+
 package datetime
 
 import (
@@ -7,14 +10,15 @@ import (
 	"officelite/excel/formula/functions/internal/ftest"
 )
 
+// registry returns a registry holding only the date and time functions.
 func registry() *f.Registry {
 	r := f.NewRegistry()
 	Register(r)
 	return r
 }
 
-// Expected values are Excel's results, most from Microsoft's documentation
-// examples for each function.
+// TestDateParts covers DATE, DATEVALUE, YEAR/MONTH/DAY, DAYS, NOW and
+// TODAY.
 func TestDateParts(t *testing.T) {
 	ftest.Run(t, registry(), nil, []ftest.Case{
 		{"=DATE(2008,1,2)", 39449},
@@ -81,6 +85,7 @@ func TestDateParts(t *testing.T) {
 	})
 }
 
+// TestDatedif covers every DATEDIF unit, including Excel's MD quirk.
 func TestDatedif(t *testing.T) {
 	ftest.Run(t, registry(), nil, []ftest.Case{
 		{"=DATEDIF(\"1/1/2001\",\"1/1/2003\",\"Y\")", 2},
@@ -103,6 +108,7 @@ func TestDatedif(t *testing.T) {
 	})
 }
 
+// TestDays360 covers DAYS360's US and European methods.
 func TestDays360(t *testing.T) {
 	ftest.Run(t, registry(), nil, []ftest.Case{
 		{"=DAYS360(\"1/30/2011\",\"2/1/2011\")", 1},
@@ -118,6 +124,7 @@ func TestDays360(t *testing.T) {
 	})
 }
 
+// TestMonths covers EDATE and EOMONTH.
 func TestMonths(t *testing.T) {
 	ftest.Run(t, registry(), nil, []ftest.Case{
 		{"=EDATE(DATE(2011,1,15),1)", 40589},
@@ -141,6 +148,7 @@ func TestMonths(t *testing.T) {
 	})
 }
 
+// TestTimes covers HOUR, MINUTE, SECOND, TIME and TIMEVALUE.
 func TestTimes(t *testing.T) {
 	ftest.Run(t, registry(), nil, []ftest.Case{
 		{"=HOUR(0.75)", 18},
@@ -176,6 +184,7 @@ func TestTimes(t *testing.T) {
 	})
 }
 
+// TestWeeks covers WEEKDAY, WEEKNUM and ISOWEEKNUM.
 func TestWeeks(t *testing.T) {
 	ftest.Run(t, registry(), nil, []ftest.Case{
 		{"=WEEKDAY(\"2/14/2008\")", 5}, // a Thursday
@@ -217,6 +226,7 @@ func TestWeeks(t *testing.T) {
 	})
 }
 
+// TestWorkdays covers NETWORKDAYS, WORKDAY and their .INTL forms.
 func TestWorkdays(t *testing.T) {
 	setup := func(ctx *f.TestContext) {
 		// NETWORKDAYS documentation example.
@@ -274,6 +284,7 @@ func TestWorkdays(t *testing.T) {
 	})
 }
 
+// TestYearfrac covers YEARFRAC under each day-count basis.
 func TestYearfrac(t *testing.T) {
 	ftest.Run(t, registry(), nil, []ftest.Case{
 		{"=YEARFRAC(\"1/1/2012\",\"7/30/2012\")", ftest.Approx{V: 0.58055556, Tol: 1e-8}},
@@ -301,6 +312,8 @@ func TestYearfrac(t *testing.T) {
 	})
 }
 
+// TestDate1904 runs a cross-section of the functions in the 1904 date
+// system.
 func TestDate1904(t *testing.T) {
 	ftest.Run(t, registry(), func(ctx *f.TestContext) { ctx.Use1904 = true }, []ftest.Case{
 		{"=DATE(1904,1,1)", 0},
@@ -330,6 +343,8 @@ func TestDate1904(t *testing.T) {
 	})
 }
 
+// TestFormats checks each function's result number format, that NOW and
+// TODAY are volatile, and the registered function count.
 func TestFormats(t *testing.T) {
 	r := registry()
 	want := map[string]string{

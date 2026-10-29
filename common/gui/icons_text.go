@@ -1,3 +1,5 @@
+// Text-editing icons for the Word ribbon.
+
 package gui
 
 import "golang.org/x/exp/shiny/materialdesign/icons"

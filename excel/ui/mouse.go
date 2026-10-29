@@ -1,3 +1,5 @@
+// mouse.go handles grid mouse features: dragging the selection's border, pointing at cells in a formula, and reference outlines.
+
 package ui
 
 import (
@@ -79,7 +81,7 @@ func (a *App) borderCursor(gtx layout.Context, v *render.View) {
 }
 
 // movePress starts dragging the selection when the press is on its
-// border.
+// border, reporting whether it did.
 func (a *App) movePress(v *render.View, pos f32.Point) bool {
 	if !a.onBorder(a.gtx, v, pos.Round()) {
 		return false

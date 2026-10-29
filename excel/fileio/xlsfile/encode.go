@@ -1,3 +1,6 @@
+// Encoding formula text as BIFF8 parsed expressions: a small parser that
+// keeps spaces and parentheses, and the ptg encoder with operand classes.
+
 package xlsfile
 
 import (
@@ -86,12 +89,14 @@ func parseXFormula(src string, union bool) (*xnode, error) {
 	return n, nil
 }
 
+// xparser is a recursive-descent parser over formula tokens.
 type xparser struct {
 	src  string
 	toks []formula.Token
 	i    int
 }
 
+// peek returns the current token, or a zero token at the end.
 func (p *xparser) peek() *formula.Token {
 	if p.i >= len(p.toks) {
 		return &formula.Token{}
@@ -99,6 +104,7 @@ func (p *xparser) peek() *formula.Token {
 	return &p.toks[p.i]
 }
 
+// text is token i's source text.
 func (p *xparser) text(i int) string { return p.src[p.toks[i].Pos:p.toks[i].End] }
 
 // ws is the whitespace before token i.
@@ -113,6 +119,7 @@ func (p *xparser) ws(i int) string {
 	return p.src[start:p.toks[i].Pos]
 }
 
+// isOp reports whether the current token is operator op.
 func (p *xparser) isOp(op string) bool {
 	t := p.peek()
 	return t.Kind == formula.TokOp && t.Text == op
@@ -123,6 +130,8 @@ var xbinPrec = map[string]int{
 	"&": 2, "+": 3, "-": 3, "*": 4, "/": 4, "^": 5,
 }
 
+// expr parses binary operators binding at least as tightly as minPrec,
+// left-associatively.
 func (p *xparser) expr(minPrec int) (*xnode, error) {
 	left, err := p.unary()
 	if err != nil {
@@ -144,6 +153,7 @@ func (p *xparser) expr(minPrec int) (*xnode, error) {
 	}
 }
 
+// unary parses prefix + and - and the @ (SINGLE) operator.
 func (p *xparser) unary() (*xnode, error) {
 	t := p.peek()
 	ws := p.ws(p.i)
@@ -162,6 +172,8 @@ func (p *xparser) unary() (*xnode, error) {
 	return p.postfix()
 }
 
+// postfix parses a range expression followed by % or # (ANCHORARRAY)
+// operators.
 func (p *xparser) postfix() (*xnode, error) {
 	x, err := p.rangeExpr()
 	if err != nil {
@@ -185,6 +197,8 @@ func (p *xparser) postfix() (*xnode, error) {
 	}
 }
 
+// rangeExpr parses ':' range operators, merging A1:B2 into one area
+// and Sheet1:Sheet3!A1 into one 3-D reference.
 func (p *xparser) rangeExpr() (*xnode, error) {
 	x, err := p.primary()
 	if err != nil {
@@ -224,6 +238,8 @@ func (p *xparser) rangeExpr() (*xnode, error) {
 	return x, nil
 }
 
+// primary parses a constant, reference, name, function call,
+// parenthesized expression or array constant.
 func (p *xparser) primary() (*xnode, error) {
 	if p.i >= len(p.toks) {
 		return nil, errors.New("unexpected end of formula")
@@ -289,6 +305,7 @@ func (p *xparser) primary() (*xnode, error) {
 	return nil, fmt.Errorf("unexpected %q", p.text(p.i-1))
 }
 
+// args parses a parenthesized argument list; empty arguments are nMiss.
 func (p *xparser) args() ([]*xnode, error) {
 	if p.peek().Kind != formula.TokLParen {
 		return nil, errors.New("expected (")
@@ -321,6 +338,8 @@ func (p *xparser) args() ([]*xnode, error) {
 	}
 }
 
+// arrayConst parses an array constant after its '{', rejecting ragged
+// rows.
 func (p *xparser) arrayConst(ws string) (*xnode, error) {
 	n := &xnode{kind: nArray, ws: ws}
 	row := []*xnode{}
@@ -408,6 +427,8 @@ func parseXRef(s string) (xref, error) {
 	return r, nil
 }
 
+// parseCol reads an optionally $-prefixed column name at the start of s,
+// returning the bytes used (0 when there is none).
 func parseCol(s string) (col int, rel bool, n int) {
 	rel = true
 	if strings.HasPrefix(s, "$") {
@@ -423,6 +444,8 @@ func parseCol(s string) (col int, rel bool, n int) {
 	return model.ParseColName(s[start:n]), rel, n
 }
 
+// parseRow parses s as an optionally $-prefixed 1-based row number,
+// returning it 0-based.
 func parseRow(s string) (row int, rel, ok bool) {
 	rel = true
 	if strings.HasPrefix(s, "$") {
@@ -453,7 +476,7 @@ type encoder struct {
 	volatile bool
 }
 
-// compile encodes formula text (without '=') as a parsed expression with
+// compileFormula encodes formula text (without '=') as a parsed expression with
 // its trailing data. root is the class of the result: 'V' for cells, 'R'
 // for defined names.
 func compileFormula(ctx fmlaContext, src string, sheet int, name bool) (rgce, extra []byte, err error) {
@@ -503,6 +526,8 @@ func tok(base, ctx byte) byte {
 	return base&0x1F | 0x20
 }
 
+// u8, u16 and f64 append a byte, a little-endian uint16 and an IEEE
+// double to the token stream.
 func (e *encoder) u8(b byte) { e.out = append(e.out, b) }
 func (e *encoder) u16(v int) { e.out = binary.LittleEndian.AppendUint16(e.out, uint16(v)) }
 func (e *encoder) f64(v float64) {
@@ -533,6 +558,8 @@ var binPtgs = map[string]byte{
 	",": ptgUnion, ":": ptgRange,
 }
 
+// emit appends the tokens of n in postfix order, operands in class ctx
+// ('R' reference, 'V' value, 'A' array).
 func (e *encoder) emit(n *xnode, ctx byte) error {
 	// Operators inside arguments that take ranges or arrays work on whole
 	// arrays, as in Excel 365: SUM(A1:A3*2), FILTER(A1:A9,A1:A9>2).
@@ -638,6 +665,9 @@ func (e *encoder) emit(n *xnode, ctx byte) error {
 	return nil
 }
 
+// emitRef appends a cell or area reference token, 3-D when it names a
+// sheet or belongs to a defined name; references past BIFF8's limits or
+// into other workbooks fail.
 func (e *encoder) emitRef(n *xnode, ctx byte) error {
 	r := n.ref
 	if r.r1 >= xlsMaxRows || r.r2 >= xlsMaxRows || r.c1 >= xlsMaxCols || r.c2 >= xlsMaxCols {
@@ -700,6 +730,8 @@ func (e *encoder) emitRef(n *xnode, ctx byte) error {
 	return nil
 }
 
+// emitCall appends a function call: tFunc or tFuncVar for built-in
+// functions, or the name and function 255 for add-in and newer ones.
 func (e *encoder) emitCall(n *xnode, ctx byte) error {
 	name := formula.FormulaName(n.str)
 	if volatileFuncs[name] {
@@ -818,6 +850,7 @@ func appendChars(b []byte, s string) []byte {
 	return textenc.AppendUTF16LE(append(b, 1), s)
 }
 
+// strLen is the length of s in UTF-16 code units.
 func strLen(s string) int { return len(utf16.Encode([]rune(s))) }
 
 // appendString appends an XLUnicodeString (16-bit length).

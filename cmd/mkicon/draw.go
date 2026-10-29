@@ -1,3 +1,6 @@
+// Drawing the icon: the two pages, their letters and the feather, scaled
+// from a 256×256 design to each size.
+
 package main
 
 import (
@@ -31,6 +34,7 @@ type canvas struct {
 	scale float64
 }
 
+// fill paints the polygons in col over what is already drawn.
 func (c *canvas) fill(col color.NRGBA, polys ...[]pt) {
 	c.draw(draw.Over, col, polys, c.img)
 }
@@ -48,12 +52,14 @@ func (c *canvas) erase(polys ...[]pt) {
 	}
 }
 
+// draw rasterizes the polygons, scaled from design space, and composites
+// col through them onto dst with op.
 func (c *canvas) draw(op draw.Op, col color.NRGBA, polys [][]pt, dst draw.Image) {
 	b := c.img.Bounds()
 	r := vector.NewRasterizer(b.Dx(), b.Dy())
 	for _, p := range polys {
 		// Every polygon wound the same way, so overlaps add up instead of
-		// cancelling.
+		// canceling.
 		if area(p) < 0 {
 			p = reversed(p)
 		}
@@ -67,6 +73,8 @@ func (c *canvas) draw(op draw.Op, col color.NRGBA, polys [][]pt, dst draw.Image)
 	r.Draw(dst, b, image.NewUniform(col), image.Point{})
 }
 
+// area returns the polygon's signed area (shoelace formula); its sign
+// gives the winding direction.
 func area(p []pt) float64 {
 	var a float64
 	for i := range p {
@@ -76,6 +84,7 @@ func area(p []pt) float64 {
 	return a / 2
 }
 
+// reversed returns a copy of p with the points in reverse order.
 func reversed(p []pt) []pt {
 	r := make([]pt, len(p))
 	for i, q := range p {
@@ -199,8 +208,7 @@ func letterX(c pt, w float64) [][]pt {
 		polyline(w, pt{c.x + 26, c.y - 27}, pt{c.x - 26, c.y + 27})...)
 }
 
-func offset1(p pt, d float64) pt { return pt{p.x + d, p.y + d} }
-
+// offset returns a copy of polygon p moved by (dx, dy).
 func offset(p []pt, dx, dy float64) []pt {
 	q := make([]pt, len(p))
 	for i, v := range p {

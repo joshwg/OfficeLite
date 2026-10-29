@@ -1,3 +1,6 @@
+// settings.go holds the AutoRecover interval setting and the per-user
+// settings.json file it is kept in.
+
 package autorecover
 
 import (
@@ -90,6 +93,8 @@ func SaveSetting(key string, v any) error {
 // UserInterval is the user's setting as a duration (0 when off).
 func UserInterval() time.Duration { return time.Duration(Minutes()) * time.Minute }
 
+// readSettings reads the settings file's keys; nil when it is missing or
+// isn't a JSON object.
 func readSettings() map[string]any {
 	path := SettingsPath()
 	if path == "" {

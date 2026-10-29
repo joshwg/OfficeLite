@@ -1,3 +1,6 @@
+// REGEXTEST, REGEXEXTRACT and REGEXREPLACE on Go's RE2 engine, with a
+// compiled-pattern cache.
+
 package text
 
 import (
@@ -44,7 +47,7 @@ func compile(pattern, caseArg f.Value) (*regexp.Regexp, f.Value) {
 	return re, nil
 }
 
-// REGEXTEST(text, pattern, [case_sensitivity])
+// regexTest implements REGEXTEST(text, pattern, [case_sensitivity]).
 func regexTest(_ *f.Env, a []f.Value) f.Value {
 	s, err := f.Str(a[0])
 	if err != nil {
@@ -57,8 +60,8 @@ func regexTest(_ *f.Env, a []f.Value) f.Value {
 	return f.Bool(re.MatchString(s))
 }
 
-// REGEXEXTRACT(text, pattern, [return_mode], [case_sensitivity]):
-// return_mode 0 gives the first match, 1 all matches as a column, 2 the
+// regexExtract implements REGEXEXTRACT(text, pattern, [return_mode],
+// [case_sensitivity]): return_mode 0 gives the first match, 1 all matches as a column, 2 the
 // first match's capture groups as a row. No match is #N/A.
 func regexExtract(_ *f.Env, a []f.Value) f.Value {
 	s, err := f.Str(a[0])
@@ -110,8 +113,8 @@ func regexExtract(_ *f.Env, a []f.Value) f.Value {
 	return f.ErrValue
 }
 
-// REGEXREPLACE(text, pattern, replacement, [occurrence], [case_sensitivity]):
-// occurrence 0 replaces every match, n the nth, -n the nth from the end.
+// regexReplace implements REGEXREPLACE(text, pattern, replacement,
+// [occurrence], [case_sensitivity]): occurrence 0 replaces every match, n the nth, -n the nth from the end.
 // The replacement may refer to groups as $1, ${1}, ${name} and $0 for the
 // whole match; $$ is a literal $.
 func regexReplace(_ *f.Env, a []f.Value) f.Value {

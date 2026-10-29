@@ -1,3 +1,6 @@
+// Basic math functions: ABS, EXP, LOG, POWER, MOD, FACT, COMBIN, GCD/LCM,
+// RAND, RANDARRAY, SEQUENCE, ROMAN/ARABIC, BASE/DECIMAL and the like.
+
 package mathtrig
 
 import (
@@ -7,6 +10,7 @@ import (
 	f "officelite/excel/formula"
 )
 
+// registerBasic adds the basic math functions to r.
 func registerBasic(r *f.Registry) {
 	r.Add(
 		fn1("ABS", plain(math.Abs)),
@@ -117,7 +121,7 @@ func registerBasic(r *f.Registry) {
 	)
 }
 
-// LOG(number, [base])
+// logFn implements LOG(number, [base]).
 func logFn(e *f.Env, a []f.Value) f.Value {
 	x, err := f.Num(a[0])
 	if err != nil {
@@ -139,7 +143,7 @@ func logFn(e *f.Env, a []f.Value) f.Value {
 	return f.NumberOrErr(math.Log(x) / math.Log(b))
 }
 
-// POWER(number, power) behaves like the ^ operator.
+// power implements POWER(number, power), which behaves like the ^ operator.
 func power(x, y float64) f.Value {
 	switch {
 	case x == 0 && y == 0:
@@ -150,6 +154,7 @@ func power(x, y float64) f.Value {
 	return f.NumberOrErr(math.Pow(x, y))
 }
 
+// fact returns n! for a whole n, +Inf past 170!.
 func fact(n float64) float64 {
 	if n > 170 {
 		return math.Inf(1)
@@ -222,6 +227,7 @@ func integers(e *f.Env, args []f.Value) ([]float64, f.Value) {
 	return out, nil
 }
 
+// gcd returns the greatest common divisor of the whole numbers a and b.
 func gcd(a, b float64) float64 {
 	for b != 0 {
 		a, b = b, math.Mod(a, b)
@@ -229,7 +235,7 @@ func gcd(a, b float64) float64 {
 	return a
 }
 
-// GCD(number1, [number2], ...)
+// gcdFn implements GCD(number1, [number2], ...).
 func gcdFn(e *f.Env, a []f.Value) f.Value {
 	xs, err := integers(e, a)
 	if err != nil {
@@ -242,7 +248,7 @@ func gcdFn(e *f.Env, a []f.Value) f.Value {
 	return f.Number(g)
 }
 
-// LCM(number1, [number2], ...)
+// lcmFn implements LCM(number1, [number2], ...).
 func lcmFn(e *f.Env, a []f.Value) f.Value {
 	xs, err := integers(e, a)
 	if err != nil {
@@ -261,7 +267,7 @@ func lcmFn(e *f.Env, a []f.Value) f.Value {
 	return f.NumberOrErr(l)
 }
 
-// MULTINOMIAL(number1, [number2], ...) = (Σn)! / Πn!
+// multinomial implements MULTINOMIAL(number1, [number2], ...) = (Σn)! / Πn!.
 func multinomial(e *f.Env, a []f.Value) f.Value {
 	xs, err := integers(e, a)
 	if err != nil {
@@ -275,7 +281,7 @@ func multinomial(e *f.Env, a []f.Value) f.Value {
 	return f.NumberOrErr(r)
 }
 
-// SERIESSUM(x, n, m, coefficients) = Σ c_i · x^(n+i·m)
+// seriesSum implements SERIESSUM(x, n, m, coefficients) = Σ c_i · x^(n+i·m).
 func seriesSum(e *f.Env, a []f.Value) f.Value {
 	x, err := f.Num(a[0])
 	if err != nil {
@@ -304,7 +310,7 @@ func seriesSum(e *f.Env, a []f.Value) f.Value {
 	return f.NumberOrErr(sum)
 }
 
-// RANDBETWEEN(bottom, top): a random integer between the smallest integer
+// randBetween implements RANDBETWEEN(bottom, top): a random integer between the smallest integer
 // >= bottom and the largest integer <= top.
 func randBetween(e *f.Env, a []f.Value) f.Value {
 	lo, hi, err := nums2(a[0], a[1])
@@ -348,7 +354,7 @@ func arrayDims(a []f.Value) (rows, cols int, errv f.Value) {
 	return dims[0], dims[1], nil
 }
 
-// RANDARRAY([rows], [columns], [min], [max], [whole_number])
+// randArray implements RANDARRAY([rows], [columns], [min], [max], [whole_number]).
 func randArray(e *f.Env, a []f.Value) f.Value {
 	rows, cols, err := arrayDims(a)
 	if err != nil {
@@ -384,7 +390,7 @@ func randArray(e *f.Env, a []f.Value) f.Value {
 	return out
 }
 
-// SEQUENCE(rows, [columns], [start], [step])
+// sequence implements SEQUENCE(rows, [columns], [start], [step]).
 func sequence(e *f.Env, a []f.Value) f.Value {
 	rows, cols, err := arrayDims(a)
 	if err != nil {
@@ -410,7 +416,7 @@ var (
 	romanValues = []int{1000, 500, 100, 50, 10, 5, 1}
 )
 
-// ROMAN(number, [form]): form 0 (or TRUE) is classic, 1-3 increasingly
+// roman implements ROMAN(number, [form]): form 0 (or TRUE) is classic, 1-3 increasingly
 // concise, 4 (or FALSE) simplified: ROMAN(499,0..4) = CDXCIX, LDVLIV,
 // XDIX, VDIV, ID.
 func roman(e *f.Env, a []f.Value) f.Value {
@@ -474,7 +480,7 @@ func roman(e *f.Env, a []f.Value) f.Value {
 
 var romanDigit = map[byte]int{'I': 1, 'V': 5, 'X': 10, 'L': 50, 'C': 100, 'D': 500, 'M': 1000}
 
-// ARABIC(text): a Roman numeral to its value; a leading '-' negates and ""
+// arabic implements ARABIC(text): a Roman numeral to its value; a leading '-' negates and ""
 // is 0. Like Excel, non-canonical numerals (IIII, IM) are accepted.
 func arabic(e *f.Env, a []f.Value) f.Value {
 	s, err := f.Str(a[0])
@@ -509,7 +515,7 @@ func arabic(e *f.Env, a []f.Value) f.Value {
 
 const digits36 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
-// BASE(number, radix, [min_length])
+// base implements BASE(number, radix, [min_length]).
 func base(e *f.Env, a []f.Value) f.Value {
 	x, radix, err := nums2(a[0], a[1])
 	if err != nil {
@@ -541,7 +547,7 @@ func base(e *f.Env, a []f.Value) f.Value {
 	return f.String(buf)
 }
 
-// DECIMAL(text, radix)
+// decimal implements DECIMAL(text, radix).
 func decimal(e *f.Env, a []f.Value) f.Value {
 	s, err := f.Str(a[0])
 	if err != nil {

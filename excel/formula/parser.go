@@ -1,3 +1,6 @@
+// parser.go parses formula tokens into an expression tree of Nodes, with
+// Excel's operator precedence.
+
 package formula
 
 import (
@@ -22,7 +25,7 @@ type (
 	// irrelevant to evaluation and dropped.
 	refNode struct {
 		sheet          string // "" = the formula's own sheet
-		r1, c1, r2, c2 int    // -1 for whole column/row extents
+		r1, c1, r2, c2 int    // zero-based; the unused axis of A:B or 1:3 is 0
 		wholeCols      bool   // A:B
 		wholeRows      bool   // 1:3
 	}
@@ -47,6 +50,7 @@ type (
 	spillNode struct{ x Node } // A1#
 )
 
+// node marks each node type as a Node.
 func (numNode) node()    {}
 func (strNode) node()    {}
 func (boolNode) node()   {}
@@ -79,12 +83,17 @@ func Parse(src string) (Node, error) {
 	return n, nil
 }
 
+// parser is a recursive-descent parser over a token slice; i is the next
+// token.
 type parser struct {
 	toks []token
 	i    int
 }
 
+// peek returns the next token without consuming it.
 func (p *parser) peek() token { return p.toks[p.i] }
+
+// next consumes and returns the next token; tEOF is never consumed.
 func (p *parser) next() token {
 	t := p.toks[p.i]
 	if t.kind != tEOF {

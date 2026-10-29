@@ -60,7 +60,7 @@ func RGB(v uint32) color.NRGBA {
 	return color.NRGBA{R: uint8(v >> 16), G: uint8(v >> 8), B: uint8(v), A: 255}
 }
 
-// Mix blends a toward b by frac (0 = a, 1 = b).
+// Mix blends a toward b by frac (0 = a, 1 = b); the result is opaque.
 func Mix(a, b color.NRGBA, frac float64) color.NRGBA {
 	m := func(x, y uint8) uint8 { return uint8(float64(x) + (float64(y)-float64(x))*frac + 0.5) }
 	return color.NRGBA{R: m(a.R, b.R), G: m(a.G, b.G), B: m(a.B, b.B), A: 255}

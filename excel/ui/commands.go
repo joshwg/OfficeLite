@@ -1,3 +1,7 @@
+// Editing commands of the Home menu and their shortcuts: undo and redo,
+// the clipboard, clearing, inserting and deleting rows, columns and
+// sheets, and renaming sheets.
+
 package ui
 
 import (
@@ -15,8 +19,6 @@ import (
 	"officelite/excel/render"
 )
 
-// Editing commands of the Home menu and their shortcuts.
-
 // selectRange makes r (on sheet) the selection, with the active cell at
 // its top-left corner, switching sheets if needed.
 func (a *App) selectRange(sheet int, r model.Range) {
@@ -31,6 +33,7 @@ func (a *App) selectRange(sheet int, r model.Range) {
 	a.grid.focusPending = true
 }
 
+// undo and redo take back or redo one step (Ctrl+Z, Ctrl+Y).
 func (a *App) undo() { a.undoN(1) }
 func (a *App) redo() { a.redoN(1) }
 
@@ -50,6 +53,7 @@ func (a *App) undoN(n int) {
 	}
 }
 
+// redoN redoes n steps of the Redo list; nothing while an entry is typed.
 func (a *App) redoN(n int) {
 	if a.ed.active {
 		return
@@ -60,8 +64,8 @@ func (a *App) redoN(n int) {
 	}
 }
 
-// undoLabels and redoLabels are the Undo and Redo lists, the next step
-// first.
+// undoLabels is the Undo list, the next step first: "Typing" for an entry
+// being typed.
 func (a *App) undoLabels() []string {
 	if a.ed.active {
 		return append([]string{"Typing"}, a.book.UndoLabels()...)
@@ -69,6 +73,8 @@ func (a *App) undoLabels() []string {
 	return a.book.UndoLabels()
 }
 
+// redoLabels is the Redo list, the next step first; empty while an entry
+// is typed.
 func (a *App) redoLabels() []string {
 	if a.ed.active {
 		return nil
@@ -76,6 +82,8 @@ func (a *App) redoLabels() []string {
 	return a.book.RedoLabels()
 }
 
+// afterUndo updates the window after an undo or redo and selects where
+// the step happened.
 func (a *App) afterUndo(where edit.Where, res calc.Result) {
 	a.syncSheets()
 	a.changed(res)

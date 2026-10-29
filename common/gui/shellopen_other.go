@@ -1,3 +1,6 @@
+// Opening files and links with the default program on Linux and macOS
+// (xdg-open / open).
+
 //go:build !windows
 
 package gui
@@ -24,6 +27,8 @@ func OpenURL(url string) error {
 	return shellOpen(url)
 }
 
+// shellOpen starts xdg-open (open on macOS) on target without waiting for
+// it to finish.
 func shellOpen(target string) error {
 	name := "xdg-open"
 	if runtime.GOOS == "darwin" {

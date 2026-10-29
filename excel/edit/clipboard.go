@@ -1,3 +1,6 @@
+// clipboard.go holds Copy, Paste and Cut of cell blocks, and pasting and
+// copying tab-separated text for other programs.
+
 package edit
 
 import (

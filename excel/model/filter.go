@@ -1,3 +1,6 @@
+// AutoFilter: a sheet's filter range and per-column criteria, the rows it
+// hides, and how both move when rows or columns are inserted or deleted.
+
 package model
 
 import (
@@ -124,8 +127,8 @@ func (f *AutoFilter) Column(col int) (*FilterColumn, bool) {
 	return nil, false
 }
 
-// SetColumn replaces the criteria of fc.Col, keeping the columns in
-// order; a nil fc (with col) removes them.
+// SetColumn replaces the criteria of sheet column col with fc (its Col
+// set to col), keeping the columns in order; a nil fc removes them.
 func (f *AutoFilter) SetColumn(col int, fc *FilterColumn) {
 	f.Columns = slices.DeleteFunc(f.Columns, func(c FilterColumn) bool { return c.Col == col })
 	if fc == nil {
@@ -227,6 +230,7 @@ func (s *Sheet) shiftFilter(rows bool, at, n int) {
 	f.Columns = cols
 }
 
+// cloneFiltered copies a filtered-rows set, keeping nil as nil.
 func cloneFiltered(m map[int]bool) map[int]bool {
 	if m == nil {
 		return nil

@@ -1,3 +1,5 @@
+// Screen positions of columns, rows and their resize dividers, for header hit-testing.
+
 package render
 
 import "math"
@@ -56,6 +58,8 @@ func (v *View) RowEdges() []Edge {
 	return v.edges(v.fr, v.TopRow, v.Geo.Rows, v.RowSpan)
 }
 
+// edges lists the end edges of the frozen entries, then of the scrolled ones
+// from first until one falls off screen; hidden entries are skipped.
 func (v *View) edges(frozen, first int, ax *Axis, span func(int) (int, int, bool)) []Edge {
 	var out []Edge
 	add := func(i int) bool {
@@ -103,6 +107,7 @@ func (v *View) HeaderSize() (w, h int) { return v.hdrW, v.hdrH }
 // headers (0 without an outline); the headers start there.
 func (v *View) Gutters() (w, h int) { return v.gutW, v.gutH }
 
+// edgeAt returns the index of the edge nearest p, if it is within slop pixels.
 func edgeAt(edges []Edge, p float32, slop int) (int, bool) {
 	best, dist := -1, slop+1
 	for _, e := range edges {

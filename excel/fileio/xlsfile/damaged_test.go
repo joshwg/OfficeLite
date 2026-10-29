@@ -1,3 +1,5 @@
+// Tests that damaged or unusual .xls streams read without panicking.
+
 package xlsfile
 
 import (
@@ -39,8 +41,8 @@ func workbook(globals, sheet []byte) []byte {
 	return cat(g, bs, brec(recEOF), bof(bofTypeWorksheet), sheet, brec(recEOF))
 }
 
-// Truncated PALETTE, BOUNDSHEET and SHRFMLA records indexed past their
-// bodies and panicked.
+// TestTruncatedRecords checks that truncated PALETTE, BOUNDSHEET and
+// SHRFMLA records, which used to index past their bodies and panic, read.
 func TestTruncatedRecords(t *testing.T) {
 	globals := cat(
 		brec(recPalette, 56, 0, 1, 2, 3), // claims 56 colors, has one
@@ -59,8 +61,9 @@ func TestTruncatedRecords(t *testing.T) {
 	}
 }
 
-// Merges written bottom-right first are normalized, and a saved view out
-// of the sheet's limits is clamped (it used to reach the writers as is).
+// TestReversedMergeAndView checks that merges written bottom-right first
+// are normalized, and a saved view out of the sheet's limits is clamped
+// (it used to reach the writers as is).
 func TestReversedMergeAndView(t *testing.T) {
 	merge := cat(u16b(1), u16b(5), u16b(2), u16b(3), u16b(1)) // rows 5..2, cols 3..1
 	sheet := cat(
@@ -83,8 +86,8 @@ func TestReversedMergeAndView(t *testing.T) {
 	}
 }
 
-// A chart embedded in a sheet (a nested chart substream) is reported, not
-// silently dropped.
+// TestEmbeddedChartWarning checks that a chart embedded in a sheet (a
+// nested chart substream) is reported, not silently dropped.
 func TestEmbeddedChartWarning(t *testing.T) {
 	bof := func(kind int) []byte { return brec(recBOF, cat(u16b(biff8Version), u16b(kind))...) }
 	sheet := cat(bof(bofTypeChart), brec(0x1001, 0, 0), brec(recEOF))

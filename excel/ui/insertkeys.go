@@ -1,3 +1,5 @@
+// insertkeys.go handles the keyboard shortcuts for Insert, Find & Select, Fill and notes.
+
 package ui
 
 import (

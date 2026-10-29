@@ -1,3 +1,5 @@
+// stats.go computes the status bar's Average / Count / Sum for the selection.
+
 package ui
 
 import (
@@ -16,6 +18,8 @@ type statsCache struct {
 	valid bool
 }
 
+// text returns the stats for range r of sheet sh, recomputing them only when
+// the sheet or range changed since the last call.
 func (s *statsCache) text(sh *model.Sheet, r model.Range) string {
 	if !s.valid || s.sheet != sh || s.rng != r {
 		s.sheet, s.rng, s.valid = sh, r, true

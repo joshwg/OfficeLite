@@ -1,3 +1,5 @@
+// FontFiles: the font files behind a family, for PDF embedding.
+
 package gui
 
 import (

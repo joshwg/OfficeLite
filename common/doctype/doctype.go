@@ -14,6 +14,7 @@ import (
 	"officelite/common/ole"
 )
 
+// Kind is what a file holds, and so which app opens it.
 type Kind int
 
 const (
@@ -22,6 +23,7 @@ const (
 	Document
 )
 
+// String is the kind's lower-case name.
 func (k Kind) String() string {
 	return [...]string{"unknown", "spreadsheet", "document"}[k]
 }
@@ -48,6 +50,8 @@ func Detect(name string, data []byte) Kind {
 	return detect(name, data, bytes.NewReader(data), int64(len(data)))
 }
 
+// detect tells the kind from the file's content (head is its first bytes),
+// falling back to name's extension.
 func detect(name string, head []byte, r io.ReaderAt, size int64) (k Kind) {
 	// A damaged file falls back to its extension rather than crashing;
 	// opening it then reports the damage.
@@ -111,6 +115,7 @@ func detectOLE(r io.ReaderAt, size int64) Kind {
 	return Unknown
 }
 
+// byExtension tells the kind from name's extension alone.
 func byExtension(name string) Kind {
 	switch strings.ToLower(filepath.Ext(name)) {
 	case ".xlsx", ".xlsm", ".xltx", ".xltm", ".xls", ".xlt", ".csv", ".tsv", ".tab", ".numbers":

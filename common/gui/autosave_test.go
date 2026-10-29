@@ -1,3 +1,5 @@
+// Tests for the title bar's AutoSave switch.
+
 package gui
 
 import (

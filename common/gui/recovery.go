@@ -1,3 +1,5 @@
+// Document Recovery window and the backstage AutoRecover setting.
+
 package gui
 
 import (
@@ -48,6 +50,7 @@ func (b *Backstage) AutoRecoverRows(th *Theme) []layout.Widget {
 	}
 }
 
+// minutesLabel names an AutoRecover interval of m minutes: "Off" for 0.
 func minutesLabel(m int) string {
 	switch m {
 	case 0:
@@ -71,7 +74,7 @@ type RecoveryConfig struct {
 	// Close closes the window; Wake asks it for a frame.
 	Close, Wake func()
 	// Create is the Save dialog used when there is no native one
-	// (explorer's CreateFile); Declined is its error for a cancelled
+	// (explorer's CreateFile); Declined is its error for a canceled
 	// dialog. Nil: Save As needs the native one.
 	Create   func(name string) (io.WriteCloser, error)
 	Declined error
@@ -90,7 +93,7 @@ type Recovery struct {
 	closeBtn widget.Clickable
 	list     widget.List
 	ask      Dialog // Discard's confirmation
-	asking   int    // the item it is about
+	asking   string // the Sidecar of the item it is about
 	busy     bool   // a Save As is going on
 	notice   string
 	errMsg   string
@@ -145,6 +148,7 @@ func (r *Recovery) Discard(i int) {
 	r.closeIfDone()
 }
 
+// remove drops item i from the list and clears the status messages.
 func (r *Recovery) remove(i int) {
 	r.items = slices.Delete(r.items, i, i+1)
 	r.errMsg, r.notice = "", ""
@@ -180,6 +184,8 @@ func (r *Recovery) SaveAs(i int) {
 			err = cerr
 			if f, ok := wc.(*os.File); ok && err == nil {
 				path = f.Name()
+			} else if err == nil {
+				err = errors.New("the save dialog didn't give a file path")
 			}
 			if wc != nil {
 				wc.Close()
@@ -257,12 +263,16 @@ func (r *Recovery) Layout(gtx layout.Context) layout.Dimensions {
 		case it.saveAs.Clicked(gtx):
 			r.SaveAs(i)
 		case it.discard.Clicked(gtx):
-			r.asking = i
+			r.asking = it.e.Sidecar
 			r.ask.Show("Discard", "Delete the recovered copy of "+it.e.Name+"? This can't be undone.", "Discard", "Cancel")
 		}
 	}
-	if r.ask.Clicked(gtx) == 0 && r.asking < len(r.items) {
-		r.Discard(r.asking)
+	// By identity, not index: a Save As finishing while the dialog is open
+	// shifts the list.
+	if r.ask.Clicked(gtx) == 0 {
+		if j := slices.IndexFunc(r.items, func(it recoveryItem) bool { return it.e.Sidecar == r.asking }); j >= 0 {
+			r.Discard(j)
+		}
 	}
 	size := gtx.Constraints.Max
 	FillRect(gtx.Ops, image.Rectangle{Max: size}, colors.White)
@@ -308,6 +318,8 @@ func (r *Recovery) Layout(gtx layout.Context) layout.Dimensions {
 // Run runs the work posted to the window's goroutine; call it every frame.
 func (r *Recovery) Run() { r.calls.Run() }
 
+// itemRow draws one recovered copy: its thumbnail, name, app, age and
+// original path, and its Open, Save As… and Discard buttons.
 func (r *Recovery) itemRow(gtx layout.Context, it *recoveryItem, now time.Time) layout.Dimensions {
 	th := r.th
 	kind, app := recent.Spreadsheet, "ExcelLite"

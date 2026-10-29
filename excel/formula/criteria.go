@@ -1,3 +1,6 @@
+// criteria.go parses and matches the criteria of the *IF(S) and database
+// functions, with Excel's wildcard matching.
+
 package formula
 
 import (
@@ -28,8 +31,7 @@ func ParseCriteria(v Value) Criteria {
 	case Error:
 		return Criteria{op: "=", err: x}
 	case Blank, Missing:
-		// A blank criteria cell matches zero-valued cells... Excel actually
-		// treats it as "=0".
+		// Excel treats a blank criteria cell as "=0".
 		return Criteria{op: "=", num: 0, isNum: true}
 	}
 	s, _ := Str(v)
@@ -155,6 +157,8 @@ func (c Criteria) Match(v Value) bool {
 	return compareOp(c.op, cmp)
 }
 
+// compareOp reports whether a three-way comparison result cmp satisfies the
+// comparison operator op.
 func compareOp(op string, cmp int) bool {
 	switch op {
 	case "=":

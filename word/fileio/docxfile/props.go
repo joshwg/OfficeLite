@@ -1,6 +1,7 @@
 package docxfile
 
 import (
+	"cmp"
 	"math"
 	"sort"
 	"strconv"
@@ -137,7 +138,6 @@ var valByUnderline = map[model.Underline]string{
 func parseRPr(kids []*node, th *theme) (model.RunProps, string) {
 	var p model.RunProps
 	var style string
-	var hl, shd string
 	for _, k := range kids {
 		switch k.name {
 		case "w:rStyle":
@@ -181,10 +181,10 @@ func parseRPr(kids []*node, th *theme) (model.RunProps, string) {
 			p.Color = c
 		case "w:highlight":
 			if v := k.attr("w:val"); v != "none" {
-				hl = v
+				p.Highlight = v
 			}
 		case "w:shd":
-			shd = shdColor(k, th)
+			p.Shading = shdColor(k, th)
 		case "w:vertAlign":
 			switch k.attr("w:val") {
 			case "superscript":
@@ -196,11 +196,16 @@ func parseRPr(kids []*node, th *theme) (model.RunProps, string) {
 			}
 		}
 	}
-	p.Highlight = hl
-	if p.Highlight == "" {
-		p.Highlight = shd
-	}
 	return p, style
+}
+
+// highlightShading returns a run's highlight name and shading color; an
+// RRGGBB Highlight (which only Word's names should be) is shading.
+func highlightShading(p model.RunProps) (string, string) {
+	if hexColor(p.Highlight) != "" {
+		return "", cmp.Or(p.Shading, p.Highlight)
+	}
+	return p.Highlight, p.Shading
 }
 
 func rFont(k *node, th *theme) string {
@@ -333,13 +338,11 @@ func rPrXML(style string, p model.RunProps, th *theme) string {
 	if p.Size > 0 {
 		sizeGen = valXML("sz", strconv.FormatFloat(math.Round(p.Size*2), 'f', -1, 64))
 	}
-	var hlGen string
-	if p.Highlight != "" {
-		if hexColor(p.Highlight) != "" {
-			hlGen = `<w:shd w:val="clear" w:color="auto" w:fill="` + strings.ToUpper(p.Highlight) + `"/>`
-		} else {
-			hlGen = valXML("highlight", p.Highlight)
-		}
+	hl, shd := highlightShading(p)
+	ohl, oshd := highlightShading(o)
+	var shdGen string
+	if shd != "" {
+		shdGen = `<w:shd w:val="clear" w:color="auto" w:fill="` + strings.ToUpper(shd) + `"/>`
 	}
 	var vertGen string
 	switch p.Vert {
@@ -361,7 +364,8 @@ func rPrXML(style string, p model.RunProps, th *theme) string {
 		{[]string{"w:vanish"}, p.Hidden == o.Hidden, triXML("vanish", p.Hidden)},
 		{[]string{"w:color"}, p.Color == o.Color, valXML("color", p.Color)},
 		{[]string{"w:sz"}, p.Size == o.Size, sizeGen},
-		{[]string{"w:highlight", "w:shd"}, p.Highlight == o.Highlight, hlGen},
+		{[]string{"w:highlight"}, hl == ohl, valXML("highlight", hl)},
+		{[]string{"w:shd"}, shd == oshd, shdGen},
 		{[]string{"w:u"}, p.Underline == o.Underline, valXML("u", valByUnderline[p.Underline])},
 		{[]string{"w:vertAlign"}, p.Vert == o.Vert, vertGen},
 	}

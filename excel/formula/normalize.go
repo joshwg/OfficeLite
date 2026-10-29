@@ -1,3 +1,5 @@
+// normalize.go canonicalizes typed formula text the way Excel stores it.
+
 package formula
 
 import "strings"

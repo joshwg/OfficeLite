@@ -1,3 +1,5 @@
+// pdfexport.go builds the workbook's PDF and lays out the backstage Export and Print pages' PDF settings.
+
 package ui
 
 import (

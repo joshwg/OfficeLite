@@ -1,3 +1,6 @@
+// HistoryList: the Office-style Undo/Redo split button and its drop-down
+// list of steps.
+
 package gui
 
 import (
@@ -44,6 +47,8 @@ func (h *HistoryList) Hovered() int { return h.hover }
 // Footer is the list's footer text: "Undo 3 Actions", or "Cancel".
 func (h *HistoryList) Footer(verb string) string { return footer(verb, h.hover) }
 
+// footer returns the footer text for n highlighted entries: "Cancel" for
+// none, else "Undo 1 Action", "Undo 3 Actions".
 func footer(verb string, n int) string {
 	switch n {
 	case 0:
@@ -110,6 +115,7 @@ func HistoryLabel(verb string, labels []string) string {
 	return verb + " " + labels[0]
 }
 
+// lower returns s with an ASCII capital first letter lowered.
 func lower(s string) string {
 	b := []byte(s)
 	if len(b) > 0 && b[0] >= 'A' && b[0] <= 'Z' {

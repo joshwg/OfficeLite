@@ -1,3 +1,6 @@
+// The File backstage for spreadsheets: New, Open, Info, Save, Save As and
+// Export, and the saving behind them.
+
 package ui
 
 import (
@@ -53,6 +56,8 @@ type infoCache struct {
 	cells    int
 }
 
+// backstageConfig is the backstage's templates, recent files and page
+// content.
 func (a *App) backstageConfig() gui.BackstageConfig {
 	return gui.BackstageConfig{
 		Templates: templates,
@@ -61,6 +66,8 @@ func (a *App) backstageConfig() gui.BackstageConfig {
 	}
 }
 
+// handleBackstage carries out a backstage action: back, new, open, save
+// or close.
 func (a *App) handleBackstage(ev gui.BackstageEvent) {
 	switch ev.Action {
 	case gui.ActBack:
@@ -372,6 +379,8 @@ func (a *App) backstagePage(p gui.Page) []layout.Widget {
 	return nil
 }
 
+// infoPage returns the rows of the Info page: the file's properties and
+// counts, warnings about what isn't shown, AutoRecover, AutoSave and About.
 func (a *App) infoPage() []layout.Widget {
 	th := a.ui
 	wb := a.wb
@@ -442,6 +451,8 @@ func (a *App) infoPage() []layout.Widget {
 	return rows
 }
 
+// fileType is the Info page's description of path's file type, by its
+// extension.
 func fileType(path string) string {
 	switch strings.ToLower(filepath.Ext(path)) {
 	case "":
@@ -462,6 +473,8 @@ func fileType(path string) string {
 	return "Text"
 }
 
+// formatIcon is format f's icon: a grid for workbook formats, text for the
+// single-sheet text formats.
 func formatIcon(f fileio.Format) *gui.Icon {
 	if f.MultiSheet() {
 		return gui.IconGrid
@@ -469,6 +482,7 @@ func formatIcon(f fileio.Format) *gui.Icon {
 	return gui.IconText
 }
 
+// formatDesc is the line under format f's name in Save As and Export.
 func formatDesc(f fileio.Format) string {
 	switch f {
 	case fileio.XLSX:
@@ -483,4 +497,5 @@ func formatDesc(f fileio.Format) string {
 	return ""
 }
 
+// windowTitle is the window title option for a workbook named name.
 func windowTitle(name string) app.Option { return app.Title(name + " - " + appName) }

@@ -1,3 +1,5 @@
+// Tests for the ColorPicker: theme shades and picking a swatch.
+
 package gui
 
 import (
@@ -17,8 +19,8 @@ import (
 	"officelite/common/colors"
 )
 
-// Excel's lighter/darker variants of a theme color, within one step of
-// rounding.
+// TestThemeShades checks themeShades against Excel's lighter/darker
+// variants of a theme color, within one step of rounding.
 func TestThemeShades(t *testing.T) {
 	for _, tc := range []struct {
 		base uint32
@@ -49,6 +51,7 @@ type pickerRig struct {
 	ok     bool
 }
 
+// frame lays out the picker's split button and records any color picked.
 func (g *pickerRig) frame() {
 	g.ops.Reset()
 	gtx := layout.Context{Ops: &g.ops, Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1},
@@ -59,6 +62,8 @@ func (g *pickerRig) frame() {
 	g.r.Frame(&g.ops)
 }
 
+// click presses and releases the primary button at (x, y), then runs two
+// frames.
 func (g *pickerRig) click(x, y float32) {
 	for _, k := range []pointer.Kind{pointer.Press, pointer.Release} {
 		e := pointer.Event{Kind: k, Source: pointer.Mouse, Position: f32.Pt(x, y)}
@@ -71,6 +76,8 @@ func (g *pickerRig) click(x, y float32) {
 	g.frame()
 }
 
+// TestColorPickerPicks opens the picker with its arrow, clicks a theme
+// swatch and checks that its color is returned and the menu closes.
 func TestColorPickerPicks(t *testing.T) {
 	g := &pickerRig{th: NewTheme(NewFontLibrary(), ChromeText, ChromeText)}
 	g.frame()

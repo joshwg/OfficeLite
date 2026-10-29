@@ -1,3 +1,7 @@
+// chartnew.go makes charts as Excel's Insert > Charts does: the kinds
+// offered, the series a range of cells gives (DetectSource), and a chart's
+// kind changed with its series kept (SetChartKind, SetComboKinds).
+
 package edit
 
 import (
@@ -9,10 +13,6 @@ import (
 	"officelite/excel/model"
 	"officelite/excel/numfmt"
 )
-
-// Making charts as Excel's Insert > Charts does: the kinds offered, the
-// series a range of cells gives (DetectSource), and a chart's kind
-// changed with its series kept (SetChartKind, SetComboKinds).
 
 // ChartKind is a kind of chart Insert and Change Chart Type offer.
 type ChartKind int
@@ -68,6 +68,7 @@ var ChartKinds = []ChartKindInfo{
 // ComboKinds are the kinds a series of a combo chart can take.
 var ComboKinds = []ChartKind{ColumnClustered, ColumnStacked, LinePlain, LineMarkers, AreaStandard, AreaStacked}
 
+// String is the kind's name in ChartKinds, or "Chart" for an unlisted one.
 func (k ChartKind) String() string {
 	for _, i := range ChartKinds {
 		if i.Kind == k {
@@ -160,7 +161,7 @@ func (s ChartSource) SourceRef() string {
 }
 
 // Series are the series the source gives; for a scatter chart the first
-// series of an unlabelled block is the X values of the others.
+// series of an unlabeled block is the X values of the others.
 func (s ChartSource) Series(wb *model.Workbook, scatter bool) []model.ChartSeries {
 	r := s.Range
 	d := r // the data, without the labels
@@ -337,6 +338,8 @@ func ChartDataSource(wb *model.Workbook, c *model.Chart, home string) (ChartSour
 	return src, true
 }
 
+// sameRef reports whether references a and b (relative to sheet home)
+// name the same ranges; an empty one equals only an empty one.
 func sameRef(a, b, home string) bool {
 	if a == "" || b == "" {
 		return a == b
@@ -400,6 +403,7 @@ func KindOf(c *model.Chart) ChartKind {
 	return plotKind(plots[0])
 }
 
+// plotKind is the listed kind closest to chart group p.
 func plotKind(p *model.ChartPlot) ChartKind {
 	g := int(p.Grouping)
 	switch p.Type {
@@ -540,7 +544,7 @@ func SetComboKinds(wb *model.Workbook, c *model.Chart, home string, kinds []Char
 			order = append(order, k)
 		}
 		if i < len(oldKinds) && family(oldKinds[i]) != family(kinds[i]) {
-			// What belonged to the old kind: markers, slices' own colours.
+			// What belonged to the old kind: markers, slices' own colors.
 			s.Marker, s.Smooth, s.Explosion, s.Points = model.Marker{}, false, 0, nil
 			s.Labels = nil
 		}

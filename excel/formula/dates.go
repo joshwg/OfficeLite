@@ -1,3 +1,6 @@
+// dates.go converts between Excel date serials and calendar times, and
+// parses date and time text.
+
 package formula
 
 import (
@@ -152,6 +155,8 @@ func ParseDateTime(s string, date1904 bool) (float64, bool) {
 	return parseDate(s, date1904)
 }
 
+// parseTimeOfDay parses time-only text ("15:00", "3:00 PM", "3 pm") as a
+// fraction of a day; a bare number is not a time.
 func parseTimeOfDay(s string) (float64, bool) {
 	m := reTime.FindStringSubmatch(s)
 	if m == nil || (m[2] == "" && m[4] == "") {
@@ -177,6 +182,9 @@ func parseTimeOfDay(s string) (float64, bool) {
 	return (float64(h)*3600 + float64(mi)*60 + sec) / 86400, true
 }
 
+// parseDate parses date-only text (y-m-d, m/d[/y], d-Mon[-y], Mon d[, y],
+// Mon y) as a whole serial; a missing year is the current year and a
+// two-digit year below 30 is 20xx.
 func parseDate(s string, date1904 bool) (float64, bool) {
 	s = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(s), ","))
 	year := func(y string) int {

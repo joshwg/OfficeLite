@@ -1,3 +1,6 @@
+// RibbonKit: shorthand builders for ribbon controls that run commands and
+// name their undo steps.
+
 package gui
 
 import (

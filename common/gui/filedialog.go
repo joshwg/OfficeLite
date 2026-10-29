@@ -1,3 +1,6 @@
+// FileDialog, the native Open / Save As dialogs with file-type lists, and
+// the FileFilter entries shared by the apps.
+
 package gui
 
 import (

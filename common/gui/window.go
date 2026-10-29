@@ -1,3 +1,6 @@
+// Window helpers shared by the apps: the UI call queue, Info page and
+// drop-down formatting, PDF export and printing through a PDF viewer.
+
 package gui
 
 import (
@@ -8,39 +11,49 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"time"
 )
 
 // CallQueue hands work from other goroutines (file dialogs, loading,
-// saving) to the UI goroutine, which runs it at the next frame.
+// saving) to the UI goroutine, which runs it at the next frame. The queue
+// is unbounded, so Post never blocks, even on the UI goroutine itself.
 type CallQueue struct {
-	calls chan func()
+	mu    sync.Mutex
+	calls []func()
 	wake  func() // asks for a frame; nil in tests
 }
 
 // NewCallQueue makes a queue that calls wake (the window's Invalidate)
 // when work is posted.
 func NewCallQueue(wake func()) *CallQueue {
-	return &CallQueue{calls: make(chan func(), 16), wake: wake}
+	return &CallQueue{wake: wake}
 }
 
 // Post queues f for the UI goroutine.
 func (q *CallQueue) Post(f func()) {
-	q.calls <- f
+	q.mu.Lock()
+	q.calls = append(q.calls, f)
+	q.mu.Unlock()
 	if q.wake != nil {
 		q.wake()
 	}
 }
 
-// Run runs the queued calls; the UI goroutine calls it every frame.
+// Run runs the queued calls, including any they post, in order; the UI
+// goroutine calls it every frame.
 func (q *CallQueue) Run() {
 	for {
-		select {
-		case f := <-q.calls:
-			f()
-		default:
+		q.mu.Lock()
+		calls := q.calls
+		q.calls = nil
+		q.mu.Unlock()
+		if len(calls) == 0 {
 			return
+		}
+		for _, f := range calls {
+			f()
 		}
 	}
 }
@@ -90,7 +103,7 @@ type PDFSave struct {
 	Name  string // the document's name, without ".pdf"
 	Files *FileDialog
 	// Create is the Save dialog used when there is no native one
-	// (explorer's CreateFile); Declined is its error for a cancelled
+	// (explorer's CreateFile); Declined is its error for a canceled
 	// dialog.
 	Create   func(name string) (io.WriteCloser, error)
 	Declined error

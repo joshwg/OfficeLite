@@ -1,3 +1,5 @@
+// Automatic value-axis scaling for charts: bounds, units and tick values.
+
 package render
 
 import "math"
@@ -8,7 +10,7 @@ import "math"
 //   - The minimum is 0 when the data are all of one sign and the smallest
 //     magnitude is less than 5/6 of the largest (the range is more than a
 //     sixth of the maximum); otherwise the data's minimum less half the
-//     range.
+//     range (with both signs: less 5% of the range).
 //   - The maximum is the data's maximum plus 5% of the distance from the
 //     minimum (negative data: mirrored).
 //   - The major unit is the smallest of 1, 2, 5 × 10^n that splits the

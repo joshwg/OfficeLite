@@ -96,11 +96,11 @@ func (r *reader) decodeChp(c *chpInfo, g []byte) {
 			}
 		case sprmCShd:
 			if h := shdColor(a); h != "" {
-				c.props.Highlight = h
+				c.props.Shading = h
 			}
 		case sprmCShd80:
 			if h := shd80Color(u16(a)); h != "" {
-				c.props.Highlight = h
+				c.props.Shading = h
 			}
 		case sprmCIss:
 			switch u8(a) {

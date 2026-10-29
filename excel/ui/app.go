@@ -226,6 +226,7 @@ func Run(w *app.Window, cfg Config) error {
 	}
 }
 
+// emptyWorkbook returns a new one-sheet workbook named BookN.
 func emptyWorkbook() *model.Workbook {
 	return &model.Workbook{
 		Name:   fmt.Sprintf("Book%d", bookSeq.Add(1)),
@@ -234,6 +235,8 @@ func emptyWorkbook() *model.Workbook {
 	}
 }
 
+// openPath loads the file at path on a goroutine, checking its lock
+// first; takeResult shows it when done.
 func (a *App) openPath(path string) {
 	a.loading.Store(true)
 	a.lk.doc.Set(path, false) // opening it again raises this window
@@ -319,6 +322,8 @@ func (a *App) finishLoadResult(res loadResult) {
 	}
 }
 
+// circularWarning returns a warning naming up to three of r's circular
+// references, or nil when it has none.
 func circularWarning(r calc.Result) []string {
 	if len(r.Circular) == 0 {
 		return nil
@@ -343,6 +348,8 @@ func (a *App) recalculate() {
 	}
 }
 
+// takeResult applies a finished load, if any: it shows the error, asks
+// about a locked file, or shows the workbook.
 func (a *App) takeResult() {
 	select {
 	case r := <-a.results:
@@ -380,6 +387,9 @@ func (a *App) applyLoad(r loadResult, readOnly bool) {
 	a.autoSaveLoaded()                            // autosave.go
 }
 
+// setWorkbook makes wb the window's workbook, resetting the editing
+// state, sheet views, ribbons and dialogs and activating the first
+// visible sheet.
 func (a *App) setWorkbook(wb *model.Workbook) {
 	a.wb = wb
 	if a.book != nil {
@@ -458,10 +468,12 @@ func (a *App) switchSheet(delta int) {
 	}
 }
 
+// setZoom sets the zoom factor, clamped to 10%–400%.
 func (a *App) setZoom(z float32) {
 	a.zoom = min(max(z, 0.1), 4)
 }
 
+// requestFocus gives the keyboard focus to tag.
 func requestFocus(gtx layout.Context, tag any) {
 	gtx.Execute(key.FocusCmd{Tag: tag})
 }

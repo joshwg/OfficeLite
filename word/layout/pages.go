@@ -390,6 +390,10 @@ func (e *Engine) para(p *model.Paragraph, width float64, t *model.Table) *Para {
 type paraSpacing struct {
 	before, after float64
 	top, bottom   *model.Border
+	// shadeUp and shadeDown are set when the paragraph above or below has
+	// the same shading and indents: the shading then fills the space
+	// between them, drawing the group as one block, as Word does.
+	shadeUp, shadeDown bool
 }
 
 // spacing returns the spacing of paragraph blocks[i]: with contextual
@@ -424,7 +428,26 @@ func (e *Engine) spacing(pl *Para, blocks []model.Block, i int) paraSpacing {
 	if b := bs[model.EdgeBottom]; b != nil && b.Width > 0 && !same(next) {
 		sp.bottom = b
 	}
+	if pl.Shading.A > 0 {
+		me := e.Doc.ResolvePara(pl.P)
+		sameShade := func(q *model.Paragraph) bool {
+			if q == nil {
+				return false
+			}
+			o := e.Doc.ResolvePara(q)
+			return o.Shading == me.Shading && ptVal(o.IndentLeft) == ptVal(me.IndentLeft) && ptVal(o.IndentRight) == ptVal(me.IndentRight)
+		}
+		sp.shadeUp, sp.shadeDown = sameShade(prev), sameShade(next)
+	}
 	return sp
+}
+
+// ptVal is *v, or 0 for nil.
+func ptVal(v *float64) float64 {
+	if v == nil {
+		return 0
+	}
+	return *v
 }
 
 func sameBorders(a, b [4]*model.Border) bool {
@@ -533,6 +556,7 @@ func (e *Engine) placePara(pl *Para, sp paraSpacing, nextFirst float64) {
 		}
 	}
 	e.y += before
+	gapTop, gapPage := e.y-before, e.page // the space above, shaded with sp.shadeUp
 	if b := sp.top; b != nil {
 		if !e.empty && e.y+topB+lines[0].Height > bottom+0.01 {
 			e.nextColumn()
@@ -562,7 +586,14 @@ func (e *Engine) placePara(pl *Para, sp paraSpacing, nextFirst float64) {
 		}
 		e.place(Placed{Line: l, Para: idx, Box: pl, X: e.textLeft(), Y: e.y, W: e.textWidth()})
 		if pl.Shading.A > 0 {
-			e.page.Fills = append(e.page.Fills, Fill{Rect{e.textLeft() + pl.Left, e.y, e.textLeft() + e.textWidth() - pl.Right, e.y + l.Height}, pl.Shading})
+			top, bot := e.y, e.y+l.Height
+			if k == 0 && sp.shadeUp && sp.top == nil && e.page == gapPage && top >= gapTop {
+				top = gapTop
+			}
+			if k == len(lines)-1 && sp.shadeDown && sp.bottom == nil && !l.PageBreak {
+				bot = min(bot+after, e.textBottom())
+			}
+			e.page.Fills = append(e.page.Fills, Fill{Rect{e.textLeft() + pl.Left, top, e.textLeft() + e.textWidth() - pl.Right, bot}, pl.Shading})
 		}
 		e.y += l.Height
 		if l.PageBreak {
@@ -621,10 +652,17 @@ func (e *Engine) layoutFlow(blocks []model.Block, width float64, t *model.Table)
 				f.fills = append(f.fills, borderFill(pl, b, 0, width, y))
 				y += b.Width + b.Space
 			}
-			for _, l := range pl.Lines {
+			for k, l := range pl.Lines {
 				f.lines = append(f.lines, Placed{Line: l, Para: e.index[b], Box: pl, Y: y, W: width})
 				if pl.Shading.A > 0 {
-					f.fills = append(f.fills, Fill{Rect{pl.Left, y, width - pl.Right, y + l.Height}, pl.Shading})
+					top, bot := y, y+l.Height
+					if k == 0 && sp.shadeUp && sp.top == nil {
+						top -= sp.before
+					}
+					if k == len(pl.Lines)-1 && sp.shadeDown && sp.bottom == nil {
+						bot += sp.after
+					}
+					f.fills = append(f.fills, Fill{Rect{pl.Left, top, width - pl.Right, bot}, pl.Shading})
 				}
 				y += l.Height
 			}

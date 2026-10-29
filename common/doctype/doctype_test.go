@@ -1,3 +1,6 @@
+// doctype_test.go tests detection by content and by extension, including
+// iWork files and a corrupt compound file.
+
 package doctype
 
 import (
@@ -10,6 +13,7 @@ import (
 	"officelite/common/ole"
 )
 
+// zipWith makes a zip archive holding a small part for each of names.
 func zipWith(t *testing.T, names ...string) []byte {
 	t.Helper()
 	var b bytes.Buffer
@@ -27,6 +31,8 @@ func zipWith(t *testing.T, names ...string) []byte {
 	return b.Bytes()
 }
 
+// TestDetect checks Detect on zip, compound and plain files, by content
+// first and by extension otherwise.
 func TestDetect(t *testing.T) {
 	xls, err := os.ReadFile("../../excel/fileio/xlsfile/testdata/sample.xls")
 	if err != nil {
@@ -53,6 +59,8 @@ func TestDetect(t *testing.T) {
 	}
 }
 
+// TestDetectIWork checks that Numbers and Pages samples are told apart by
+// content (skipped when the samples are missing).
 func TestDetectIWork(t *testing.T) {
 	for name, want := range map[string]Kind{
 		"Sample2.numbers":    Spreadsheet,
@@ -69,9 +77,9 @@ func TestDetectIWork(t *testing.T) {
 	}
 }
 
-// A compound file whose header claims 0xFFFFFFFF directory sectors used to
-// exhaust memory in mscfb; detection now rejects the header and falls back
-// to the extension.
+// TestDetectCorruptOLE checks that a compound file whose header claims
+// 0xFFFFFFFF directory sectors (which used to exhaust memory in mscfb) is
+// rejected and detected by its extension.
 func TestDetectCorruptOLE(t *testing.T) {
 	var b bytes.Buffer
 	if err := ole.Write(&b, []ole.Stream{{Name: "WordDocument", Data: []byte("x")}}); err != nil {

@@ -26,6 +26,8 @@ import (
 // sizes are the images in the .ico and the resource, smallest first.
 var sizes = []int{16, 20, 24, 32, 40, 48, 64, 256}
 
+// main draws the icon at every size and writes the PNG, .ico and .syso
+// to the -o directory, and the preview if asked for.
 func main() {
 	dir := flag.String("o", ".", "output directory")
 	preview := flag.String("preview", "", "also write a PNG of every size on light and dark backgrounds")

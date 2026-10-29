@@ -1,3 +1,6 @@
+// CONVERT: the unit table, metric and binary prefixes, and temperature
+// scales.
+
 package engineering
 
 import (
@@ -55,6 +58,7 @@ const (
 
 var units = map[string]unit{}
 
+// init fills units with every unit name CONVERT accepts.
 func init() {
 	add := func(class int, factor float64, prefix bool, names ...string) {
 		for _, n := range names {
@@ -237,7 +241,8 @@ var tempScale = map[string]struct{ offset, d float64 }{
 	"Reau": {0, 0.8},
 }
 
-// CONVERT(number, from_unit, to_unit)
+// convert implements CONVERT(number, from_unit, to_unit); units of
+// different classes are #N/A.
 func convert(_ *f.Env, a []f.Value) f.Value {
 	x, err := num(a[0])
 	if err != nil {

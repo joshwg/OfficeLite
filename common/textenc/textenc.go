@@ -13,7 +13,7 @@ import (
 	"golang.org/x/text/encoding/unicode"
 )
 
-// Decode converts data to UTF-8, honouring byte-order marks and falling back
+// Decode converts data to UTF-8, honoring byte-order marks and falling back
 // to Windows-1252 (what Office assumes on a US system) for invalid UTF-8.
 func Decode(data []byte) (string, error) {
 	switch {

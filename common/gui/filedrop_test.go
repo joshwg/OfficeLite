@@ -1,3 +1,6 @@
+// Tests for FileDrop: opening dropped files, the drop queue and path
+// clean-up.
+
 package gui
 
 import (
@@ -54,6 +57,8 @@ func TestOpenDropped(t *testing.T) {
 	}
 }
 
+// TestFileDropQueue checks that Dropped returns the added paths in order,
+// once, and that an empty Add queues nothing.
 func TestFileDropQueue(t *testing.T) {
 	var f FileDrop
 	f.Add()
@@ -67,6 +72,8 @@ func TestFileDropQueue(t *testing.T) {
 	}
 }
 
+// TestDropPaths checks trimLongPrefix on long, UNC, volume and ordinary
+// paths, and dropName on files and folders.
 func TestDropPaths(t *testing.T) {
 	for in, want := range map[string]string{
 		`\\?\C:\very\long\Book.xlsx`:       `C:\very\long\Book.xlsx`,

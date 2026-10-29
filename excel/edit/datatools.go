@@ -1,3 +1,6 @@
+// datatools.go holds the Data Tools group: Text to Columns and Remove
+// Duplicates (Data Validation is in validation.go).
+
 package edit
 
 import (
@@ -11,9 +14,6 @@ import (
 	"officelite/excel/formula"
 	"officelite/excel/model"
 )
-
-// The Data Tools group: Text to Columns and Remove Duplicates (Data
-// Validation is in validation.go).
 
 // ColFormat is the data format of one Text to Columns field.
 type ColFormat int

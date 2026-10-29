@@ -1,7 +1,11 @@
+// Tests for column width conversion, column names and view clamping.
+
 package model
 
 import "testing"
 
+// TestColumnWidths checks character-to-pixel column widths for several
+// digit widths, and the default column width.
 func TestColumnWidths(t *testing.T) {
 	for _, c := range []struct {
 		chars, mdw float64
@@ -25,8 +29,9 @@ func TestColumnWidths(t *testing.T) {
 	}
 }
 
-// ColName must not panic on the columns a damaged file can hold, and
-// ParseColName must not overflow on long letter runs.
+// TestColNameLimits checks that ColName doesn't panic on the columns a
+// damaged file can hold, that ParseColName doesn't overflow on long letter
+// runs, and that ClampView brings a wild saved view within the limits.
 func TestColNameLimits(t *testing.T) {
 	for col, want := range map[int]string{0: "A", 27: "AB", 16383: "XFD", -1: "", 475253: "ZZZZ", 475254: "AAAAA"} {
 		if got := ColName(col); got != want {

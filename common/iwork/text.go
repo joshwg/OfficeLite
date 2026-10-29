@@ -1,3 +1,6 @@
+// Text storages: splitting them into styled paragraphs and spans, plus
+// drawable geometry.
+
 package iwork
 
 import (
@@ -60,7 +63,8 @@ type Paragraph struct {
 	Spans     []Span
 }
 
-// Text returns the paragraph's plain text (attachments dropped).
+// Text returns the paragraph's plain text (attachments and page and column
+// breaks dropped).
 func (p *Paragraph) Text() string {
 	var b strings.Builder
 	for _, s := range p.Spans {
@@ -83,6 +87,8 @@ type attrTable struct {
 	obj []uint64
 }
 
+// readAttrTable decodes an ObjectAttributeTable; with keepPrevious, an entry
+// without an object carries on the previous entry's.
 func readAttrTable(m Message, keepPrevious bool) attrTable {
 	var t attrTable
 	for _, e := range m.Msgs(1) {

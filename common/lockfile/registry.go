@@ -1,3 +1,7 @@
+// The open-document registry: Doc, the in-process and per-user on-disk
+// registry of open files, and the localhost hand-off that raises another
+// process's window.
+
 package lockfile
 
 import (
@@ -82,6 +86,9 @@ func (d *Doc) Path() string {
 // Close lets the file go, when the window closes.
 func (d *Doc) Close() { d.Set("", false) }
 
+// register adds d under its path to this process's registry (unless
+// another window has it) and writes its per-user registry file. d.mu is
+// held.
 func (d *Doc) register() {
 	d.key = key(d.path)
 	reg.Lock()
@@ -104,6 +111,7 @@ func (d *Doc) register() {
 	}
 }
 
+// unregister undoes register for d's current path. d.mu is held.
 func (d *Doc) unregister() {
 	if d.path == "" {
 		return
@@ -123,7 +131,6 @@ func (d *Doc) unregister() {
 var reg struct {
 	sync.Mutex
 	docs   map[string]*Doc // by key
-	ln     net.Listener
 	port   int
 	token  string
 	listed bool
@@ -158,6 +165,8 @@ func key(path string) string {
 	return path
 }
 
+// hashKey is the registry-file name prefix for key k: 24 hex digits of its
+// SHA-256.
 func hashKey(k string) string {
 	h := sha256.Sum256([]byte(k))
 	return hex.EncodeToString(h[:12])
@@ -233,7 +242,7 @@ func listen() (int, string) {
 	}
 	var t [16]byte
 	rand.Read(t[:])
-	reg.ln, reg.port, reg.token = ln, ln.Addr().(*net.TCPAddr).Port, hex.EncodeToString(t[:])
+	reg.port, reg.token = ln.Addr().(*net.TCPAddr).Port, hex.EncodeToString(t[:])
 	go serve(ln, reg.token)
 	return reg.port, reg.token
 }
@@ -243,6 +252,8 @@ func listen() (int, string) {
 // when it hasn't got the file open.
 const handOffTimeout = 2 * time.Second
 
+// serve answers hand-off requests on ln that carry token until ln is
+// closed.
 func serve(ln net.Listener, token string) {
 	for {
 		c, err := ln.Accept()
@@ -278,6 +289,8 @@ type limitedConn struct {
 	n int
 }
 
+// Read reads from the connection, failing with net.ErrClosed once n bytes
+// have been read.
 func (l *limitedConn) Read(p []byte) (int, error) {
 	if l.n <= 0 {
 		return 0, net.ErrClosed
@@ -290,7 +303,8 @@ func (l *limitedConn) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// handOff asks the process of e to raise its window for path.
+// handOff asks the process of e to raise its window for path and reports
+// whether it did.
 func handOff(e entry, path string) bool {
 	if e.Port == 0 {
 		return false

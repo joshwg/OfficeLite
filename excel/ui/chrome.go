@@ -1,3 +1,7 @@
+// The window's chrome: the menu bar and its commands, the frame layout,
+// window-wide shortcuts, the title bar, formula bar, scrollbars, sheet
+// tabs (with renaming) and status bar.
+
 package ui
 
 import (
@@ -78,6 +82,9 @@ const (
 	homeGoTo
 )
 
+// menus is the menu bar: File, Home, Insert, Formulas, Data and View, then
+// the contextual PivotTable and chart tabs, with commands that can't run
+// now disabled.
 func (a *App) menus() []gui.Menu {
 	sel := a.state().view.Sel.Range
 	editing := a.ed.active
@@ -139,6 +146,7 @@ func (a *App) menus() []gui.Menu {
 	return menus
 }
 
+// menuChosen runs the menu item or switches to the tab ev names.
 func (a *App) menuChosen(ev gui.MenuEvent) {
 	if ev.Menu > menuView {
 		i := ev.Menu - menuView - 1
@@ -226,6 +234,9 @@ func (a *App) menuChosen(ev gui.MenuEvent) {
 	}
 }
 
+// layout handles the frame's input and draws the window: the backstage,
+// or the title bar, menus, ribbon, formula bar, grid, tabs and status
+// bar, with any open dialog on top.
 func (a *App) layout(gtx layout.Context) {
 	a.gtx = gtx
 	a.takeDrops() // drop.go
@@ -417,6 +428,7 @@ func (a *App) globalKeys(gtx layout.Context) {
 	}
 }
 
+// label is a one-line UI-font label of s in color c, bold or not.
 func (a *App) label(size float32, s string, c color.NRGBA, bold bool) material.LabelStyle {
 	l := material.Label(a.th, unit.Sp(size), s)
 	l.Color = c
@@ -428,6 +440,8 @@ func (a *App) label(size float32, s string, c color.NRGBA, bold bool) material.L
 	return l
 }
 
+// titleBar draws the app name, the AutoSave switch and the workbook's
+// name with its modified mark and AutoSave status.
 func (a *App) titleBar(gtx layout.Context) layout.Dimensions {
 	h := gtx.Dp(36)
 	gui.FillRect(gtx.Ops, image.Rect(0, 0, gtx.Constraints.Max.X, h), accent)
@@ -478,6 +492,8 @@ func (a *App) zoomControl(gtx layout.Context) layout.Dimensions {
 	)
 }
 
+// formulaBar draws the Name Box (the active cell, or the size of a range
+// being dragged), fx and the editor of the active cell's content.
 func (a *App) formulaBar(gtx layout.Context) layout.Dimensions {
 	st := a.state()
 	sel := st.view.Sel
@@ -525,6 +541,8 @@ func looksNumeric(s string) bool {
 	return err == nil
 }
 
+// vScrollbar draws the grid's vertical scrollbar and scrolls the rows
+// below the frozen ones as it is dragged.
 func (a *App) vScrollbar(gtx layout.Context) layout.Dimensions {
 	st := a.state()
 	v := &st.view
@@ -543,6 +561,7 @@ func (a *App) vScrollbar(gtx layout.Context) layout.Dimensions {
 	return layout.Dimensions{Size: gtx.Constraints.Max}
 }
 
+// bottomBar draws the sheet tabs and the horizontal scrollbar.
 func (a *App) bottomBar(gtx layout.Context) layout.Dimensions {
 	h := gtx.Dp(30)
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = h, h
@@ -571,6 +590,8 @@ func (a *App) bottomBar(gtx layout.Context) layout.Dimensions {
 	)
 }
 
+// sheetTabs handles clicks on the sheet tabs (a double-click renames
+// one) and the + button, and draws them.
 func (a *App) sheetTabs(gtx layout.Context) layout.Dimensions {
 	for i := range a.tabBtns {
 		for {
@@ -644,6 +665,8 @@ func (a *App) tabStrip(gtx layout.Context) layout.Dimensions {
 	})
 }
 
+// statusBar draws the mode or message on the left, the selection's
+// statistics and the zoom control on the right.
 func (a *App) statusBar(gtx layout.Context) layout.Dimensions {
 	h := gtx.Dp(24)
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = h, h

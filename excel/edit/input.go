@@ -30,6 +30,7 @@ type FormulaError struct {
 	Err  error
 }
 
+// Error is Excel's message for the formula that didn't parse.
 func (e *FormulaError) Error() string {
 	return "There's a problem with this formula: =" + e.Text
 }
@@ -89,6 +90,8 @@ func ParseInput(s string, date1904 bool) (Input, error) {
 	return Input{Kind: model.KindText, Text: s}, nil
 }
 
+// isErrorLiteral reports whether upper-case s is an error value a cell can
+// hold (#N/A, #DIV/0!, #VALUE!, #REF!, #NAME?, #NUM!, #NULL!).
 func isErrorLiteral(s string) bool {
 	switch formula.Error(s) {
 	case formula.ErrNA, formula.ErrDiv0, formula.ErrValue, formula.ErrRef,

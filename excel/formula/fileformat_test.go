@@ -1,7 +1,12 @@
+// fileformat_test.go tests AddFuturePrefixes and the source positions of
+// Tokens.
+
 package formula
 
 import "testing"
 
+// TestAddFuturePrefixes checks the _xlfn., _xlws., _xlpm. and _xleta.
+// prefixes added to formula text.
 func TestAddFuturePrefixes(t *testing.T) {
 	for in, want := range map[string]string{
 		"SUM(A1:A3)":                         "SUM(A1:A3)",
@@ -26,6 +31,8 @@ func TestAddFuturePrefixes(t *testing.T) {
 	}
 }
 
+// TestTokensPositions checks token spans (sheet prefix included, trailing
+// spaces excluded) and a reference token's fields.
 func TestTokensPositions(t *testing.T) {
 	src := "SUM( 'My Sheet'!$A$1 , x )"
 	toks, err := Tokens(src)

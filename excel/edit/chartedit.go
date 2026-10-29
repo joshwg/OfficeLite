@@ -1,3 +1,9 @@
+// chartedit.go holds chart editing: adding one, changing one (a chart
+// changed here is saved from the model, its part as read dropped), moving
+// and sizing one, chart sheets; and the changes the Chart Design tab makes
+// to a chart (elements, colors, styles), which work on a copy the caller
+// then sets with SetChart.
+
 package edit
 
 import (
@@ -8,12 +14,6 @@ import (
 	"officelite/excel/calc"
 	"officelite/excel/model"
 )
-
-// Editing charts: adding one, changing one (a chart changed here is
-// saved from the model, its part as read dropped), moving and sizing
-// one, chart sheets; and the changes the Chart Design tab makes to a
-// chart (elements, colours, styles), which work on a copy the caller
-// then sets with SetChart.
 
 // chartAt returns chart idx of sheet, or the chart sheet's chart for
 // idx < 0.
@@ -31,6 +31,7 @@ func (b *Book) chartAt(sheet, idx int) *model.Chart {
 	return nil
 }
 
+// chartWhere is the cell at c's top-left anchor, for Undo to select.
 func chartWhere(sheet int, c *model.Chart) Where {
 	a := c.Anchor.From
 	return Where{sheet, model.Range{R1: a.Row, C1: a.Col, R2: a.Row, C2: a.Col}}
@@ -95,6 +96,9 @@ func (b *Book) MoveChart(sheet, idx int, a model.Anchor) calc.Result {
 	return b.replaceChart(sheet, idx, c)
 }
 
+// replaceChart puts c in place of chart idx of sheet (the chart sheet's
+// chart for idx < 0) as an undoable sheet change; nothing happens when
+// there is no such chart.
 func (b *Book) replaceChart(sheet, idx int, c *model.Chart) calc.Result {
 	if b.chartAt(sheet, idx) == nil {
 		return calc.Result{}
@@ -351,7 +355,7 @@ func LabelsPos(c *model.Chart) (string, bool) {
 	return "", false
 }
 
-// Palette is one of Change Colors' colour sets.
+// Palette is one of Change Colors' color sets.
 type Palette struct {
 	Name string
 	// Accents are the theme accents (1..6) used in turn; for a
@@ -373,7 +377,7 @@ var Palettes = []Palette{
 	{"Monochromatic Palette 6", []int{6}, true},
 }
 
-// Color is the palette's colour for item i of n.
+// Color is the palette's color for item i of n.
 func (p Palette) Color(th *model.Theme, i, n int) color.NRGBA {
 	if th == nil {
 		th = model.DefaultTheme()
@@ -398,8 +402,8 @@ func (p Palette) Color(th *model.Theme, i, n int) color.NRGBA {
 	return model.LumMod(c, v[0], v[1])
 }
 
-// ApplyPalette colours c's series (a pie's slices) with palette p; the
-// first palette puts back the automatic colours.
+// ApplyPalette colors c's series (a pie's slices) with Palettes[p]; the
+// first palette puts back the automatic colors.
 func ApplyPalette(wb *model.Workbook, c *model.Chart, home string, p int) {
 	pal := Palettes[min(max(p, 0), len(Palettes)-1)]
 	auto := p == 0
@@ -434,18 +438,19 @@ func ApplyPalette(wb *model.Workbook, c *model.Chart, home string, p int) {
 	}
 }
 
+// solid is a solid paint of color c.
 func solid(c color.NRGBA) model.Paint { return model.Paint{Kind: model.FillSolid, Color: c} }
 
 // ChartStyles name the Chart Styles gallery's choices.
 var ChartStyles = []string{"Style 1", "Style 2", "Style 3", "Style 4", "Style 5", "Style 6"}
 
-// ApplyChartStyle gives c one of the gallery's looks: Style 1 is Excel's
+// ApplyChartStyle gives c the look of ChartStyles[style]: Style 1 is Excel's
 // default; 2 adds data labels and drops the value axis and gridlines; 3
 // a shaded background; 4 a dark one; 5 outlined, unfilled shapes; 6
 // bold titles with dashed gridlines.
 func ApplyChartStyle(c *model.Chart, style int) {
 	c.ChartArea, c.PlotArea = model.ShapeProps{}, model.ShapeProps{}
-	// The text colours (each part's own, as a file writes them) go back
+	// The text colors (each part's own, as a file writes them) go back
 	// to the style's.
 	text := func(p model.Paint) {
 		c.Font.Color = p

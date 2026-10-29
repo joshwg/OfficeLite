@@ -1,3 +1,5 @@
+// pivotpane.go implements the PivotTable Fields pane: the field checklist and the four areas whose chips are dragged.
+
 package ui
 
 import (
@@ -42,6 +44,7 @@ const (
 	areaValues
 )
 
+// areaNames are the areas' captions.
 var areaNames = [4]string{"Filters", "Columns", "Rows", "Values"}
 
 // fieldPane is the pane's widget state.

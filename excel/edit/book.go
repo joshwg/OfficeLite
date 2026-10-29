@@ -1,3 +1,7 @@
+// book.go holds Book, the workbook being edited: the undo and redo stacks,
+// change grouping and labels, applying and reverting changes, typed input
+// and Clear.
+
 package edit
 
 import (
@@ -89,6 +93,7 @@ func New(wb *model.Workbook) *Book {
 // Close releases the number formatter.
 func (b *Book) Close() { b.nf.Close() }
 
+// now is the current time for NOW() and TODAY(): b.Now's, else the clock's.
 func (b *Book) now() time.Time {
 	if b.Now != nil {
 		return b.Now()
@@ -149,6 +154,7 @@ func (b *Book) RedoN(n int) (Where, calc.Result, bool) {
 func (b *Book) UndoLabels() []string { return labels(b.undo) }
 func (b *Book) RedoLabels() []string { return labels(b.redo) }
 
+// labels lists the labels of an undo or redo stack, top first.
 func labels(stack []*change) []string {
 	out := make([]string, len(stack))
 	for i, ch := range stack {
@@ -261,6 +267,8 @@ func (b *Book) reapply(ch *change) calc.Result {
 	return res
 }
 
+// joinResults combines two recalculation results: counts add, circular
+// references append.
 func joinResults(a, b calc.Result) calc.Result {
 	a.Calculated += b.Calculated
 	a.Circular = append(a.Circular, b.Circular...)
@@ -442,6 +450,7 @@ func (b *Book) inputCell(style uint32, text string) (model.Cell, error) {
 	return b.makeCell(style, in), nil
 }
 
+// style is the workbook's style i, or style 0 when i is out of range.
 func (b *Book) style(i uint32) model.Style {
 	if int(i) < len(b.WB.Styles) {
 		return b.WB.Styles[i]
@@ -468,6 +477,8 @@ func (b *Book) makeCell(style uint32, in Input) model.Cell {
 	return c
 }
 
+// addStyle returns the index of st in the workbook's styles, adding it if
+// new; the lookup map is built from the existing styles on first use.
 func (b *Book) addStyle(st model.Style) uint32 {
 	if len(b.styles) == 0 {
 		for i, s := range b.WB.Styles {

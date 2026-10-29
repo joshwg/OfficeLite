@@ -1,3 +1,5 @@
+// lock_test.go tests opening a workbook that is locked or in use elsewhere.
+
 package ui
 
 import (

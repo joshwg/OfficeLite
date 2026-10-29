@@ -1,3 +1,6 @@
+// Decoding BIFF8 parsed expressions (ptg token streams) into formula text,
+// with the SUPBOOK, EXTERNSHEET and NAME tables they refer to.
+
 package xlsfile
 
 import (
@@ -95,6 +98,7 @@ const (
 // or array formula anchored at row, col.
 type errShared struct{ row, col int }
 
+// Error implements error.
 func (e errShared) Error() string { return "shared formula" }
 
 var errTable = errors.New("data table formula (TABLE)")
@@ -161,6 +165,9 @@ func (p *parser) decodeFormula(rgce, extra []byte, row, col int, rel bool) (stri
 	return d.decode(rgce, extra)
 }
 
+// decode evaluates the token stream b on a text stack, keeping the
+// operand precedence to parenthesize as needed. A tExp or tTbl token
+// returns errShared or errTable.
 func (d *decoder) decode(b, extra []byte) (string, error) {
 	var st []item
 	// Spaces from tAttrSpace go before the next token's text, or before
@@ -495,6 +502,8 @@ func funcName(s string) string {
 	return s
 }
 
+// externName returns the text of a tNameX token: a name of this workbook,
+// an add-in function, or "[n]!name" in an external workbook (with a warning).
 func (d *decoder) externName(ixti, n int) (string, error) {
 	if ixti >= len(d.p.xti) {
 		return "", fmt.Errorf("bad EXTERNSHEET index %d", ixti)
@@ -572,6 +581,8 @@ func (d *decoder) cellRef(rw, col int, rel bool) string {
 	return colText(c, cr) + rowText(r, rr)
 }
 
+// areaRef formats an area as cellRef does its corners, as a whole-column
+// (A:B) or whole-row (1:2) range when it spans the sheet.
 func (d *decoder) areaRef(rw1, rw2, col1, col2 int, rel bool) string {
 	r1, c1, rr1, cr1 := d.coords(rw1, col1, rel)
 	r2, c2, rr2, cr2 := d.coords(rw2, col2, rel)
@@ -584,6 +595,9 @@ func (d *decoder) areaRef(rw1, rw2, col1, col2 int, rel bool) string {
 	return colText(c1, cr1) + rowText(r1, rr1) + ":" + colText(c2, cr2) + rowText(r2, rr2)
 }
 
+// coords splits a row and column field into the absolute row and column
+// and their relative flags, resolving offsets against the formula's cell
+// when rel.
 func (d *decoder) coords(rw, col int, rel bool) (r, c int, rowRel, colRel bool) {
 	rowRel, colRel = col&0x8000 != 0, col&0x4000 != 0
 	r, c = rw, col&0x3FFF
@@ -598,6 +612,7 @@ func (d *decoder) coords(rw, col int, rel bool) (r, c int, rowRel, colRel bool) 
 	return r, c, rowRel, colRel
 }
 
+// colText is column c's letters, prefixed by $ unless rel.
 func colText(c int, rel bool) string {
 	if rel {
 		return model.ColName(c)
@@ -605,6 +620,7 @@ func colText(c int, rel bool) string {
 	return "$" + model.ColName(c)
 }
 
+// rowText is row r's 1-based number, prefixed by $ unless rel.
 func rowText(r int, rel bool) string {
 	if rel {
 		return strconv.Itoa(r + 1)
@@ -674,6 +690,7 @@ func shortString(b []byte, off int) (string, int) {
 	return chars(b, off+2, int(b[off]), b[off+1]&0x01 != 0)
 }
 
+// errorText is the text of a BIFF error code, #N/A for an unknown one.
 func errorText(code byte) string {
 	if s, ok := errorTexts[code]; ok {
 		return s
@@ -681,6 +698,7 @@ func errorText(code byte) string {
 	return "#N/A"
 }
 
+// quoteString returns s as a formula string literal, doubling its quotes.
 func quoteString(s string) string {
 	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }

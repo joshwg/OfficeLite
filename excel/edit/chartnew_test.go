@@ -1,3 +1,6 @@
+// chartnew_test.go tests making charts, changing their kind, elements,
+// styles and data source, and chart sheets.
+
 package edit
 
 import (
@@ -29,6 +32,7 @@ func salesBook(t *testing.T) *Book {
 	return b
 }
 
+// seriesRefs lists each series' name, categories and values references.
 func seriesRefs(c *model.Chart) [][3]string {
 	var out [][3]string
 	for _, sr := range c.AllSeries() {
@@ -38,6 +42,8 @@ func seriesRefs(c *model.Chart) [][3]string {
 	return out
 }
 
+// TestNewChartLayout checks how NewChart lays out series and labels from
+// a range or a single cell.
 func TestNewChartLayout(t *testing.T) {
 	b := salesBook(t)
 	// The table's region from one cell: headers row and column, series in
@@ -92,6 +98,7 @@ func TestNewChartLayout(t *testing.T) {
 	}
 }
 
+// TestAddMoveChartUndo checks AddChart and MoveChart with undo and redo.
 func TestAddMoveChartUndo(t *testing.T) {
 	b := salesBook(t)
 	c, _, _ := NewChart(b.WB, 1, rng("A1", "C5"), ColumnClustered)
@@ -122,8 +129,8 @@ func TestAddMoveChartUndo(t *testing.T) {
 	}
 }
 
-// A moved chart from a file is still written as it came; an edited one
-// isn't.
+// TestChartEditDropsRaw checks that a moved chart from a file is still
+// written as it came; an edited one isn't.
 func TestChartEditDropsRaw(t *testing.T) {
 	b := salesBook(t)
 	c, _, _ := NewChart(b.WB, 1, rng("A1", "C5"), ColumnClustered)
@@ -148,6 +155,8 @@ func TestChartEditDropsRaw(t *testing.T) {
 	}
 }
 
+// TestSwitchRowColumn checks SwitchRowColumn both ways and its refusal
+// for series picked one by one.
 func TestSwitchRowColumn(t *testing.T) {
 	b := salesBook(t)
 	c, _, _ := NewChart(b.WB, 1, rng("A1", "C5"), ColumnClustered)
@@ -172,6 +181,8 @@ func TestSwitchRowColumn(t *testing.T) {
 	}
 }
 
+// TestChartKinds checks SetChartKind round-trips every listed kind, and
+// combo charts' per-series kinds and axes.
 func TestChartKinds(t *testing.T) {
 	b := salesBook(t)
 	c, _, _ := NewChart(b.WB, 1, rng("A1", "C5"), ColumnClustered)
@@ -209,6 +220,8 @@ func TestChartKinds(t *testing.T) {
 	}
 }
 
+// TestChartElements checks the Chart Design tab's element, palette and
+// style changes.
 func TestChartElements(t *testing.T) {
 	b := salesBook(t)
 	c, _, _ := NewChart(b.WB, 1, rng("A1", "C5"), ColumnClustered)
@@ -277,6 +290,8 @@ func TestChartElements(t *testing.T) {
 	}
 }
 
+// TestChartSheets checks moving a chart to and from a chart sheet,
+// editing and deleting one, all undoably.
 func TestChartSheets(t *testing.T) {
 	b := salesBook(t)
 	c, _, _ := NewChart(b.WB, 1, rng("A1", "C5"), ColumnClustered)
@@ -328,6 +343,8 @@ func TestChartSheets(t *testing.T) {
 	}
 }
 
+// TestChartDataSourceSelectData checks ChartDataSource and the Select
+// Data changes SetChartSource and SetChartSeries make.
 func TestChartDataSourceSelectData(t *testing.T) {
 	b := salesBook(t)
 	c, src, _ := NewChart(b.WB, 1, rng("A1", "C5"), LineMarkers)

@@ -1,3 +1,5 @@
+// Parsing and resolving a PivotTable's source reference (sheet!range or a defined name).
+
 package pivot
 
 import (
@@ -39,6 +41,8 @@ func ParseRange(s string) (model.Range, bool) {
 	return model.Range{R1: min(r1, r2), C1: min(c1, c2), R2: max(r1, r2), C2: max(c1, c2)}, true
 }
 
+// parseCell parses an A1-style cell (no $) into 0-based row and column,
+// rejecting more than three column letters and anything off the sheet.
 func parseCell(s string) (row, col int, ok bool) {
 	i := 0
 	for i < len(s) && (s[i] >= 'A' && s[i] <= 'Z' || s[i] >= 'a' && s[i] <= 'z') {

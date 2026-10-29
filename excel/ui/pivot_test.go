@@ -1,3 +1,5 @@
+// pivot_test.go tests creating PivotTables, the field list, label drop-downs, settings dialogs and the report cell menu.
+
 package ui
 
 import (
@@ -56,6 +58,9 @@ func (h *harness) boxPt(area int) f32.Point {
 	return h.paneOrigin().Add(f32.Pt(float32(b.Min.X+b.Max.X)/2, float32(b.Max.Y-10)))
 }
 
+// TestCreatePivotAndFieldList checks Insert > PivotTable, checking and
+// dragging fields in the field list, chip menus, undo, and showing and hiding
+// the pane and contextual tabs.
 func TestCreatePivotAndFieldList(t *testing.T) {
 	h := newHarness(t)
 	a := h.a
@@ -178,6 +183,9 @@ func pivotHarness(t *testing.T) *harness {
 	return h
 }
 
+// TestPivotDropDownAndSettings checks edits inside a report are refused, Delete
+// removes a whole report, the label drop-down filters, and the Value Field,
+// Field Settings and Design layout changes apply.
 func TestPivotDropDownAndSettings(t *testing.T) {
 	h := pivotHarness(t)
 	a := h.a
@@ -258,6 +266,8 @@ func TestPivotDropDownAndSettings(t *testing.T) {
 	}
 }
 
+// TestPivotContextMenu checks a report cell's right-click menu and submenus,
+// sorting a field, Show Details on a double-click, and Refresh All.
 func TestPivotContextMenu(t *testing.T) {
 	h := pivotHarness(t)
 	a := h.a

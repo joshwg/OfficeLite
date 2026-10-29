@@ -1,3 +1,5 @@
+// mouse_test.go tests context menus, multiple selection, dragging the selection's border and pointing in formulas.
+
 package ui
 
 import (
@@ -22,6 +24,8 @@ func (h *harness) cellPt(ref string) f32.Point {
 	return f32.Pt(float32(rc.Min.X+rc.Max.X)/2, float32(gridTop+(rc.Min.Y+rc.Max.Y)/2))
 }
 
+// refPos returns the zero-based row and column of a cell reference such as
+// "C3".
 func refPos(ref string) (int, int) {
 	i := strings.IndexAny(ref, "0123456789")
 	row := 0
@@ -31,6 +35,7 @@ func refPos(ref string) (int, int) {
 	return row - 1, model.ParseColName(ref[:i])
 }
 
+// clickMods clicks button b at p (window coordinates) with modifiers held.
 func (h *harness) clickMods(p f32.Point, b pointer.Buttons, mods key.Modifiers) {
 	h.r.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, Buttons: b, Position: p, Modifiers: mods})
 	h.frame()
@@ -95,9 +100,11 @@ func (h *harness) chooseCtx(p f32.Point, items []ctxItem, label string, origin, 
 	h.t.Fatalf("no item %q", label)
 }
 
-// gridArea is the grid's origin and size in the harness's window.
+// gridOrigin and gridSize are the grid's origin and size in the harness's window.
 var gridOrigin, gridSize = f32.Pt(0, float32(gridTop)), f32.Pt(1000-14, float32(700-gridTop-30-24))
 
+// TestContextMenus checks the cell, row header and sheet tab context menus:
+// what a right-click selects and what their items do.
 func TestContextMenus(t *testing.T) {
 	h := newHarness(t)
 	a := h.a
@@ -158,6 +165,9 @@ func TestContextMenus(t *testing.T) {
 	}
 }
 
+// TestMultipleSelection checks Ctrl+click and Ctrl+drag add ranges, commands
+// act on all of them as one undo step, copying is refused and an arrow key
+// collapses the selection.
 func TestMultipleSelection(t *testing.T) {
 	h := newHarness(t)
 	a := h.a
@@ -209,6 +219,9 @@ func TestMultipleSelection(t *testing.T) {
 	}
 }
 
+// TestDragBorderMove checks the move cursor on the selection's border,
+// dragging it moves cells (adjusting references), and Ctrl+drag copies,
+// asking before replacing data.
 func TestDragBorderMove(t *testing.T) {
 	h := newHarness(t)
 	a := h.a
@@ -268,6 +281,9 @@ func TestDragBorderMove(t *testing.T) {
 	h.expect("copy", map[string]string{"A1": "1", "A2": "2", "D4": "1", "D5": "2"})
 }
 
+// TestPointingInFormula checks clicking and dragging while typing a formula
+// puts references into it, each colored, and a click after a number ends the
+// entry instead.
 func TestPointingInFormula(t *testing.T) {
 	h := newHarness(t)
 	a := h.a

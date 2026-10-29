@@ -62,6 +62,7 @@ func plain(g func(float64) float64) func(float64) f.Value {
 	return func(x float64) f.Value { return f.NumberOrErr(g(x)) }
 }
 
+// nums2 coerces a and b to numbers, returning the first coercion error.
 func nums2(a, b f.Value) (float64, float64, f.Value) {
 	x, err := f.Num(a)
 	if err != nil {
@@ -74,6 +75,7 @@ func nums2(a, b f.Value) (float64, float64, f.Value) {
 	return x, y, nil
 }
 
+// missing reports whether v is an omitted argument.
 func missing(v f.Value) bool {
 	_, ok := v.(f.Missing)
 	return ok
@@ -260,6 +262,7 @@ func countA(e *f.Env, args []f.Value, o opts) int {
 	return n
 }
 
+// b2f returns 1 for true and 0 for false.
 func b2f(b bool) float64 {
 	if b {
 		return 1
@@ -282,6 +285,8 @@ type grid struct {
 	ur, uc     int // extent that may hold non-blank values
 }
 
+// newGrid wraps a reference or array as a grid; a scalar becomes a 1×1
+// grid, an error is returned as is and a lambda is #VALUE!.
 func newGrid(e *f.Env, v f.Value) (*grid, f.Value) {
 	switch x := v.(type) {
 	case f.Ref:
@@ -331,6 +336,7 @@ func (g *grid) resize(rows, cols int) *grid {
 	return g
 }
 
+// sameShape reports whether g and h have the same logical shape.
 func (g *grid) sameShape(h *grid) bool { return g.rows == h.rows && g.cols == h.cols }
 
 // extent is the part of the common shape of gs that may hold non-blank

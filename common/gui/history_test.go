@@ -1,3 +1,6 @@
+// Tests for HistoryList: the split button, hover highlighting, the footer
+// and the disabled empty state.
+
 package gui
 
 import (
@@ -14,6 +17,8 @@ import (
 	"gioui.org/widget"
 )
 
+// historyRig drives a HistoryList's split button through an input router;
+// n is the last nonzero step count it returned.
 type historyRig struct {
 	r      input.Router
 	ops    op.Ops
@@ -24,6 +29,8 @@ type historyRig struct {
 	n      int
 }
 
+// frame lays out one frame of the split button and records any steps it
+// chose in g.n.
 func (g *historyRig) frame() {
 	g.ops.Reset()
 	gtx := layout.Context{Ops: &g.ops, Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1},
@@ -34,12 +41,15 @@ func (g *historyRig) frame() {
 	g.r.Frame(&g.ops)
 }
 
+// move moves the mouse to x, y and runs two frames.
 func (g *historyRig) move(x, y float32) {
 	g.r.Queue(pointer.Event{Kind: pointer.Move, Source: pointer.Mouse, Position: f32.Pt(x, y)})
 	g.frame()
 	g.frame()
 }
 
+// click presses and releases the primary button at x, y and runs two
+// frames.
 func (g *historyRig) click(x, y float32) {
 	for _, k := range []pointer.Kind{pointer.Press, pointer.Release} {
 		e := pointer.Event{Kind: k, Source: pointer.Mouse, Position: f32.Pt(x, y)}
@@ -52,6 +62,8 @@ func (g *historyRig) click(x, y float32) {
 	g.frame()
 }
 
+// TestHistoryList checks the tooltip, a one-step button click, choosing
+// several steps from the list, and that an empty history stays disabled.
 func TestHistoryList(t *testing.T) {
 	g := &historyRig{th: NewTheme(NewFontLibrary(), ChromeText, ChromeText),
 		labels: []string{"Typing 'c'", "Bold", "Paste", "Typing 'a'"}}

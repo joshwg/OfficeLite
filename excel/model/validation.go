@@ -1,11 +1,11 @@
-package model
-
-import "slices"
-
 // Data validation: rules that restrict what may be typed into cells,
 // stored as Excel stores them, a list of rules each covering a set of
 // ranges (the sqref). The rules are checked by excel/edit; this file
 // keeps them in place as rows, columns and cells move.
+
+package model
+
+import "slices"
 
 // ValidationType is what a rule allows, numbered as BIFF8's valType
 // (OOXML names them none, whole, decimal, list, date, time, textLength
@@ -44,7 +44,7 @@ type ErrorStyle uint8
 const (
 	ErrorStop        ErrorStyle = iota // rejects it (Retry / Cancel)
 	ErrorWarning                       // asks whether to keep it
-	ErrorInformation                   // tells, and keeps it unless cancelled
+	ErrorInformation                   // tells, and keeps it unless canceled
 )
 
 // Validation is one data validation rule.

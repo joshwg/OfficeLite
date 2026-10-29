@@ -94,6 +94,7 @@ func opt(a []f.Value, i int) f.Value {
 	return f.Missing{}
 }
 
+// missing reports whether v is an omitted argument.
 func missing(v f.Value) bool {
 	_, ok := v.(f.Missing)
 	return ok
@@ -121,6 +122,8 @@ func serial(e *f.Env, v f.Value) (float64, f.Value) {
 	return d, nil
 }
 
+// ymd splits serial s into year, month and day in the workbook's date
+// system.
 func ymd(e *f.Env, s float64) (y, m, d int) { return f.SerialToYMD(s, e.Date1904()) }
 
 // daysIn is the length of a month in Excel's calendar (February 1900 has
@@ -167,7 +170,7 @@ func dow(e *f.Env, s float64) int {
 
 // --- DATE, DATEVALUE, DAY/MONTH/YEAR, DAYS ------------------------------
 
-// DATE(year, month, day)
+// dateFn implements DATE(year, month, day).
 func dateFn(e *f.Env, a []f.Value) f.Value {
 	var p [3]int
 	for i := range p {
@@ -190,7 +193,7 @@ func dateFn(e *f.Env, a []f.Value) f.Value {
 	return f.Number(s)
 }
 
-// DATEVALUE(date_text): only text is accepted, and the time is dropped.
+// datevalue implements DATEVALUE(date_text): only text is accepted, and the time is dropped.
 func datevalue(e *f.Env, a []f.Value) f.Value {
 	switch v := a[0].(type) {
 	case f.Error:
@@ -203,6 +206,8 @@ func datevalue(e *f.Env, a []f.Value) f.Value {
 	return f.ErrValue
 }
 
+// field implements DAY, MONTH and YEAR: pick selects the calendar field of
+// v's date.
 func field(e *f.Env, v f.Value, pick func(y, m, d int) int) f.Value {
 	s, err := serial(e, v)
 	if err != nil {
@@ -211,7 +216,7 @@ func field(e *f.Env, v f.Value, pick func(y, m, d int) int) f.Value {
 	return f.Number(pick(ymd(e, s)))
 }
 
-// DAYS(end_date, start_date)
+// days implements DAYS(end_date, start_date).
 func days(e *f.Env, a []f.Value) f.Value {
 	end, err := serial(e, a[0])
 	if err != nil {
@@ -226,7 +231,8 @@ func days(e *f.Env, a []f.Value) f.Value {
 
 // --- DATEDIF ------------------------------------------------------------
 
-// DATEDIF(start_date, end_date, unit)
+// datedif implements DATEDIF(start_date, end_date, unit) for the units Y,
+// M, D, YM, MD and YD.
 func datedif(e *f.Env, a []f.Value) f.Value {
 	start, err := serial(e, a[0])
 	if err != nil {
@@ -280,6 +286,7 @@ func datedif(e *f.Env, a []f.Value) f.Value {
 	return f.ErrNum
 }
 
+// prevMonth returns the year and month before y, m.
 func prevMonth(y, m int) (int, int) {
 	if m == 1 {
 		return y - 1, 12
@@ -289,7 +296,8 @@ func prevMonth(y, m int) (int, int) {
 
 // --- DAYS360 ------------------------------------------------------------
 
-// DAYS360(start_date, end_date, [method])
+// days360 implements DAYS360(start_date, end_date, [method]): US (NASD)
+// by default, European when method is TRUE.
 func days360(e *f.Env, a []f.Value) f.Value {
 	start, err := serial(e, a[0])
 	if err != nil {
@@ -327,7 +335,8 @@ func days360(e *f.Env, a []f.Value) f.Value {
 
 // --- EDATE, EOMONTH -----------------------------------------------------
 
-// EDATE(start_date, months) and EOMONTH(start_date, months)
+// monthShift implements EDATE(start_date, months) and, with eom set,
+// EOMONTH(start_date, months).
 func monthShift(e *f.Env, a []f.Value, eom bool) f.Value {
 	start, err := serial(e, a[0])
 	if err != nil {
@@ -369,7 +378,7 @@ func clock(e *f.Env, v f.Value, pick func(secs int) int) f.Value {
 	return f.Number(pick(secs % 86400))
 }
 
-// TIME(hour, minute, second): values roll over, the result is the
+// timeFn implements TIME(hour, minute, second): values roll over, the result is the
 // fraction of a day (whole days are dropped).
 func timeFn(e *f.Env, a []f.Value) f.Value {
 	var p [3]int
@@ -390,7 +399,7 @@ func timeFn(e *f.Env, a []f.Value) f.Value {
 	return f.Number(float64(total%86400) / 86400)
 }
 
-// TIMEVALUE(time_text): only text is accepted, and any date is dropped.
+// timevalue implements TIMEVALUE(time_text): only text is accepted, and any date is dropped.
 func timevalue(e *f.Env, a []f.Value) f.Value {
 	switch v := a[0].(type) {
 	case f.Error:
@@ -405,7 +414,7 @@ func timevalue(e *f.Env, a []f.Value) f.Value {
 
 // --- weeks --------------------------------------------------------------
 
-// WEEKDAY(serial_number, [return_type])
+// weekday implements WEEKDAY(serial_number, [return_type]).
 func weekday(e *f.Env, a []f.Value) f.Value {
 	s, err := serial(e, a[0])
 	if err != nil {
@@ -431,7 +440,7 @@ func weekday(e *f.Env, a []f.Value) f.Value {
 	return f.ErrNum
 }
 
-// WEEKNUM(serial_number, [return_type]): week 1 contains January 1st and
+// weeknum implements WEEKNUM(serial_number, [return_type]): week 1 contains January 1st and
 // weeks begin on the day given by return_type; 21 is the ISO week.
 func weeknum(e *f.Env, a []f.Value) f.Value {
 	s, err := serial(e, a[0])
@@ -466,7 +475,7 @@ func weeknum(e *f.Env, a []f.Value) f.Value {
 	return f.Number((int(s-jan1)+shift)/7 + 1)
 }
 
-// ISOWEEKNUM(date)
+// isoWeekNum implements ISOWEEKNUM(date).
 func isoWeekNum(e *f.Env, a []f.Value) f.Value {
 	s, err := serial(e, a[0])
 	if err != nil {

@@ -1,3 +1,5 @@
+// write_test.go tests that written compound files read back intact.
+
 package ole
 
 import (
@@ -6,6 +8,8 @@ import (
 	"testing"
 )
 
+// TestWriteRoundTrip checks that mini, regular, empty and DIFAT-sized
+// streams read back as written, and that duplicate names are refused.
 func TestWriteRoundTrip(t *testing.T) {
 	big := bytes.Repeat([]byte("0123456789abcdef"), 600)          // 9600 bytes: regular sectors
 	huge := bytes.Repeat([]byte{0xA5, 0x5A, 0x00, 0x11}, 2200000) // 8.8 MB: needs DIFAT

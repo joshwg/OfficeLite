@@ -1,3 +1,6 @@
+// write.go writes version 3 compound files: streams, mini stream, FAT,
+// DIFAT and the directory tree.
+
 package ole
 
 import (
@@ -191,6 +194,7 @@ func Write(w io.Writer, streams []Stream) error {
 	return err
 }
 
+// pad is how many bytes bring n up to a multiple of size.
 func pad(n, size int) int { return (size - n%size) % size }
 
 // directory builds the directory stream: the root entry, then one entry

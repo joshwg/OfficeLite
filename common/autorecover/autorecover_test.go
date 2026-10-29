@@ -1,3 +1,6 @@
+// autorecover_test.go tests the Saver, the orphan scan, the settings file
+// and recovery after a real child process crashes.
+
 package autorecover
 
 import (
@@ -20,6 +23,8 @@ type fakeDoc struct {
 	writes   int
 }
 
+// snapshot is the document's Snapshot while modified, nil otherwise; its
+// Write writes "rev N" and counts the writes.
 func (d *fakeDoc) snapshot() *Snapshot {
 	if !d.modified {
 		return nil
@@ -33,6 +38,7 @@ func (d *fakeDoc) snapshot() *Snapshot {
 		}}
 }
 
+// files lists the names in dir.
 func files(t *testing.T, dir string) []string {
 	t.Helper()
 	des, _ := os.ReadDir(dir)
@@ -43,6 +49,8 @@ func files(t *testing.T, dir string) []string {
 	return out
 }
 
+// TestBaseName checks that copy names are unique, cleaned, cut to length
+// and default to "Document".
 func TestBaseName(t *testing.T) {
 	a, b := baseName(`Q1: "plan"/v2?.xlsx`), baseName(`Q1: "plan"/v2?.xlsx`)
 	if a == b {
@@ -59,6 +67,8 @@ func TestBaseName(t *testing.T) {
 	}
 }
 
+// TestSaver walks a Saver through edits, an unchanged tick, Remove, an
+// undo to the saved state and Close, and checks a nil Saver does nothing.
 func TestSaver(t *testing.T) {
 	dir := t.TempDir()
 	doc := &fakeDoc{path: filepath.Join("Users", "Josh", "Budget.xls")}
@@ -134,6 +144,8 @@ func TestSaver(t *testing.T) {
 	nilSaver.Close()
 }
 
+// TestSaverTimer checks that Start's timer posts a tick that writes a Word
+// copy.
 func TestSaverTimer(t *testing.T) {
 	dir := t.TempDir()
 	doc := &fakeDoc{path: "", modified: true, rev: 1}
@@ -177,6 +189,8 @@ func deadPID(t *testing.T) int {
 	return cmd.Process.Pid
 }
 
+// writeFake writes a recovery copy and sidecar for e named base in dir and
+// returns e with Copy and Sidecar set.
 func writeFake(t *testing.T, dir, base string, e Entry) Entry {
 	t.Helper()
 	e.Sidecar = filepath.Join(dir, base+".json")
@@ -190,6 +204,8 @@ func writeFake(t *testing.T, dir, base string, e Entry) Entry {
 	return e
 }
 
+// TestOrphans checks which entries Orphans lists and cleans up, and Claim,
+// Release and Discard.
 func TestOrphans(t *testing.T) {
 	dir := t.TempDir()
 	dead := deadPID(t)
@@ -251,8 +267,9 @@ func TestOrphans(t *testing.T) {
 	}
 }
 
-// A reused pid: alive, but started later than the process that wrote the
-// entry (Windows only can tell).
+// TestReusedPID checks that a reused pid, alive but started later than the
+// process that wrote the entry, isn't taken for the writer (only Windows
+// can tell).
 func TestReusedPID(t *testing.T) {
 	if selfStart == 0 {
 		t.Skip("process start times aren't known here")
@@ -262,6 +279,8 @@ func TestReusedPID(t *testing.T) {
 	}
 }
 
+// TestAdopt checks that an adopted copy is no longer an orphan, isn't
+// rewritten unchanged, is replaced in place on a change and goes on Close.
 func TestAdopt(t *testing.T) {
 	dir := t.TempDir()
 	e := writeFake(t, dir, "Budget~0a", Entry{Path: "/home/j/Budget.xls", Name: "Budget.xls", App: Excel, PID: 0})
@@ -291,6 +310,8 @@ func TestAdopt(t *testing.T) {
 	}
 }
 
+// TestSettings checks the default interval, reading it from the settings
+// file, and SetMinutes saving it while keeping other keys.
 func TestSettings(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "OfficeLite", "settings.json")
 	old := SettingsPath

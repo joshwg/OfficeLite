@@ -1,3 +1,6 @@
+// AutoSave for the spreadsheet window: the title bar's switch, saving the
+// workbook into its .xlsx in the background a few seconds after each edit.
+
 package ui
 
 import (

@@ -1,3 +1,6 @@
+// The backstage: the full-window File view with its navigation column,
+// Home / New / Open pages, recent-file list and template tiles.
+
 package gui
 
 import (
@@ -36,6 +39,7 @@ const (
 
 var pageNames = [numPages]string{"Home", "New", "Open", "Info", "Save", "Save As", "Print", "Export", "Close"}
 
+// String returns the page's name as shown in the navigation column.
 func (p Page) String() string { return pageNames[p] }
 
 // Template is a tile in the New section.
@@ -111,6 +115,9 @@ func (b *Backstage) Layout(gtx layout.Context, th *Theme, cfg BackstageConfig, h
 	)
 }
 
+// update handles the clicks since the last frame, switching pages or
+// passing requests to handle, and sizes the tile and recent-file buttons
+// to cfg.
 func (b *Backstage) update(gtx layout.Context, cfg BackstageConfig, handle func(BackstageEvent)) {
 	for b.back.Clicked(gtx) {
 		b.Visible = false
@@ -149,6 +156,9 @@ func (b *Backstage) update(gtx layout.Context, cfg BackstageConfig, handle func(
 	}
 }
 
+// navColumn draws the accent-colored navigation column: the back button,
+// a row per page with the current one highlighted, and the version at the
+// foot.
 func (b *Backstage) navColumn(gtx layout.Context, th *Theme) layout.Dimensions {
 	w := gtx.Dp(180)
 	h := gtx.Constraints.Max.Y
@@ -208,10 +218,13 @@ func (b *Backstage) navColumn(gtx layout.Context, th *Theme) layout.Dimensions {
 	return layout.Dimensions{Size: image.Pt(w, h)}
 }
 
+// pageIcon returns the navigation column's icon for page p.
 func pageIcon(p Page) *Icon {
 	return [numPages]*Icon{IconHome, IconNew, IconOpen, IconInfo, IconSave, IconSave, IconPrint, IconExport, IconClose}[p]
 }
 
+// content lays out the selected page as a scrolling list: Home, New and
+// Open are built here, the other pages come from cfg.Content.
 func (b *Backstage) content(gtx layout.Context, th *Theme, cfg BackstageConfig) layout.Dimensions {
 	var rows []layout.Widget
 	switch b.Page {
@@ -242,6 +255,7 @@ func (b *Backstage) content(gtx layout.Context, th *Theme, cfg BackstageConfig) 
 	})
 }
 
+// greeting returns the Home page's title for the time of day now.
 func greeting(now time.Time) string {
 	switch h := now.Hour(); {
 	case h < 12:
@@ -268,6 +282,8 @@ func (b *Backstage) tileRow(th *Theme, ts []Template) layout.Widget {
 	}
 }
 
+// tile draws one New tile: template t's thumbnail in a border that
+// thickens to the accent on hover, with its name below.
 func (b *Backstage) tile(gtx layout.Context, th *Theme, btn *widget.Clickable, t Template) layout.Dimensions {
 	return Hoverable(gtx, btn, colors.Transparent, colors.Transparent, func(gtx layout.Context) layout.Dimensions {
 		tw, tht := gtx.Dp(150), gtx.Dp(110)
@@ -345,6 +361,8 @@ var (
 	WordAccent  = colors.RGB(0x5E3FBF) // the icon's violet
 )
 
+// kindAccent returns the accent color of the app that opens files of kind
+// k, or the theme's accent for any other kind.
 func kindAccent(k recent.Kind, th *Theme) color.NRGBA {
 	switch k {
 	case recent.Spreadsheet:
@@ -392,7 +410,8 @@ func Thumbnail(gtx layout.Context, kind recent.Kind, accent color.NRGBA) {
 }
 
 // When formats a file time for the recent list: "Today 3:04 PM",
-// "Yesterday 9:15 AM", "Mon 9:15 AM" within a week, else "Jan 2, 2006".
+// "Yesterday 9:15 AM", "Mon 9:15 AM" within a week, "Jan 2" earlier this
+// year, else "Jan 2, 2006". A zero time gives "".
 func When(t, now time.Time) string {
 	if t.IsZero() {
 		return ""

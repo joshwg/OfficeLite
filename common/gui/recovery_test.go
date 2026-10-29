@@ -1,3 +1,6 @@
+// Tests for the recovery window: save names for recovered copies, and
+// opening, discarding and closing entries.
+
 package gui
 
 import (
@@ -15,6 +18,8 @@ import (
 	"officelite/common/autorecover"
 )
 
+// TestRecoverySaveName checks the suggested name and filter order for
+// saving a recovered copy, including formats OfficeLite doesn't write.
 func TestRecoverySaveName(t *testing.T) {
 	dir := filepath.Join("home", "j")
 	for _, c := range []struct {
@@ -48,6 +53,9 @@ func fakeEntry(t *testing.T, dir, base string, e autorecover.Entry) autorecover.
 	return e
 }
 
+// TestRecoveryWindow checks that Open hands an entry over with its copy,
+// Discard deletes one, Close leaves the rest for the next start, and the
+// window closes once its last entry is dealt with.
 func TestRecoveryWindow(t *testing.T) {
 	dir := t.TempDir()
 	a := fakeEntry(t, dir, "Budget~1", autorecover.Entry{Path: "/x/Budget.xls", Name: "Budget.xls", App: autorecover.Excel, Saved: time.Now()})
@@ -96,5 +104,37 @@ func TestRecoveryWindow(t *testing.T) {
 	r.Discard(0)
 	if closed != 2 {
 		t.Error("window not closed when empty")
+	}
+}
+
+// TestRecoveryDiscardAfterShift checks that Discard's confirmation deletes
+// the entry it named even when a Save As finishing meanwhile shifts the
+// list.
+func TestRecoveryDiscardAfterShift(t *testing.T) {
+	dir := t.TempDir()
+	a := fakeEntry(t, dir, "A~1", autorecover.Entry{Name: "A.docx", App: autorecover.Word, Saved: time.Now()})
+	b := fakeEntry(t, dir, "B~2", autorecover.Entry{Name: "B.docx", App: autorecover.Word, Saved: time.Now()})
+	c := fakeEntry(t, dir, "C~3", autorecover.Entry{Name: "C.docx", App: autorecover.Word, Saved: time.Now()})
+	r := NewRecovery(RecoveryConfig{Fonts: NewFontLibrary(), Entries: []autorecover.Entry{a, b, c}})
+	var router input.Router
+	var ops op.Ops
+	frame := func() {
+		ops.Reset()
+		gtx := layout.Context{Ops: &ops, Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1},
+			Constraints: layout.Exact(image.Pt(640, 520)), Source: router.Source()}
+		r.Layout(gtx)
+		router.Frame(gtx.Ops)
+	}
+	frame()
+	r.items[1].discard.Click() // Discard on B asks first
+	frame()
+	r.remove(0) // A's Save As finishes while the dialog is open
+	r.ask.btns[0].Click()
+	frame()
+	if _, err := os.Stat(b.Copy); err == nil {
+		t.Error("B's copy kept")
+	}
+	if _, err := os.Stat(c.Copy); err != nil {
+		t.Error("C's copy deleted in B's place")
 	}
 }

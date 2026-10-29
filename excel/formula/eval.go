@@ -1,3 +1,7 @@
+// eval.go is the formula evaluator: the workbook Context interface, Env,
+// reference handling, function calls with lifting, LET/LAMBDA, and the
+// operators.
+
 package formula
 
 import (
@@ -33,12 +37,15 @@ type Context interface {
 	Rand() float64 // uniform in [0, 1)
 }
 
+// scope is a linked list of LET/LAMBDA variable bindings, innermost first.
 type scope struct {
 	name string // upper-case
 	val  Value
 	next *scope
 }
 
+// lookup returns the innermost binding of the upper-case name, searching
+// outward from s.
 func (s *scope) lookup(name string) (Value, bool) {
 	for ; s != nil; s = s.next {
 		if s.name == name {
@@ -80,6 +87,7 @@ func NewEnv(ctx Context, funcs *Registry, sheet, row, col int) *Env {
 	return &Env{Ctx: ctx, Funcs: funcs, Sheet: sheet, Row: row, Col: col}
 }
 
+// Now, Date1904 and Rand forward to the Context.
 func (e *Env) Now() time.Time { return e.Ctx.Now() }
 func (e *Env) Date1904() bool { return e.Ctx.Date1904() }
 func (e *Env) Rand() float64  { return e.Ctx.Rand() }
@@ -199,6 +207,8 @@ func (e *Env) Eval(n Node) Value {
 	return ErrValue
 }
 
+// sheetIndex resolves a sheet qualifier: "" is the formula's own sheet, an
+// unknown name -1.
 func (e *Env) sheetIndex(name string) int {
 	if name == "" {
 		return e.Sheet
@@ -206,6 +216,8 @@ func (e *Env) sheetIndex(name string) int {
 	return e.Ctx.SheetIndex(name)
 }
 
+// ref evaluates a reference node to a normalized Ref (#REF! for an unknown
+// sheet), with whole columns and rows spanning the model's limits.
 func (e *Env) ref(n refNode) Value {
 	sh := e.sheetIndex(n.sheet)
 	if sh < 0 {
@@ -221,6 +233,7 @@ func (e *Env) ref(n refNode) Value {
 	return normRef(r)
 }
 
+// normRef orders r's corners so R1 <= R2 and C1 <= C2.
 func normRef(r Ref) Ref {
 	if r.R1 > r.R2 {
 		r.R1, r.R2 = r.R2, r.R1
@@ -231,6 +244,8 @@ func normRef(r Ref) Ref {
 	return r
 }
 
+// rangeOp implements the ':' operator: the bounding rectangle of two
+// references on the same sheet.
 func (e *Env) rangeOp(n binaryNode) Value {
 	l, r := e.Eval(n.l), e.Eval(n.r)
 	a, ok1 := l.(Ref)
@@ -255,6 +270,8 @@ func (e *Env) rangeOp(n binaryNode) Value {
 
 var parsedNames sync.Map // formula text -> Node
 
+// name evaluates a name: a LET/LAMBDA variable, else a defined name's
+// formula (parsed once and cached), else a worksheet function as a value.
 func (e *Env) name(n nameNode) Value {
 	if n.sheet == "" {
 		if v, ok := e.scope.lookup(n.name); ok {
@@ -285,6 +302,7 @@ func (e *Env) name(n nameNode) Value {
 	return e.nested(func() Value { return e.Eval(node.(Node)) })
 }
 
+// nested calls f one level deeper, returning #CALC! past maxDepth.
 func (e *Env) nested(f func() Value) Value {
 	if e.depth >= maxDepth {
 		return ErrCalc
@@ -345,6 +363,8 @@ type RangeSizer interface {
 	UsedSizeFor(r Ref) (rows, cols int)
 }
 
+// usedSize is the used area of r's sheet, via RangeSizer when the context
+// implements it.
 func (e *Env) usedSize(r Ref) (rows, cols int) {
 	if rs, ok := e.Ctx.(RangeSizer); ok {
 		return rs.UsedSizeFor(r)
@@ -493,6 +513,9 @@ func (e *Env) Each(v Value, fn func(v Value, direct bool) bool) {
 
 // --- functions ------------------------------------------------------------
 
+// call evaluates a function call: a lambda variable, LET, LAMBDA, or a
+// registered function (#NAME? if unknown, #VALUE! for a wrong argument
+// count).
 func (e *Env) call(n callNode) Value {
 	// A LET/LAMBDA variable holding a lambda: f(1, 2).
 	if v, ok := e.scope.lookup(n.name); ok {
@@ -616,10 +639,12 @@ func (e *Env) lambda(args []Node) Value {
 	return l
 }
 
+// invoke evaluates an immediate call such as LAMBDA(x, x+1)(2).
 func (e *Env) invoke(n invokeNode) Value {
 	return e.invokeValue(e.Eval(n.fn), n.args)
 }
 
+// invokeValue evaluates argNodes and calls the lambda value fn with them.
 func (e *Env) invokeValue(fn Value, argNodes []Node) Value {
 	args := make([]Value, len(argNodes))
 	for i, a := range argNodes {
@@ -663,6 +688,8 @@ func (e *Env) CallLambda(fn Value, args ...Value) Value {
 
 // --- operators ------------------------------------------------------------
 
+// unary applies a prefix +, - or '@', or postfix %, element by element to
+// arrays.
 func (e *Env) unary(n unaryNode) Value {
 	if n.op == "@" {
 		return e.intersect(e.Eval(n.x))
@@ -788,6 +815,9 @@ func snapZero(l, r, v Value) Value {
 	return v
 }
 
+// scalarOp applies a binary operator to two scalars: & concatenates,
+// comparisons give a Bool, and arithmetic propagates errors and gives #NUM!
+// for non-finite results.
 func scalarOp(op string, l, r Value) Value {
 	switch op {
 	case "&":

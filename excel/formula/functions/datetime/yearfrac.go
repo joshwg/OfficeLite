@@ -1,3 +1,5 @@
+// YEARFRAC and its day-count bases.
+
 package datetime
 
 import (
@@ -7,7 +9,7 @@ import (
 // date is a calendar date in Excel's calendar.
 type date struct{ y, m, d int }
 
-// YEARFRAC(start_date, end_date, [basis]): the fraction of a year between
+// yearfrac implements YEARFRAC(start_date, end_date, [basis]): the fraction of a year between
 // two dates under a day-count basis (0 US 30/360, 1 actual/actual,
 // 2 actual/360, 3 actual/365, 4 European 30/360). The dates are swapped
 // when start_date is later.
@@ -48,14 +50,16 @@ func yearfrac(e *f.Env, a []f.Value) f.Value {
 	return f.Number(float64((t.y-s.y)*360+(t.m-s.m)*30+min(t.d, 30)-min(s.d, 30)) / 360)
 }
 
+// lastOfMonth reports whether x is the last day of its month.
 func (x date) lastOfMonth(e *f.Env) bool { return x.d == daysIn(e, x.y, x.m) }
 
+// leap reports whether February of year y has 29 days in Excel's calendar.
 func leap(e *f.Env, y int) bool { return daysIn(e, y, 2) == 29 }
 
 // us30360 is YEARFRAC's basis 0, which adjusts month ends slightly
 // differently from DAYS360's US method (an end on the 31st stays the 31st
-// when the start is before the 30th; February month ends count as the
-// 30th).
+// when the start is before the 30th; a start on February's last day counts
+// as the 30th, and so does an end on February's last day after one).
 func us30360(e *f.Env, s, t date) float64 {
 	sd, td := s.d, t.d
 	switch {

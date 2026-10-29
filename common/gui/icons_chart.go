@@ -1,3 +1,6 @@
+// Chart command icons, drawn as vector line and fill paths on a 24-unit
+// grid.
+
 package gui
 
 import (

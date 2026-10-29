@@ -1,3 +1,5 @@
+// Tests for DigitWidth.
+
 package render
 
 import (
@@ -7,8 +9,8 @@ import (
 	"officelite/excel/model"
 )
 
-// Excel's digit widths for common default fonts. Fonts that are not
-// installed are skipped (the fallback face would give a different width).
+// TestDigitWidth checks Excel's digit widths for common default fonts. Fonts
+// that are not installed are skipped (the fallback face would give a different width).
 func TestDigitWidth(t *testing.T) {
 	lib := gui.NewFontLibrary(append([]string{"../../Fonts"}, gui.DefaultFontDirs()...)...)
 	for _, c := range []struct {

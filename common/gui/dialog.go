@@ -1,3 +1,6 @@
+// Modal dialogs: the Dialog message box, the Modal layer and panel, and
+// the dialog buttons.
+
 package gui
 
 import (

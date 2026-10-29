@@ -1,3 +1,6 @@
+// recent_test.go tests the recent-files list: ordering, persistence, the
+// size limit and sharing one file between processes.
+
 package recent
 
 import (
@@ -7,6 +10,9 @@ import (
 	"testing"
 )
 
+// TestList checks that Add moves a file to the top without duplicates, the
+// list reloads from its file, Remove drops a file, and the list stays
+// within Max.
 func TestList(t *testing.T) {
 	store := filepath.Join(t.TempDir(), "sub", "recent.json")
 	l := Open(store)

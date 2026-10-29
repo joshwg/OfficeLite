@@ -1,3 +1,5 @@
+// PivotTable command icons.
+
 package gui
 
 import "golang.org/x/exp/shiny/materialdesign/icons"

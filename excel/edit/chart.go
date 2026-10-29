@@ -1,3 +1,6 @@
+// chart.go holds chart deletion (an undoable sheet change) and keeping
+// chart references in step with structural edits (see rewriteFormulas).
+
 package edit
 
 import (
@@ -6,9 +9,6 @@ import (
 	"officelite/excel/calc"
 	"officelite/excel/model"
 )
-
-// Charts: deleting one (an undoable sheet change), and keeping their
-// references in step with structural edits (see rewriteFormulas).
 
 // DeleteChart removes chart idx of sheet. A chart sheet's chart can't
 // be deleted (delete the sheet).
@@ -31,10 +31,12 @@ type sheetCharts struct {
 	sheet  *model.Chart
 }
 
+// chartsOf copies sh's charts and chart-sheet chart.
 func chartsOf(sh *model.Sheet) sheetCharts {
 	return sheetCharts{model.CloneCharts(sh.Charts), sh.ChartSheet.Clone()}
 }
 
+// restore puts copies of the saved charts back on sh.
 func (c sheetCharts) restore(sh *model.Sheet) {
 	sh.Charts = model.CloneCharts(c.charts)
 	sh.ChartSheet = c.sheet.Clone()

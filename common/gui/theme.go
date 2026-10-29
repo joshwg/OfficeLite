@@ -1,3 +1,6 @@
+// Theme: the shared chrome colors, the accent-colored theme, and the
+// labels, buttons and rows built on it.
+
 package gui
 
 import (

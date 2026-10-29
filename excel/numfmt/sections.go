@@ -1,3 +1,5 @@
+// Splitting a format code into its ;-separated sections.
+
 package numfmt
 
 // SplitSections splits a format code at the semicolons between its

@@ -1,3 +1,5 @@
+// recover_test.go tests AutoRecover copies and opening a recovered workbook.
+
 package ui
 
 import (

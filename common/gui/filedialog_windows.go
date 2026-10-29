@@ -1,3 +1,6 @@
+// The Windows FileDialog, on comdlg32's GetOpenFileNameW and
+// GetSaveFileNameW.
+
 package gui
 
 import (
@@ -52,6 +55,8 @@ const (
 	ofnForceShowHidden = 0x10000000
 )
 
+// listen records the window's HWND from its Win32ViewEvent as the
+// dialogs' owner.
 func (d *FileDialog) listen(e event.Event) {
 	if v, ok := e.(app.Win32ViewEvent); ok {
 		d.owner.Store(v.HWND)
@@ -76,6 +81,8 @@ func filterSpec(filters []FileFilter) *uint16 {
 	return &utf16.Encode(spec)[0]
 }
 
+// open runs GetOpenFileNameW for an existing file, showing hidden files,
+// and returns its path or ErrCancelled.
 func (d *FileDialog) open(filters []FileFilter) (string, error) {
 	filter := filterSpec(filters)
 	path := make([]uint16, 32768)
@@ -94,6 +101,8 @@ func (d *FileDialog) open(filters []FileFilter) (string, error) {
 	return syscall.UTF16ToString(path), nil
 }
 
+// save runs GetSaveFileNameW starting at name, with the first filter's
+// first extension as the default, and returns the path or ErrCancelled.
 func (d *FileDialog) save(name string, filters []FileFilter) (string, error) {
 	filter := filterSpec(filters)
 	path := make([]uint16, 32768)

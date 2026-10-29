@@ -1,10 +1,3 @@
-package model
-
-import (
-	"maps"
-	"slices"
-)
-
 // The outline (Data > Group): every row and column has an outline level,
 // 0 to MaxOutlineLevel. A run of rows whose level is at least L is a
 // group of level L; its summary row is the row right below it (or above,
@@ -13,6 +6,13 @@ import (
 // the size they had is kept in RowShowSize (ColShowSize) to give back
 // when they are shown again. Columns work the same way, with the summary
 // column at the right (or left, with SummaryLeft).
+
+package model
+
+import (
+	"maps"
+	"slices"
+)
 
 // MaxOutlineLevel is the deepest outline level (Excel's 8 levels of
 // buttons: 1 for the top, 7 of grouping).
@@ -57,6 +57,8 @@ func (o Outline) Clone() Outline {
 	return o
 }
 
+// outlineMaps returns pointers to the level, collapsed and show-size maps
+// of the rows (rows) or columns, so callers can create them on demand.
 func (s *Sheet) outlineMaps(rows bool) (lv *map[int]uint8, coll *map[int]bool, show *map[int]float32) {
 	o := &s.Outline
 	if rows {

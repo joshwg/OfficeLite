@@ -1,3 +1,5 @@
+// Drawing and hit-testing the row and column outline gutters.
+
 package render
 
 import (
@@ -60,6 +62,8 @@ func (v *View) lane(i int) int {
 	return v.px(float64(outlinePad)/2 + float64(outlineLane*i) + float64(outlineLane)/2)
 }
 
+// drawOutline paints the outline gutters and their buttons, recording the
+// buttons for hit-testing.
 func (v *View) drawOutline(gtx layout.Context) {
 	v.outlineBtns = v.outlineBtns[:0]
 	ops := gtx.Ops

@@ -1,3 +1,6 @@
+// The AutoFilter's drop-down buttons at the right edge of its header
+// cells, and the blue row numbers of a filtered range.
+
 package render
 
 import (
@@ -12,9 +15,6 @@ import (
 	"officelite/common/colors"
 	"officelite/common/gui"
 )
-
-// The AutoFilter's drop-down buttons at the right edge of its header
-// cells, and the blue row numbers of a filtered range.
 
 var (
 	filterBtnBG     = colors.RGB(0xFFFFFF)

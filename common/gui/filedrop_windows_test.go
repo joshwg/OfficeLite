@@ -1,3 +1,5 @@
+// Windows tests for FileDrop: HDROP parsing and subclassing a real window.
+
 package gui
 
 import (

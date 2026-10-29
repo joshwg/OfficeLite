@@ -1,3 +1,6 @@
+// Numbers tables: decoding TST.TableModelArchive cell storage, headers,
+// merges and banding.
+
 package iwork
 
 import (
@@ -190,6 +193,9 @@ func (d *Document) TableModel(id uint64) (*Table, error) {
 	return t, nil
 }
 
+// readTable decodes the TST.TableModelArchive id: its dimensions, area
+// styles, row and column headers, cells (from the tiles' version-5 storage),
+// merges and warnings for what isn't read.
 func (d *Document) readTable(id uint64) (*Table, error) {
 	m := d.Msg(id)
 	t := &Table{

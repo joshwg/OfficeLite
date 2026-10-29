@@ -1,3 +1,7 @@
+// PivotTable reports: their definition (fields, areas, value fields,
+// layout options), where the last update put the report, and lookups and
+// row/column shifting on a sheet.
+
 package model
 
 import "slices"

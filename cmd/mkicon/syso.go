@@ -1,3 +1,6 @@
+// The .syso resource object: a COFF file whose .rsrc section holds the
+// icon for the Go linker to embed.
+
 package main
 
 import (

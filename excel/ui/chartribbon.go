@@ -1,3 +1,9 @@
+// Making and changing charts from the menus and ribbons: the Insert
+// menu's chart entries and the Charts group of the Data ribbon (ExcelLite
+// has no Insert tab), the contextual Chart Design and Format tabs that
+// show while a chart is selected (or a chart sheet is active), and the
+// chart's right-click menu.
+
 package ui
 
 import (
@@ -13,12 +19,6 @@ import (
 	"officelite/excel/model"
 	"officelite/excel/render"
 )
-
-// Making and changing charts from the menus and ribbons: the Insert
-// menu's chart entries and the Charts group of the Data ribbon (ExcelLite
-// has no Insert tab), the contextual Chart Design and Format tabs that
-// show while a chart is selected (or a chart sheet is active), and the
-// chart's right-click menu.
 
 // The contextual chart tabs (pivot.go numbers the PivotTable ones).
 const (
@@ -90,6 +90,7 @@ func kindIcon(k edit.ChartKind) *gui.Icon {
 	return gui.IconChartColumn
 }
 
+// setTips sets the tooltips of the Charts group's buttons.
 func (g *chartsGroup) setTips() {
 	tip := gui.SetTip
 	tip(&g.colDD, "Insert Column Chart", "Alt+F1", "Use this chart type to visually compare values across a few categories.")
@@ -102,7 +103,7 @@ func (g *chartsGroup) setTips() {
 	tip(&g.all, "All Charts", "", "Pick from all the chart types in the Insert Chart dialog. F11 puts the default chart on a sheet of its own.")
 }
 
-// chartsGroup is the Charts group of the Data ribbon.
+// chartsRibbonGroup is the Charts group of the Data ribbon.
 func (a *App) chartsRibbonGroup(gtx layout.Context, k *gui.RibbonKit) gui.RibbonGroup {
 	g := &a.ch.charts
 	if !g.tipsSet {
@@ -220,7 +221,7 @@ func (a *App) addElement(i int) {
 	})
 }
 
-// paletteItems are Change Colors' choices, each with its first colour.
+// paletteItems are Change Colors' choices, each with its first color.
 func (a *App) paletteItems() []gui.DropItem {
 	items := []gui.DropItem{{Label: "Colorful", Header: true}}
 	for i, p := range edit.Palettes {
@@ -245,6 +246,7 @@ func (a *App) paletteChosen(i int) {
 	})
 }
 
+// setTips sets the tooltips of the Chart Design ribbon's buttons.
 func (r *chartDesignRibbon) setTips() {
 	tip := gui.SetTip
 	tip(&r.elemDD, "Add Chart\nElement", "", "Add elements to the chart: axes, titles, data labels, gridlines and a legend.")
@@ -334,6 +336,7 @@ func (a *App) chartElems(c *model.Chart) []render.ChartElem {
 	return out
 }
 
+// setTips sets the tooltips of the Format ribbon's buttons.
 func (r *chartFormatRibbon) setTips() {
 	tip := gui.SetTip
 	tip(&r.elemDD, "Chart Elements", "", "Select a part of the chart to format.")
@@ -411,7 +414,7 @@ func (a *App) layoutChartFormat(gtx layout.Context, c *model.Chart) layout.Dimen
 	return dims
 }
 
-// choicePaint is a picked colour as a chart's paint.
+// choicePaint is a picked color as a chart's paint.
 func choicePaint(ch gui.ColorChoice) model.Paint {
 	if ch.None {
 		return model.Paint{Kind: model.FillNone}
@@ -465,14 +468,14 @@ func (a *App) colorElem(e render.ChartElem, fill bool, ch gui.ColorChoice, reset
 			case reset:
 				s.Shape, s.Points, s.Marker.Shape = model.ShapeProps{}, nil, model.ShapeProps{}
 			case line:
-				// A line's colour is its outline; its markers follow.
+				// A line's color is its outline; its markers follow.
 				s.Shape.Line, s.Shape.Fill = p, p
 				s.Marker.Shape.Fill, s.Marker.Shape.Line = p, p
 			case fill:
 				s.Shape.Fill = p
 				s.Points = nil
 				if pl.Type == model.ChartPie || pl.Type == model.ChartDoughnut {
-					pl.VaryColors = false // one colour for the slices
+					pl.VaryColors = false // one color for the slices
 				}
 			default:
 				s.Shape.Line = p

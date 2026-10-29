@@ -1,3 +1,6 @@
+// Document Recovery: the window listing copies a crashed OfficeLite left,
+// and saving one of them under a new name.
+
 package main
 
 import (

@@ -73,6 +73,8 @@ type embedded struct {
 	obj  int // Type0 font object number, at write time
 }
 
+// embed returns the document's embedded entry for fc, adding one (named
+// F1, F2, …) on first use.
 func (d *Document) embed(fc *face) *embedded {
 	if e, ok := d.byFace[fc]; ok {
 		return e
@@ -128,17 +130,20 @@ func num(v float64) string {
 	return s
 }
 
-func (p *Page) printf(format string, args ...any) { fmt.Fprintf(&p.buf, format, args...) }
-
+// op appends one line of operands and operators, space-separated, to the
+// content stream.
 func (p *Page) op(parts ...string) {
 	p.buf.WriteString(strings.Join(parts, " "))
 	p.buf.WriteByte('\n')
 }
 
+// colorOps is c's red, green and blue as PDF operands in 0–1.
 func colorOps(c color.NRGBA) (string, string, string) {
 	return num(float64(c.R) / 255), num(float64(c.G) / 255), num(float64(c.B) / 255)
 }
 
+// setAlpha sets the fill or stroke alpha to a through an ExtGState
+// (GcaN / GCAN), when it changes.
 func (p *Page) setAlpha(fill bool, a uint8) {
 	cur := &p.st.sa
 	key := "CA"
@@ -154,6 +159,7 @@ func (p *Page) setAlpha(fill bool, a uint8) {
 	*cur = a
 }
 
+// setFill sets the fill color and alpha, emitting only what changes.
 func (p *Page) setFill(c color.NRGBA) {
 	p.setAlpha(true, c.A)
 	c.A = 255
@@ -164,6 +170,7 @@ func (p *Page) setFill(c color.NRGBA) {
 	}
 }
 
+// setStroke sets the stroke color and alpha, emitting only what changes.
 func (p *Page) setStroke(c color.NRGBA) {
 	p.setAlpha(false, c.A)
 	c.A = 255
@@ -174,6 +181,8 @@ func (p *Page) setStroke(c color.NRGBA) {
 	}
 }
 
+// setLine sets the line width and dash pattern (solid when dash is
+// empty), emitting only what changes.
 func (p *Page) setLine(w float64, dash []float64) {
 	if w != p.st.lw {
 		p.op(num(w), "w")
@@ -196,6 +205,7 @@ func (p *Page) setLine(w float64, dash []float64) {
 // y converts a top-down y to PDF space.
 func (p *Page) y(v float64) float64 { return p.H - v }
 
+// rect is the "re" path operator for a top-down rectangle.
 func (p *Page) rect(x, y, w, h float64) string {
 	return num(x) + " " + num(p.y(y+h)) + " " + num(w) + " " + num(h) + " re"
 }
@@ -233,6 +243,7 @@ func (p *Page) Line(x0, y0, x1, y1, lw float64, c color.NRGBA, dash ...float64) 
 // Point is a point in top-down page coordinates.
 type Point struct{ X, Y float64 }
 
+// path is the move/line operators for the open path through pts.
 func (p *Page) path(pts []Point) string {
 	var b strings.Builder
 	for i, q := range pts {
@@ -408,7 +419,7 @@ func (p *Page) DrawText(r Run) float64 {
 	return x - r.X
 }
 
-// Write writes the document.
+// Write writes the document to w as a complete PDF file.
 func (d *Document) Write(w io.Writer) error {
 	ow := &objWriter{w: w, compress: !d.NoCompress}
 	ow.raw("%PDF-1.7\n%\xE2\xE3\xCF\xD3\n")
@@ -495,6 +506,7 @@ func (d *Document) Write(w io.Writer) error {
 	return ow.finish(catalog, info)
 }
 
+// ref is an indirect reference to object n.
 func ref(n int) string { return strconv.Itoa(n) + " 0 R" }
 
 // textString encodes a PDF text string: literal for ASCII, UTF-16BE hex
@@ -520,6 +532,7 @@ func textString(s string) string {
 	return b.String()
 }
 
+// pdfDate formats t as a PDF date string with its UTC offset.
 func pdfDate(t time.Time) string {
 	_, off := t.Zone()
 	sign := "+"
@@ -539,8 +552,11 @@ type objWriter struct {
 	hash     []byte
 }
 
+// raw writes s as is.
 func (o *objWriter) raw(s string) { o.bytes([]byte(s)) }
 
+// bytes writes b, counting the offset, keeping the first error and the
+// first 4 KB of output for the file ID.
 func (o *objWriter) bytes(b []byte) {
 	if o.err != nil {
 		return
@@ -553,16 +569,19 @@ func (o *objWriter) bytes(b []byte) {
 	}
 }
 
+// alloc reserves the next object number.
 func (o *objWriter) alloc() int {
 	o.offsets = append(o.offsets, -1)
 	return len(o.offsets)
 }
 
+// begin records object n's offset and writes its header.
 func (o *objWriter) begin(n int) {
 	o.offsets[n-1] = o.n
 	o.raw(strconv.Itoa(n) + " 0 obj\n")
 }
 
+// object writes object n with body.
 func (o *objWriter) object(n int, body string) {
 	o.begin(n)
 	o.raw(body + "\nendobj\n")
@@ -585,6 +604,8 @@ func (o *objWriter) stream(n int, dict string, data []byte, compress bool) {
 	o.raw("\nendstream\nendobj\n")
 }
 
+// finish writes the cross-reference table and trailer (unwritten objects
+// marked free) and returns the first write error.
 func (o *objWriter) finish(catalog, info int) error {
 	xref := o.n
 	var b strings.Builder

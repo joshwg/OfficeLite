@@ -1,3 +1,5 @@
+// The Theme's labeled check box row.
+
 package gui
 
 import (

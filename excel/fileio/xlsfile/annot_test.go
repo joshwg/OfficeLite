@@ -1,3 +1,5 @@
+// Tests for reading and writing .xls notes and hyperlinks.
+
 package xlsfile
 
 import (
@@ -7,6 +9,8 @@ import (
 	"officelite/excel/model"
 )
 
+// TestHyperlinksRoundTrip checks that URL, mailto, file and in-workbook
+// links (with tooltips) and notes survive a .xls write and read.
 func TestHyperlinksRoundTrip(t *testing.T) {
 	sh := model.NewSheet("Sheet1")
 	links := map[[2]int]model.Hyperlink{
@@ -54,8 +58,8 @@ func TestHyperlinksRoundTrip(t *testing.T) {
 	}
 }
 
-// Control characters in a note's text, and an empty author, survive a
-// .xls round trip.
+// TestNoteControlCharsRoundTrip checks that control characters in a
+// note's text, and an empty author, survive a .xls round trip.
 func TestNoteControlCharsRoundTrip(t *testing.T) {
 	sh := model.NewSheet("Sheet1")
 	want := model.Note{Text: "a\x01b\tc\x1fd\ne\rf"}

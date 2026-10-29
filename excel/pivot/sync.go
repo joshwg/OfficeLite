@@ -1,3 +1,5 @@
+// Keeping a report's fields and areas consistent with its source's columns.
+
 package pivot
 
 import (

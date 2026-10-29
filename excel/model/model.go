@@ -78,7 +78,7 @@ type Cell struct {
 	Style   uint32 // index into Workbook.Styles
 	Kind    Kind
 	// Dynamic marks a dynamic-array formula: its array result spills into
-	// the neighbouring cells instead of being reduced to one value.
+	// the neighboring cells instead of being reduced to one value.
 	Dynamic bool
 }
 
@@ -175,6 +175,7 @@ type Range struct {
 	R1, C1, R2, C2 int
 }
 
+// Contains reports whether row, col lies inside r.
 func (r Range) Contains(row, col int) bool {
 	return row >= r.R1 && row <= r.R2 && col >= r.C1 && col <= r.C2
 }
@@ -233,6 +234,8 @@ type Sheet struct {
 	ChartSheet *Chart
 }
 
+// NewSheet returns an empty sheet named name with Excel's default sizes
+// and grid lines shown.
 func NewSheet(name string) *Sheet {
 	return &Sheet{
 		Name:             name,
@@ -293,9 +296,11 @@ func (s *Sheet) RowLen(r int) int {
 	return len(s.rows[r])
 }
 
-// UsedRows and UsedCols give the extent of stored cells.
+// UsedRows is the number of stored rows; rows past it are empty.
 func (s *Sheet) UsedRows() int { return len(s.rows) }
 
+// UsedCols is the length of the longest stored row; columns past it are
+// empty.
 func (s *Sheet) UsedCols() int {
 	n := 0
 	for _, r := range s.rows {
@@ -351,7 +356,7 @@ type Workbook struct {
 	Warnings []string
 	Date1904 bool // dates count from 1904-01-01 (old Mac workbooks)
 	Names    []DefinedName
-	// Theme is the workbook's theme (charts use its colours and fonts);
+	// Theme is the workbook's theme (charts use its colors and fonts);
 	// nil for Office's default.
 	Theme *Theme
 }

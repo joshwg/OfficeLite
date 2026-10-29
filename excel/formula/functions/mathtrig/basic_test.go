@@ -1,3 +1,6 @@
+// Tests for the basic math and trig functions, plus the shared test
+// helpers (registry, near, between, arrayOf).
+
 package mathtrig
 
 import (
@@ -10,12 +13,14 @@ import (
 	"officelite/excel/formula/functions/internal/ftest"
 )
 
+// registry returns a fresh registry holding this package's functions.
 func registry() *f.Registry {
 	r := f.NewRegistry()
 	Register(r)
 	return r
 }
 
+// near matches a number within 1e-6 of v.
 func near(v float64) ftest.Approx { return ftest.Approx{V: v, Tol: 1e-6} }
 
 // between checks a number in [lo, hi], optionally an integer.
@@ -46,6 +51,8 @@ func arrayOf(rows, cols int, el func(f.Value) error) func(f.Value) error {
 	}
 }
 
+// TestBasic checks the basic math functions against Excel's documented
+// results and domain errors.
 func TestBasic(t *testing.T) {
 	ftest.Run(t, registry(), func(ctx *f.TestContext) {
 		ctx.SetRange("A1", [][]any{{24, 36, 12}, {nil, "x", true}})
@@ -211,6 +218,8 @@ func TestBasic(t *testing.T) {
 	})
 }
 
+// TestTrig checks the trigonometric and hyperbolic functions and their
+// domain errors.
 func TestTrig(t *testing.T) {
 	ftest.Run(t, registry(), nil, []ftest.Case{
 		{"=SIN(PI())", near(0)},
@@ -268,6 +277,8 @@ func TestTrig(t *testing.T) {
 	})
 }
 
+// TestRegistered checks that Register adds the expected names and marks
+// the random functions volatile.
 func TestRegistered(t *testing.T) {
 	r := registry()
 	for _, name := range strings.Fields(`ABS ACOS ACOSH ACOT ACOTH AGGREGATE ARABIC ASIN ASINH ATAN ATAN2

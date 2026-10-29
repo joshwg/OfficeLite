@@ -1,3 +1,5 @@
+// The go:generate directive that redraws the program icon.
+
 package main
 
 // The icon (officelite.png, officelite.ico) and the Windows resource that

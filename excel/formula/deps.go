@@ -1,3 +1,6 @@
+// deps.go extracts a parsed formula's static dependencies (references,
+// names and functions) for recalculation ordering.
+
 package formula
 
 import "officelite/excel/model"
@@ -29,6 +32,8 @@ func Dependencies(n Node) Deps {
 	return d
 }
 
+// walk adds the dependencies of n and its children to d, setting Dynamic for
+// ranges built from non-reference operands.
 func (d *Deps) walk(n Node) {
 	switch n := n.(type) {
 	case refNode:
@@ -77,6 +82,8 @@ func (d *Deps) walk(n Node) {
 	}
 }
 
+// depRef converts a reference node to a normalized DepRef, expanding whole
+// columns and rows to the model's sheet limits.
 func depRef(n refNode) DepRef {
 	r := DepRef{Sheet: n.sheet, R1: n.r1, C1: n.c1, R2: n.r2, C2: n.c2}
 	if n.wholeCols {

@@ -1,3 +1,7 @@
+// The drop-down buttons of PivotTable reports: on the Row Labels and
+// Column Labels (or field name) cells and the report filters' values.
+// They look like the AutoFilter's.
+
 package render
 
 import (
@@ -5,10 +9,6 @@ import (
 
 	"gioui.org/op"
 )
-
-// The drop-down buttons of PivotTable reports: on the Row Labels and
-// Column Labels (or field name) cells and the report filters' values.
-// They look like the AutoFilter's.
 
 // drawPivotButtons draws the report buttons in pane p.
 func (v *View) drawPivotButtons(ops *op.Ops, p *pane) {

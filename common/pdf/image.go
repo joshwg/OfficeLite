@@ -1,3 +1,6 @@
+// Images: adding decoded images and JPEGs to a document, drawing them on
+// pages and writing their XObjects.
+
 package pdf
 
 import (
@@ -5,7 +8,7 @@ import (
 	"fmt"
 	"image"
 	"image/jpeg"
-	_ "image/png" // DrawImageData decodes PNGs
+	_ "image/png" // AddImageData decodes PNGs
 	"slices"
 	"strconv"
 )
@@ -23,6 +26,8 @@ type imageObj struct {
 	alpha      []byte // soft mask samples (Flate), nil when opaque
 }
 
+// useImage adds im to the page's resources and draws it into the
+// top-down rectangle.
 func (p *Page) useImage(im *imageObj, x, y, w, h float64) {
 	if !slices.Contains(p.imgs, im) {
 		p.imgs = append(p.imgs, im)
@@ -33,6 +38,7 @@ func (p *Page) useImage(im *imageObj, x, y, w, h float64) {
 	p.Restore()
 }
 
+// addImage names im (Im1, Im2, …) and adds it to the document.
 func (d *Document) addImage(im *imageObj) *imageObj {
 	im.name = "Im" + strconv.Itoa(len(d.images)+1)
 	d.images = append(d.images, im)
@@ -137,6 +143,7 @@ func jpegComponents(b []byte) int {
 	return 3
 }
 
+// image writes an image XObject, and its soft mask first when it has one.
 func (o *objWriter) image(im *imageObj) {
 	mask := ""
 	if im.alpha != nil {

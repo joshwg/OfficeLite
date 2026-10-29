@@ -193,3 +193,43 @@ func TestCantSplitRow(t *testing.T) {
 		t.Errorf("after saving: %v %v", back.Rows[0].CantSplit, back.Rows[1].CantSplit)
 	}
 }
+
+// Character shading (w:rPr/w:shd) is kept apart from highlighting, and
+// paragraph and cell shading round-trip, as Home > Shading sets them.
+func TestShadingRoundTrip(t *testing.T) {
+	body := `<w:p><w:r><w:rPr><w:highlight w:val="yellow"/><w:shd w:val="clear" w:color="auto" w:fill="FFC000"/></w:rPr><w:t>both</w:t></w:r></w:p>`
+	doc, err := Read(docxWithBody(t, body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := paras(doc)[0].Runs[0].Props; r.Highlight != "yellow" || r.Shading != "FFC000" {
+		t.Fatalf("read highlight %q shading %q", r.Highlight, r.Shading)
+	}
+	shadedRun := &model.Paragraph{Runs: []model.Run{{Text: "plain "}, {Text: "shaded", Props: model.RunProps{Shading: "DEEAF6"}}}}
+	shadedPara := &model.Paragraph{Props: model.ParaProps{Shading: "E2EFDA"}, Runs: []model.Run{{Text: "para"}}}
+	tbl := &model.Table{Columns: []float64{100}, Rows: []*model.TableRow{{Cells: []*model.TableCell{
+		{Shading: "92D050", Blocks: []model.Block{&model.Paragraph{Runs: []model.Run{{Text: "cell"}}}}},
+	}}}}
+	doc.Body = append(doc.Body, shadedRun, shadedPara, tbl, &model.Paragraph{})
+	data := write(t, doc)
+	if xml := string(zipPart(t, data, "word/document.xml")); !strings.Contains(xml, `<w:highlight w:val="yellow"/>`) || !strings.Contains(xml, `w:fill="FFC000"`) {
+		t.Errorf("highlight and shading not both written")
+	}
+	doc2, err := Read(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ps := paras(doc2)
+	if r := ps[0].Runs[0].Props; r.Highlight != "yellow" || r.Shading != "FFC000" {
+		t.Errorf("after re-save: highlight %q shading %q", r.Highlight, r.Shading)
+	}
+	if r := ps[1].Runs; len(r) != 2 || r[0].Props.Shading != "" || r[1].Props.Shading != "DEEAF6" {
+		t.Errorf("run shading after re-save: %+v", r)
+	}
+	if ps[2].Props.Shading != "E2EFDA" {
+		t.Errorf("paragraph shading after re-save: %q", ps[2].Props.Shading)
+	}
+	if c := doc2.Body[3].(*model.Table).Rows[0].Cells[0]; c.Shading != "92D050" {
+		t.Errorf("cell shading after re-save: %q", c.Shading)
+	}
+}

@@ -1,3 +1,5 @@
+// AutoFit measurements: the column width and row height a sheet's text needs.
+
 package render
 
 import (

@@ -1,12 +1,12 @@
+// fileformat.go serves the file writers: the formula tokens with their
+// source positions, and the prefixes Excel requires in files for functions
+// added after Excel 2007.
+
 package formula
 
 import (
 	"strings"
 )
-
-// This file serves the file writers: the formula tokens with their source
-// positions, and the prefixes Excel requires in files for functions added
-// after Excel 2007.
 
 // TokenKind classifies a Token.
 type TokenKind int

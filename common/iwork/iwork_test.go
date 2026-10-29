@@ -1,3 +1,6 @@
+// Tests for the iWork decoders: Snappy, .iwa chunks, protobuf, cells, formats,
+// fonts, opening packages and robustness against damaged input.
+
 package iwork
 
 import (
@@ -13,6 +16,8 @@ import (
 	"time"
 )
 
+// TestSnappyDecode checks literals and the three copy forms, and that
+// corrupt blocks are rejected.
 func TestSnappyDecode(t *testing.T) {
 	long := bytes.Repeat([]byte("z"), 70)
 	tests := []struct {
@@ -49,6 +54,8 @@ func TestSnappyDecode(t *testing.T) {
 	}
 }
 
+// TestDecodeIWAChunks checks that decodeIWA joins chunks and rejects bad
+// headers and truncated chunks.
 func TestDecodeIWAChunks(t *testing.T) {
 	chunk := func(b []byte) []byte {
 		return append([]byte{0, byte(len(b)), byte(len(b) >> 8), byte(len(b) >> 16)}, b...)
@@ -66,6 +73,8 @@ func TestDecodeIWAChunks(t *testing.T) {
 	}
 }
 
+// TestDecodeProtobuf checks Decode and the Message accessors over every wire
+// type, repeated and packed fields, last-wins scalars and truncated input.
 func TestDecodeProtobuf(t *testing.T) {
 	var b []byte
 	b = append(b, 0x08, 0x96, 0x01)       // 1: 150
@@ -114,6 +123,8 @@ func TestDecodeProtobuf(t *testing.T) {
 	}
 }
 
+// TestDecimal128 checks decimal128 with positive, negative and zero
+// exponents and a negative sign.
 func TestDecimal128(t *testing.T) {
 	enc := func(mant uint64, exp int, neg bool) []byte {
 		b := make([]byte, 16)
@@ -138,6 +149,8 @@ func TestDecimal128(t *testing.T) {
 	}
 }
 
+// TestDecodeCell checks decodeCell on number and date storage and its
+// rejection of storage versions other than 5.
 func TestDecodeCell(t *testing.T) {
 	// Version 5, a number with a decimal value, a cell style and a
 	// number format.
@@ -165,6 +178,8 @@ func TestDecodeCell(t *testing.T) {
 	}
 }
 
+// TestExcelDateFormat checks the conversion of ICU date patterns to Excel
+// codes, and FormatDateTime's rendering of them.
 func TestExcelDateFormat(t *testing.T) {
 	for in, want := range map[string]string{
 		"M/d/yy":             "m/d/yy",
@@ -193,6 +208,8 @@ func TestExcelDateFormat(t *testing.T) {
 	}
 }
 
+// TestFormatNumber checks fixed and automatic decimals, thousands
+// separators and the negative styles.
 func TestFormatNumber(t *testing.T) {
 	for _, tt := range []struct {
 		v         float64
@@ -214,6 +231,8 @@ func TestFormatNumber(t *testing.T) {
 	}
 }
 
+// TestFontFamily checks family names and bold/italic for mapped, CamelCase
+// and plain PostScript names.
 func TestFontFamily(t *testing.T) {
 	for _, tt := range []struct {
 		in           string
@@ -235,6 +254,8 @@ func TestFontFamily(t *testing.T) {
 	}
 }
 
+// TestOpenErrors checks Open's errors for iWork '09 packages and other zips,
+// and IsPackage's judgment of them.
 func TestOpenErrors(t *testing.T) {
 	mk := func(names ...string) []byte {
 		var buf bytes.Buffer
@@ -257,6 +278,8 @@ func TestOpenErrors(t *testing.T) {
 	}
 }
 
+// TestOpenSamples checks that Open and Detect identify the app of each
+// sample document in Samples/ (skipped when they're absent).
 func TestOpenSamples(t *testing.T) {
 	for name, app := range map[string]App{
 		"Sample1.numbers": Numbers, "Sample2.numbers": Numbers, "Sample3.numbers": Numbers,
@@ -281,6 +304,8 @@ func TestOpenSamples(t *testing.T) {
 	}
 }
 
+// TestSampleTable checks the shape, displayed values and a formula of the
+// table in Samples/PagesInvoice.pages.
 func TestSampleTable(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "Samples", "PagesInvoice.pages"))
 	if err != nil {
@@ -319,8 +344,9 @@ func TestSampleTable(t *testing.T) {
 	}
 }
 
-// Damaged objects must not crash the readers: every object of the samples
-// is cut short in turn and everything that reads objects runs over it.
+// TestDamagedObjects checks that damaged objects don't crash the readers:
+// every object of the samples is cut short in turn and everything that reads
+// objects runs over it.
 func TestDamagedObjects(t *testing.T) {
 	for _, name := range []string{"Sample3.numbers", "PagesInvoice.pages"} {
 		data, err := os.ReadFile(filepath.Join("..", "..", "Samples", name))
@@ -371,8 +397,8 @@ func appendField(b []byte, f Field) []byte {
 	return append(b, f.B...)
 }
 
-// A claimed length far beyond what the input could expand to must be
-// rejected before anything is allocated for it.
+// TestSnappyLengthBound checks that a claimed length far beyond what the
+// input could expand to is rejected before anything is allocated for it.
 func TestSnappyLengthBound(t *testing.T) {
 	in := binary.AppendUvarint(nil, 1<<29)
 	in = append(in, 0, 'a')
@@ -388,8 +414,9 @@ func TestSnappyLengthBound(t *testing.T) {
 	}
 }
 
-// A rich-text payload whose storage reference points back at itself (or at
-// another payload) overflowed the stack.
+// TestParagraphsPayloadCycle checks that a rich-text payload whose storage
+// reference points back at itself (or at another payload), which once
+// overflowed the stack, yields no paragraphs.
 func TestParagraphsPayloadCycle(t *testing.T) {
 	ref := func(id uint64) Message { // field 1 = a reference to id
 		inner := binary.AppendUvarint([]byte{1<<3 | wireVarint}, id)

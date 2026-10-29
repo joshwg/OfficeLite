@@ -1,3 +1,7 @@
+// Charts: the Chart model (plots, series, axes, formats, anchor), the
+// workbook theme and its automatic series colors, deep copies, and anchor
+// shifting for inserted or deleted rows and columns.
+
 package model
 
 import (
@@ -7,8 +11,8 @@ import (
 
 // Chart is a chart: one on a sheet's drawing, placed by its Anchor, or
 // the one chart of a chart sheet (Sheet.ChartSheet). It holds what the
-// chart part (DrawingML's c:chartSpace) says, with colours resolved
-// against the workbook's theme; colours left automatic are picked when the
+// chart part (DrawingML's c:chartSpace) says, with colors resolved
+// against the workbook's theme; colors left automatic are picked when the
 // chart is drawn (see Theme.SeriesColor). The data are references into
 // the workbook (series values are drawn from the cells as they are now),
 // with the values the file cached as a fallback.
@@ -77,7 +81,7 @@ type Anchor struct {
 	// and AnchorAbsolute) in EMU.
 	PosX, PosY int64
 	ExtX, ExtY int64
-	// EditAs is a two-cell anchor's behaviour when cells move: "" or
+	// EditAs is a two-cell anchor's behavior when cells move: "" or
 	// "twoCell" (move and size with cells), "oneCell" (move, don't size)
 	// or "absolute" (don't move or size).
 	EditAs string
@@ -113,7 +117,7 @@ type ChartPlot struct {
 	OtherKind  string // the element's name for ChartOther, e.g. "radarChart"
 	Horizontal bool   // bars rather than columns
 	Grouping   Grouping
-	VaryColors bool // each point its own colour (pies)
+	VaryColors bool // each point its own color (pies)
 	GapWidth   int  // bars: the gap between categories, % of a bar's width
 	Overlap    int  // bars: -100..100 % of a bar's width
 	HoleSize   int  // doughnut: % of the diameter
@@ -306,7 +310,7 @@ const (
 	FillSolid                 // Color
 )
 
-// Paint is a fill or a line's colour.
+// Paint is a fill or a line's color.
 type Paint struct {
 	Kind  FillKind
 	Color color.NRGBA
@@ -340,7 +344,7 @@ type ChartRaw struct {
 	// title): saving writes the model's current text in their place.
 	Refs []RawRef
 	// Rels are the chart part's relationships; Parts the parts they
-	// point at (chart style and colours, a drawing of shapes on the
+	// point at (chart style and colors, a drawing of shapes on the
 	// chart, pictures), by their name in the package as read.
 	Rels  []RawRel
 	Parts map[string]*RawPart
@@ -349,7 +353,7 @@ type ChartRaw struct {
 // RawRef is where a c:f of a raw chart part is in the model: plot and
 // series, and which of the series' data (RefName, RefCat, RefVal); or
 // the chart's title (Plot -1) or an axis' (Plot -2, Series the axis); or
-// somewhere not modelled (Plot -3), written as read.
+// somewhere not modeled (Plot -3), written as read.
 type RawRef struct {
 	Plot, Series, Field int
 	Text                string // as read
@@ -376,7 +380,7 @@ type RawPart struct {
 	Rels        []RawRel
 }
 
-// Theme is the workbook theme's colours and fonts, which charts use.
+// Theme is the workbook theme's colors and fonts, which charts use.
 type Theme struct {
 	// Colors are dk1, lt1, dk2, lt2, accent1..6, hlink, folHlink.
 	Colors    [12]color.NRGBA
@@ -386,7 +390,7 @@ type Theme struct {
 	XML []byte
 }
 
-// Theme colour indexes.
+// Theme color indexes.
 const (
 	ThemeDk1 = iota
 	ThemeLt1
@@ -409,6 +413,7 @@ func DefaultTheme() *Theme {
 	}
 }
 
+// rgb returns the opaque color of a 0xRRGGBB value.
 func rgb(v uint32) color.NRGBA {
 	return color.NRGBA{R: uint8(v >> 16), G: uint8(v >> 8), B: uint8(v), A: 255}
 }
@@ -421,7 +426,7 @@ var seriesVariations = [][2]int{
 	{50000, 0}, {70000, 30000}, {70000, 0}, {50000, 50000},
 }
 
-// SeriesColor is the automatic colour of series (or pie slice) i.
+// SeriesColor is the automatic color of series (or pie slice) i.
 func (t *Theme) SeriesColor(i int) color.NRGBA {
 	if t == nil {
 		t = DefaultTheme()
@@ -445,6 +450,8 @@ func LumMod(c color.NRGBA, mod, off int) color.NRGBA {
 	return out
 }
 
+// toHSL converts c's RGB (ignoring alpha) to hue, saturation and
+// lightness, each in 0..1.
 func toHSL(c color.NRGBA) (h, s, l float64) {
 	r, g, b := float64(c.R)/255, float64(c.G)/255, float64(c.B)/255
 	mx, mn := max(r, g, b), min(r, g, b)
@@ -472,6 +479,8 @@ func toHSL(c color.NRGBA) (h, s, l float64) {
 	return h / 6, s, l
 }
 
+// fromHSL is the inverse of toHSL: the opaque color of hue, saturation
+// and lightness in 0..1.
 func fromHSL(h, s, l float64) color.NRGBA {
 	if s == 0 {
 		v := uint8(l*255 + 0.5)
@@ -633,12 +642,15 @@ func (c *Chart) Clone() *Chart {
 	return &n
 }
 
+// clone returns d with its own copies of Cache and Levels (the inner
+// level slices are shared).
 func (d ChartData) clone() ChartData {
 	d.Cache = slices.Clone(d.Cache)
 	d.Levels = slices.Clone(d.Levels)
 	return d
 }
 
+// clone returns a copy of d, or nil for nil.
 func (d *DataLabels) clone() *DataLabels {
 	if d == nil {
 		return nil
@@ -647,6 +659,7 @@ func (d *DataLabels) clone() *DataLabels {
 	return &n
 }
 
+// clone returns a copy of t with its own reference data, or nil for nil.
 func (t *ChartTitle) clone() *ChartTitle {
 	if t == nil {
 		return nil
@@ -679,6 +692,8 @@ func (s *Sheet) shiftCharts(rows bool, at, n int) {
 	}
 }
 
+// shift moves (and for a two-cell anchor, sizes) a for n rows (columns)
+// inserted at at, or -n deleted there; absolute anchors stay put.
 func (a *Anchor) shift(rows bool, at, n int) {
 	if a.Kind == AnchorAbsolute || a.EditAs == "absolute" {
 		return

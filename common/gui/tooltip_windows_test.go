@@ -1,3 +1,5 @@
+// Windows-only screenshot test for eyeballing the tooltip's look.
+
 package gui
 
 import (

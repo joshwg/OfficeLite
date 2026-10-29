@@ -1,3 +1,6 @@
+// Scrollbar: a Windows-style scrollbar with stepping arrows, a paging
+// track, a draggable thumb and an optional position hint.
+
 package gui
 
 import (

@@ -26,6 +26,9 @@ import (
 	wordui "officelite/word/ui"
 )
 
+// main parses the flags, offers any crashed session's copies for recovery,
+// opens a window per file (or one blank one) and runs until the last
+// window closes.
 func main() {
 	excel := flag.Bool("excel", false, "open files as spreadsheets; with no files, start a blank workbook")
 	word := flag.Bool("word", false, "open files as documents; with no files, start a blank document")
@@ -103,7 +106,7 @@ func main() {
 	for _, path := range flag.Args() {
 		kind := forced
 		if kind == doctype.Unknown {
-			// Unreadable or unrecognised files go to the spreadsheet window,
+			// Unreadable or unrecognized files go to the spreadsheet window,
 			// which reports load errors and tries unknown text as CSV.
 			kind, _ = doctype.DetectFile(path)
 		}

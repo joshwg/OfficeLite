@@ -1,3 +1,5 @@
+// ole_test.go tests that corrupt compound-file headers are rejected.
+
 package ole
 
 import (
@@ -18,8 +20,10 @@ func corrupt(t *testing.T, patch func(h []byte)) []byte {
 	return data
 }
 
-// A header claiming 0xFFFFFFFF directory sectors made mscfb allocate a
-// 4-billion-entry slice; it must be rejected instead.
+// TestCorruptHeaderRejected checks that headers with impossible sector
+// counts, versions or sector shifts are rejected before mscfb sees them
+// (one claiming 0xFFFFFFFF directory sectors made it allocate a
+// 4-billion-entry slice).
 func TestCorruptHeaderRejected(t *testing.T) {
 	put32 := func(off int, v uint32) func([]byte) {
 		return func(h []byte) { binary.LittleEndian.PutUint32(h[off:], v) }

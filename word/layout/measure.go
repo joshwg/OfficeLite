@@ -35,7 +35,7 @@ type TextStyle struct {
 	Color     color.NRGBA
 	Underline bool
 	Strike    bool
-	Highlight color.NRGBA // A == 0: none
+	Highlight color.NRGBA // highlight or character shading; A == 0: none
 	Shift     float64     // baseline shift in points, up positive
 	Hidden    bool
 	// Revealed is hidden text laid out and shown (SetShowHidden).
@@ -180,6 +180,11 @@ func styleOf(rp model.RunProps) *TextStyle {
 		} else if c, ok := colors.ParseHex(h); ok {
 			st.Highlight = c
 		}
+	}
+	// Character shading fills the same box as highlighting, which covers
+	// it when the text has both.
+	if c, ok := colors.ParseHex(rp.Shading); ok && st.Highlight.A == 0 {
+		st.Highlight = c
 	}
 	switch rp.Vert {
 	case model.VertSuper:

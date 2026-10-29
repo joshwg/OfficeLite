@@ -1,3 +1,5 @@
+// Tests for reading and writing .xls AutoFilters.
+
 package xlsfile
 
 import (
@@ -9,6 +11,8 @@ import (
 	"officelite/excel/model"
 )
 
+// filterSheet returns a sheet of 8×5 numbers with a hand-hidden row 11 and
+// a taller row 5.
 func filterSheet(name string) *model.Sheet {
 	sh := model.NewSheet(name)
 	for r := 0; r < 8; r++ {
@@ -22,6 +26,9 @@ func filterSheet(name string) *model.Sheet {
 	return sh
 }
 
+// TestAutoFilterRoundTrip checks that value, custom and Top 10 criteria,
+// filtered rows, row heights and a note beside the filter survive a .xls
+// round trip.
 func TestAutoFilterRoundTrip(t *testing.T) {
 	sh := filterSheet("My Data")
 	want := &model.AutoFilter{Range: model.Range{R1: 0, C1: 0, R2: 7, C2: 4}, Columns: []model.FilterColumn{
@@ -67,8 +74,8 @@ func TestAutoFilterRoundTrip(t *testing.T) {
 	}
 }
 
-// What BIFF8 can't hold is reported by Fits and saved without criteria,
-// the rows staying hidden.
+// TestAutoFilterFits checks that criteria BIFF8 can't hold are reported by
+// Fits and saved without criteria, the rows staying hidden.
 func TestAutoFilterFits(t *testing.T) {
 	sh := filterSheet("S")
 	sh.AutoFilter = &model.AutoFilter{Range: model.Range{R2: 7, C2: 4}, Columns: []model.FilterColumn{

@@ -1,3 +1,6 @@
+// proc_windows.go reads a process's creation time on Windows, so a reused
+// pid isn't taken for the writer of a recovery copy.
+
 package autorecover
 
 import "syscall"

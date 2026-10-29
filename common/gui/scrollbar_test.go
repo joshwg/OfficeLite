@@ -1,3 +1,6 @@
+// Tests for Scrollbar: arrow stepping and auto-repeat, track paging,
+// Shift+click jumps, drag snap-back and open-ended scrolling.
+
 package gui
 
 import (
@@ -23,6 +26,7 @@ type barHarness struct {
 	now time.Time
 }
 
+// frame lays the bar out once at h.now and stores the position it returns.
 func (h *barHarness) frame() {
 	gtx := layout.Context{
 		Ops:         new(op.Ops),
@@ -35,6 +39,8 @@ func (h *barHarness) frame() {
 	h.r.Frame(gtx.Ops)
 }
 
+// send queues a mouse event of kind k at (x, y), with the primary button
+// down for presses and drags, then runs a frame.
 func (h *barHarness) send(k pointer.Kind, x, y float32, mods key.Modifiers) {
 	e := pointer.Event{Kind: k, Source: pointer.Mouse, Position: f32.Pt(x, y), Modifiers: mods, Time: time.Duration(h.now.UnixNano())}
 	if k == pointer.Press || k == pointer.Drag {
@@ -47,6 +53,8 @@ func (h *barHarness) send(k pointer.Kind, x, y float32, mods key.Modifiers) {
 	h.frame()
 }
 
+// newBar returns a harness with a vertical bar stepping 1 unit per arrow
+// click, after one frame.
 func newBar() *barHarness {
 	h := &barHarness{now: time.Unix(1000, 0)}
 	h.s.Vertical = true
@@ -55,6 +63,8 @@ func newBar() *barHarness {
 	return h
 }
 
+// TestScrollbarArrowsStepAndRepeat checks that an arrow steps once on
+// press, repeats only after the delay while held, and stops on release.
 func TestScrollbarArrowsStepAndRepeat(t *testing.T) {
 	h := newBar()
 	h.send(pointer.Press, 7, 293, 0)
@@ -87,6 +97,8 @@ func TestScrollbarArrowsStepAndRepeat(t *testing.T) {
 	}
 }
 
+// TestScrollbarTrackPagesTowardPointer checks that holding the track pages
+// until the thumb reaches the pointer, then stops.
 func TestScrollbarTrackPagesTowardPointer(t *testing.T) {
 	h := newBar()
 	// Hold the track at y=100: pages until the thumb reaches the pointer.
@@ -106,6 +118,9 @@ func TestScrollbarTrackPagesTowardPointer(t *testing.T) {
 	}
 }
 
+// TestScrollbarShiftClickJumpsAndDrags checks that Shift+click on the
+// track centers the thumb on the pointer and starts a drag, which snaps
+// back when the pointer strays far from the bar.
 func TestScrollbarShiftClickJumpsAndDrags(t *testing.T) {
 	h := newBar()
 	h.send(pointer.Press, 7, 150, key.ModShift)
@@ -125,6 +140,8 @@ func TestScrollbarShiftClickJumpsAndDrags(t *testing.T) {
 	h.send(pointer.Release, 400, 200, 0)
 }
 
+// TestScrollbarOpenEnded checks that with OpenEnded the forward arrow
+// scrolls past the end while a thumb drag stays within the range.
 func TestScrollbarOpenEnded(t *testing.T) {
 	h := newBar()
 	h.s.OpenEnded = true

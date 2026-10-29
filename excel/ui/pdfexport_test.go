@@ -1,3 +1,5 @@
+// pdfexport_test.go tests building the PDF export and laying out the Export and Print pages.
+
 package ui
 
 import (
@@ -9,6 +11,8 @@ import (
 	"officelite/common/gui"
 )
 
+// TestPDFExportBuild checks a one-cell sheet builds a one-page PDF, the Export
+// and Print pages lay out, and a workbook export covers every sheet.
 func TestPDFExportBuild(t *testing.T) {
 	h := newHarness(t)
 	h.typeText("Hello PDF")

@@ -1,3 +1,6 @@
+// datatools_test.go tests Text to Columns, date-order parsing and Remove
+// Duplicates.
+
 package edit
 
 import (
@@ -7,6 +10,7 @@ import (
 	"officelite/excel/model"
 )
 
+// TestSplitFields checks delimited, qualified and fixed-width splitting.
 func TestSplitFields(t *testing.T) {
 	csv := TextToColsSpec{Delims: ",", Qualifier: '"'}
 	for _, tc := range []struct {
@@ -32,6 +36,8 @@ func TestSplitFields(t *testing.T) {
 	}
 }
 
+// TestParseDateOrder checks dates read in each order, and impossible ones
+// refused.
 func TestParseDateOrder(t *testing.T) {
 	for _, tc := range []struct {
 		in   string
@@ -55,6 +61,8 @@ func TestParseDateOrder(t *testing.T) {
 	}
 }
 
+// TestTextToColumns checks TextToColumns' formats, overwrite check, undo
+// and a fixed-width split to another destination.
 func TestTextToColumns(t *testing.T) {
 	b := newBook()
 	b.enter(t, 0, "A1", "Name,Qty,Date,Code,Note")
@@ -102,6 +110,8 @@ func TestTextToColumns(t *testing.T) {
 	}
 }
 
+// TestRemoveDuplicates checks RemoveDuplicates by all columns, one column
+// and without headers, with undo.
 func TestRemoveDuplicates(t *testing.T) {
 	b := newBook()
 	rows := [][]string{

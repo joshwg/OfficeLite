@@ -1,3 +1,6 @@
+// Tests for decoding and encoding BIFF8 formulas, RK numbers and
+// CONTINUE-split string tables.
+
 package xlsfile
 
 import (
@@ -11,7 +14,7 @@ import (
 	"officelite/excel/model"
 )
 
-// testParser is a workbook context with three sheets, a defined name, an
+// testParser is a workbook context with three sheets, defined names,
 // add-in functions and an external book.
 func testParser() *parser {
 	p := &parser{wb: &model.Workbook{}}
@@ -29,8 +32,10 @@ func testParser() *parser {
 	return p
 }
 
+// u16b is v as two little-endian bytes.
 func u16b(v int) []byte { return binary.LittleEndian.AppendUint16(nil, uint16(v)) }
 
+// cat concatenates byte slices.
 func cat(parts ...[]byte) []byte {
 	var b []byte
 	for _, p := range parts {
@@ -39,10 +44,14 @@ func cat(parts ...[]byte) []byte {
 	return b
 }
 
+// num is a tNum token holding v.
 func num(v float64) []byte {
 	return binary.LittleEndian.AppendUint64([]byte{ptgNum}, math.Float64bits(v))
 }
 
+// TestDecodePtgs checks the text decoded from hand-built token streams
+// covering operators, operand classes, references, names, functions,
+// attributes and array constants.
 func TestDecodePtgs(t *testing.T) {
 	ref := func(id byte, row, col int) []byte { return cat([]byte{id}, u16b(row), u16b(col)) }
 	rel := 0xC000 // row and column relative
@@ -85,6 +94,8 @@ func TestDecodePtgs(t *testing.T) {
 	}
 }
 
+// TestDecodeSpecial checks that tExp and tTbl return errShared and
+// errTable, and that malformed streams fail.
 func TestDecodeSpecial(t *testing.T) {
 	p := testParser()
 	var se errShared
@@ -101,10 +112,11 @@ func TestDecodeSpecial(t *testing.T) {
 	}
 }
 
-// fakeWriter is the encoder's context for TestEncodeDecode, matching
+// fakeWriter is the encoder's context for the encoding tests, matching
 // testParser's sheets, names and links.
 type fakeWriter struct{ p *parser }
 
+// sheetIndex finds a testParser sheet by name, ignoring case.
 func (f fakeWriter) sheetIndex(name string) int {
 	for i, s := range f.p.sheets {
 		if strings.EqualFold(s.name, name) {
@@ -114,6 +126,8 @@ func (f fakeWriter) sheetIndex(name string) int {
 	return -1
 }
 
+// xtiIndex finds or adds the EXTERNSHEET entry for sheets first..last of
+// this workbook.
 func (f fakeWriter) xtiIndex(first, last int) int {
 	for i, x := range f.p.xti {
 		if x == (xti{0, first, last}) {
@@ -124,6 +138,7 @@ func (f fakeWriter) xtiIndex(first, last int) int {
 	return len(f.p.xti) - 1
 }
 
+// nameIndex knows only TaxRate, NAME 1.
 func (f fakeWriter) nameIndex(name string, sheet int) int {
 	if strings.EqualFold(name, "TaxRate") {
 		return 1
@@ -131,6 +146,8 @@ func (f fakeWriter) nameIndex(name string, sheet int) int {
 	return 0
 }
 
+// funcNameRef refers to add-in functions through the add-in SUPBOOK,
+// IFERROR through NAME 2, and anything else as _xlfn.XLOOKUP.
 func (f fakeWriter) funcNameRef(name string) (byte, []byte) {
 	if i := slices.Index(f.p.supbooks[1].names, name); i >= 0 && name != "_xlfn.XLOOKUP" {
 		return ptgNameX, cat(u16b(3), u16b(i+1), u16b(0)) // add-in functions
@@ -141,6 +158,8 @@ func (f fakeWriter) funcNameRef(name string) (byte, []byte) {
 	return ptgNameX, cat(u16b(3), u16b(2), u16b(0)) // _xlfn.XLOOKUP
 }
 
+// TestEncodeDecode checks that formulas compile and decode back to the
+// same text, and that ones .xls can't hold fail to compile.
 func TestEncodeDecode(t *testing.T) {
 	for _, src := range []string{
 		"1+2*3", "-(1-2)^2", "5%", `"a""b"&"ü日"`, "TRUE<>FALSE", "#N/A", "0.1+1E+20-1E-07+70000",
@@ -176,6 +195,8 @@ func TestEncodeDecode(t *testing.T) {
 	}
 }
 
+// TestEncodeClasses checks the operand classes and volatile attribute of
+// compiled formulas.
 func TestEncodeClasses(t *testing.T) {
 	for src, want := range map[string][]byte{
 		"A1*2":           {0x44, 0, 0, 0, 0xC0, ptgInt, 2, 0, ptgMul},                // value class
@@ -194,6 +215,8 @@ func TestEncodeClasses(t *testing.T) {
 	}
 }
 
+// TestRKEncode checks that RK-encoded numbers decode exactly and that
+// simple values compress.
 func TestRKEncode(t *testing.T) {
 	for _, v := range []float64{0, 1, -5, 536870911, 12.34, 0.5, 1e300, 1.0 / 3, -0.01, 123456.78} {
 		rk, ok := rkEncode(v)
@@ -206,6 +229,8 @@ func TestRKEncode(t *testing.T) {
 	}
 }
 
+// TestStringRecordsContinue checks that long strings split across
+// CONTINUE records stay within the record size and read back whole.
 func TestStringRecordsContinue(t *testing.T) {
 	long := strings.Repeat("ab", 5000) + "日本" + strings.Repeat("c", 9000)
 	strs := []string{"x", long, "", "ü"}

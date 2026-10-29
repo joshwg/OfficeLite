@@ -1,3 +1,5 @@
+// pivotmenu.go implements a report's label and filter drop-downs: field choice, sorting, search and the item checklist.
+
 package ui
 
 import (
@@ -55,7 +57,7 @@ type pivotItem struct {
 	checked    bool
 }
 
-// pivotPress opens (or closes) the drop-down whose button is at pos;
+// pivotPress opens (or closes) the drop-down whose button is at x, y;
 // it reports whether there was one.
 func (a *App) pivotPress(v *render.View, x, y float32) bool {
 	row, col, ok := v.PivotButtonAt(x, y)
@@ -121,6 +123,7 @@ func (a *App) loadPivotItems(pt *model.PivotTable, f int) {
 	m.search.SetText("")
 }
 
+// closePivotMenu closes the open drop-down and gives the grid the focus back.
 func (a *App) closePivotMenu() {
 	if !a.pv.menu.open {
 		return

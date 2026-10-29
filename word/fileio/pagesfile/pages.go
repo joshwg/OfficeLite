@@ -320,7 +320,7 @@ func runProps(t iwork.TextProps) model.RunProps {
 		p.SmallCaps = model.On
 	}
 	if t.Highlight.Set {
-		p.Highlight = t.Highlight.Hex()
+		p.Shading = t.Highlight.Hex() // any color: Word's character shading
 	}
 	return p
 }
@@ -420,6 +420,9 @@ func diffRun(base, v model.RunProps) model.RunProps {
 	}
 	if v.Highlight != base.Highlight {
 		d.Highlight = v.Highlight
+	}
+	if v.Shading != base.Shading {
+		d.Shading = v.Shading
 	}
 	if v.Vert != base.Vert {
 		d.Vert = v.Vert

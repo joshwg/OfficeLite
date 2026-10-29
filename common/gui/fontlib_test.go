@@ -1,3 +1,6 @@
+// Tests for FontLibrary: family indexing, bitmap hiding and weak shaper
+// registration.
+
 package gui
 
 import (
@@ -12,7 +15,22 @@ import (
 	"gioui.org/font/gofont"
 )
 
-// The Go fonts are embedded in gofont as raw TTF bytes we can write out.
+// TestParseNameTableTruncated checks that a name table claiming more
+// records than it holds yields the ones present instead of panicking.
+func TestParseNameTableTruncated(t *testing.T) {
+	// Header: format 0, count 100, strings at 18; one Mac Roman family
+	// record (platform 1, encoding 0, lang 0, ID 1, length 3, offset 0).
+	tbl := []byte{0, 0, 0, 100, 0, 18,
+		0, 1, 0, 0, 0, 0, 0, 1, 0, 3, 0, 0,
+		'A', 'b', 'c'}
+	if got := parseNameTable(tbl); !slices.Equal(got, []string{"Abc"}) {
+		t.Fatalf("parseNameTable = %q, want [Abc]", got)
+	}
+}
+
+// TestReadFamilies reads the family of a copy of Go-Regular.ttf from the
+// module cache and loads its faces by that name; it skips if the file is
+// not there.
 func TestReadFamilies(t *testing.T) {
 	dir := t.TempDir()
 	src, err := os.ReadFile(goRegularPath(t))
@@ -39,6 +57,8 @@ func TestReadFamilies(t *testing.T) {
 	}
 }
 
+// goRegularPath returns the path of Go-Regular.ttf in the Go module cache
+// under $HOME/go, or "" if none is found.
 func goRegularPath(t *testing.T) string {
 	_ = gofont.Collection
 	matches, _ := filepath.Glob(filepath.Join(os.Getenv("HOME"), "go/pkg/mod/golang.org/x/image@*/font/gofont/ttfs/Go-Regular.ttf"))
@@ -48,6 +68,8 @@ func goRegularPath(t *testing.T) string {
 	return matches[0]
 }
 
+// TestPrepareFontHidesBitmaps checks that prepareFont renames a bitmap
+// table tag on a copy, leaving other tables and its input untouched.
 func TestPrepareFontHidesBitmaps(t *testing.T) {
 	// Minimal sfnt header with two table records: EBDT and glyf.
 	b := make([]byte, 12+2*16)

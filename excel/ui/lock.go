@@ -1,3 +1,5 @@
+// lock.go ties the window to file locking: read-only mode, the locked-file prompt and raising the window.
+
 package ui
 
 import (
@@ -28,7 +30,8 @@ func (a *App) raise() {
 	})
 }
 
-// docName is the workbook's name for the title, marked when read-only.
+// docName is the workbook's name for the title, marked when read-only or
+// recovered.
 func (a *App) docName() string {
 	if a.lk.readOnly {
 		return a.wb.Name + " (Read-Only)"

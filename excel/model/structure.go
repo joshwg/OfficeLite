@@ -1,14 +1,14 @@
+// Structural edits: inserting and deleting rows and columns moves the
+// cells and everything positioned by row or column (sizes, merged cells,
+// frozen panes, spill areas). Formula text is not touched here; see
+// formula.AdjustRows. Also deep copies of sheets and workbooks.
+
 package model
 
 import (
 	"maps"
 	"slices"
 )
-
-// Structural edits: inserting and deleting rows and columns moves the
-// cells and everything positioned by row or column (sizes, merged cells,
-// frozen panes, spill areas). Formula text is not touched here; see
-// formula.AdjustRows.
 
 // InsertRows inserts n empty rows before row at. Cells pushed past
 // MaxRows are dropped.
@@ -101,6 +101,7 @@ func ShiftSpan(lo, hi, at, n int) (int, int, bool) {
 	return l, h, l <= h
 }
 
+// shiftKeys returns m re-keyed by ShiftIndex, dropping deleted keys.
 func shiftKeys(m map[int]float32, at, n int) map[int]float32 {
 	out := make(map[int]float32, len(m))
 	for k, v := range m {
@@ -122,7 +123,9 @@ func shiftRange(r Range, rows bool, at, n int) (Range, bool) {
 	return r, ok
 }
 
-// shift moves merges, frozen panes and spill areas.
+// shift moves everything but the cells and sizes for inserted or deleted
+// rows (columns): merges, spill areas, notes and links, the AutoFilter,
+// validations, the outline, pivot tables, charts and frozen panes.
 func (s *Sheet) shift(rows bool, at, n int) {
 	merges := s.Merges[:0]
 	for _, m := range s.Merges {
@@ -246,6 +249,7 @@ func (s *Sheet) Clone() *Sheet {
 	return &c
 }
 
+// cloneMap copies m; nil becomes an empty map.
 func cloneMap(m map[int]float32) map[int]float32 {
 	out := make(map[int]float32, len(m))
 	for k, v := range m {

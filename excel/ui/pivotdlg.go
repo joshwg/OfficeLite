@@ -1,3 +1,5 @@
+// pivotdlg.go implements the PivotTable dialogs: Create, Value Field Settings, Field Settings, Move and Change Data Source.
+
 package ui
 
 import (
@@ -25,6 +27,7 @@ import (
 // The PivotTable dialogs: Create PivotTable, Value Field Settings, Field
 // Settings, Move PivotTable and Change PivotTable Data Source.
 
+// pivotDlgKind says which PivotTable dialog is open.
 type pivotDlgKind int
 
 const (
@@ -85,6 +88,8 @@ func (a *App) openPivotDialog(k pivotDlgKind) {
 	d.fnList.Axis = layout.Vertical
 }
 
+// closePivotDialog closes the open PivotTable dialog and gives the grid the
+// focus back.
 func (a *App) closePivotDialog() {
 	a.pv.dlg.open = false
 	a.grid.focusPending = true
@@ -109,7 +114,7 @@ func (a *App) createPivotDialog() {
 }
 
 // valueFieldDialog opens Value Field Settings for value field v of the
-// active cell's report.
+// active cell's report. The bool argument is ignored.
 func (a *App) valueFieldDialog(v int, _ bool) {
 	pt, _ := a.curPivot()
 	if pt == nil || v < 0 || v >= len(pt.Values) {

@@ -1,3 +1,7 @@
+// adjust_test.go tests the structural reference rewriters (AdjustRows,
+// AdjustCols, MoveRefs, RenameSheetRefs, DeleteSheetRefs), QuoteSheet and
+// RefSpans.
+
 package formula
 
 import (
@@ -9,6 +13,8 @@ import (
 
 type adjustCase struct{ in, want string }
 
+// checkAdjust runs fn over each case's input, failing when the result
+// differs from want or does not parse.
 func checkAdjust(t *testing.T, what string, cases []adjustCase, fn func(string) string) {
 	t.Helper()
 	for _, c := range cases {
@@ -22,6 +28,8 @@ func checkAdjust(t *testing.T, what string, cases []adjustCase, fn func(string) 
 	}
 }
 
+// TestAdjustRowsInsert checks references after rows are inserted, including
+// qualified, quoted and defined-name formulas.
 func TestAdjustRowsInsert(t *testing.T) {
 	// Two rows inserted before row 5 (index 4) on Sheet1.
 	checkAdjust(t, "insert rows", []adjustCase{
@@ -61,6 +69,8 @@ func TestAdjustRowsInsert(t *testing.T) {
 	}, func(f string) string { return AdjustRows(f, "", "My Sheet", 0, 1) })
 }
 
+// TestAdjustRowsDelete checks references after rows are deleted: shrinking,
+// clipping and #REF! for wholly deleted spans.
 func TestAdjustRowsDelete(t *testing.T) {
 	// Rows 5:6 (indexes 4, 5) deleted.
 	checkAdjust(t, "delete rows", []adjustCase{
@@ -79,6 +89,7 @@ func TestAdjustRowsDelete(t *testing.T) {
 	}, func(f string) string { return AdjustRows(f, "Sheet1", "Sheet1", 4, -2) })
 }
 
+// TestAdjustCols checks references after a column is inserted or deleted.
 func TestAdjustCols(t *testing.T) {
 	// One column inserted before C.
 	checkAdjust(t, "insert cols", []adjustCase{
@@ -99,6 +110,8 @@ func TestAdjustCols(t *testing.T) {
 	}, func(f string) string { return AdjustCols(f, "Sheet1", "Sheet1", 2, -1) })
 }
 
+// TestMoveRefs checks that only references wholly inside the moved block
+// follow it, and that moving off the sheet gives #REF!.
 func TestMoveRefs(t *testing.T) {
 	src := model.Range{R1: 0, C1: 0, R2: 1, C2: 1} // A1:B2 moved to D11
 	checkAdjust(t, "move", []adjustCase{
@@ -112,6 +125,8 @@ func TestMoveRefs(t *testing.T) {
 		func(f string) string { return MoveRefs(f, "Sheet1", "Sheet1", src, -2, 0) })
 }
 
+// TestRenameSheetRefs checks sheet renames, including names that need
+// quoting.
 func TestRenameSheetRefs(t *testing.T) {
 	cases := []struct{ in, old, new, want string }{
 		{"Sheet1!A1+A1", "Sheet1", "Data", "Data!A1+A1"},
@@ -134,6 +149,7 @@ func TestRenameSheetRefs(t *testing.T) {
 	}
 }
 
+// TestDeleteSheetRefs checks that references to a deleted sheet become #REF!.
 func TestDeleteSheetRefs(t *testing.T) {
 	checkAdjust(t, "delete sheet", []adjustCase{
 		{"Data!A1+A1", "#REF!+A1"},
@@ -143,6 +159,7 @@ func TestDeleteSheetRefs(t *testing.T) {
 	}, func(f string) string { return DeleteSheetRefs(f, "Data") })
 }
 
+// TestQuoteSheet checks which sheet names QuoteSheet quotes.
 func TestQuoteSheet(t *testing.T) {
 	for in, want := range map[string]string{
 		"Sheet1": "Sheet1", "My Sheet": "'My Sheet'", "A1": "'A1'", "XFD9": "'XFD9'",
@@ -158,6 +175,8 @@ func TestQuoteSheet(t *testing.T) {
 	}
 }
 
+// TestRefSpans checks the reference spans and sheets found in formula text,
+// and that a reversed range is normalized.
 func TestRefSpans(t *testing.T) {
 	f := `SUM(A1:B2,"C3",Sheet2!$D$4)+LOG10(5)+C:C+'My Sheet'!E5`
 	var got []string

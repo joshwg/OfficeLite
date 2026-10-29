@@ -1,3 +1,5 @@
+// TEXTBEFORE, TEXTAFTER and TEXTSPLIT, built on a multi-delimiter matcher.
+
 package text
 
 import (
@@ -14,6 +16,8 @@ type matcher struct {
 	delims [][]rune
 }
 
+// newMatcher returns a matcher for delims in s, case-folded when
+// ignoreCase.
 func newMatcher(s string, delims []string, ignoreCase bool) *matcher {
 	m := &matcher{text: []rune(s)}
 	m.folded = fold(m.text, ignoreCase)
@@ -23,6 +27,7 @@ func newMatcher(s string, delims []string, ignoreCase bool) *matcher {
 	return m
 }
 
+// fold returns rs lower-cased when ignoreCase, else rs itself.
 func fold(rs []rune, ignoreCase bool) []rune {
 	if !ignoreCase {
 		return rs
@@ -200,8 +205,8 @@ func split(s string, delims []string, ignoreCase bool) []string {
 	return append(out, string(m.text[prev:]))
 }
 
-// TEXTSPLIT(text, col_delimiter, [row_delimiter], [ignore_empty],
-// [match_mode], [pad_with]). Rows are split first, then columns; short
+// textSplit implements TEXTSPLIT(text, col_delimiter, [row_delimiter],
+// [ignore_empty], [match_mode], [pad_with]). Rows are split first, then columns; short
 // rows are padded with pad_with (#N/A by default).
 func textSplit(e *f.Env, a []f.Value) f.Value {
 	optDelims := func(v f.Value) ([]string, f.Value) {

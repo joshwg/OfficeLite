@@ -1,10 +1,10 @@
-package model
-
 // Inserting and deleting cells with a shift (Excel's Insert Cells / Delete
 // Cells "shift cells down/right/up/left"): only the cells in the columns
 // (rows) of the block move, with the merged areas, spill areas, notes and
 // links inside that strip. Formula text is not touched here; see
 // formula.AdjustRowsIn.
+
+package model
 
 // ShiftStrip is the part of the sheet that moves when block r is inserted
 // or deleted with cells shifted along rows (vertical) or columns.

@@ -1,3 +1,6 @@
+// Tests for the aggregating functions (SUM, SUMPRODUCT, COUNT, ...),
+// SUBTOTAL and AGGREGATE.
+
 package mathtrig
 
 import (
@@ -17,6 +20,9 @@ func aggData(ctx *f.TestContext) {
 	ctx.SetRange("Sheet2!A1", [][]any{{1}, {2}})
 }
 
+// TestSumCount checks SUM, PRODUCT, the SUMSQ/SUMPRODUCT family, PERCENTOF
+// and the COUNT functions, including how they treat text, booleans, blanks
+// and errors.
 func TestSumCount(t *testing.T) {
 	ftest.Run(t, registry(), aggData, []ftest.Case{
 		{"=SUM(A1:A8)", 55},
@@ -81,13 +87,16 @@ func TestSumCount(t *testing.T) {
 }
 
 // subtotalData: A1:A3 = 1, 2, 3, A4 = SUBTOTAL(9,A1:A3), A5 = 10;
-// B1:B4 = 1, #DIV/0!, 3, AGGREGATE(9,6,B1:B3).
+// B1:B4 = 1, #DIV/0!, 3, AGGREGATE(9,6,B1:B3); C1 = SUM(A1:A3), C2 = a
+// SUM with a nested SUBTOTAL.
 func subtotalData(ctx *f.TestContext) {
 	ctx.SetRange("A1", [][]any{{1}, {2}, {3}, {"=SUBTOTAL(9,A1:A3)"}, {10}})
 	ctx.SetRange("B1", [][]any{{1}, {"=1/0"}, {3}, {"=AGGREGATE(9,6,B1:B3)"}})
 	ctx.SetRange("C1", [][]any{{"=SUM(A1:A3)"}, {"=sum(subtotal(9,A1),1)"}})
 }
 
+// TestSubtotalAggregate checks SUBTOTAL and AGGREGATE, including skipping
+// nested totals and errors.
 func TestSubtotalAggregate(t *testing.T) {
 	ftest.Run(t, registry(), subtotalData, []ftest.Case{
 		{"=SUM(A1:A5)", 22},

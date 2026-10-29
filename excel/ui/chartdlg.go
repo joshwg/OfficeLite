@@ -1,3 +1,9 @@
+// The chart dialogs: Insert Chart and Change Chart Type (the kinds, and
+// each series' kind and axis for a combo), Select Data Source (the data
+// range, the series and their Edit Series dialog, the category labels,
+// hidden and empty cells), Move Chart and Format Chart Area (or of the
+// selected part).
+
 package ui
 
 import (
@@ -24,12 +30,7 @@ import (
 	"officelite/excel/render"
 )
 
-// The chart dialogs: Insert Chart and Change Chart Type (the kinds, and
-// each series' kind and axis for a combo), Select Data Source (the data
-// range, the series and their Edit Series dialog, the category labels,
-// hidden and empty cells), Move Chart and Format Chart Area (or of the
-// selected part).
-
+// chartDlgKind says which chart dialog is open.
 type chartDlgKind int
 
 const (
@@ -86,6 +87,8 @@ type chartDialog struct {
 	dataList           widget.List
 }
 
+// openChartDialog opens chart dialog k, ending a title edit and closing
+// the menus.
 func (a *App) openChartDialog(k chartDlgKind) {
 	a.menu.Close()
 	a.finishTitleEdit(true)
@@ -98,6 +101,8 @@ func (a *App) openChartDialog(k chartDlgKind) {
 	d.dataList.Axis = layout.Vertical
 }
 
+// closeChartDialog closes the open chart dialog and gives the grid the
+// keyboard.
 func (a *App) closeChartDialog() {
 	a.ch.dlg.kind = cdNone
 	a.grid.focusPending = true
@@ -224,7 +229,7 @@ func (a *App) openFormatElem() {
 	}
 }
 
-// paintChoice is a chart paint as the colour picker shows it.
+// paintChoice is a chart paint as the color picker shows it.
 func paintChoice(p model.Paint) gui.ColorChoice {
 	if p.Kind == model.FillSolid {
 		return gui.ColorChoice{Color: p.Color}
@@ -942,7 +947,7 @@ func (a *App) moveChartBody(gtx layout.Context) []layout.FlexChild {
 	}
 }
 
-// formatElemBody is Format …: the fill and outline colours.
+// formatElemBody is Format …: the fill and outline colors.
 func (a *App) formatElemBody(gtx layout.Context) []layout.FlexChild {
 	d := &a.ch.dlg
 	th := a.ui

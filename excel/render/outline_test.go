@@ -1,3 +1,5 @@
+// Tests for the outline gutters: sizes, hit-testing and buttons.
+
 package render
 
 import (
@@ -20,6 +22,8 @@ func drawn(v *View) {
 	v.Draw(gtx)
 }
 
+// TestOutlineGutters checks gutter sizes, hit-testing beside them with
+// frozen panes, and the level and group buttons.
 func TestOutlineGutters(t *testing.T) {
 	sh := model.NewSheet("S")
 	for r := 1; r <= 30; r++ {

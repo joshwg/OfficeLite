@@ -1,3 +1,6 @@
+// cells.go holds Insert Cells / Delete Cells with a shift, and undoable
+// note and hyperlink changes.
+
 package edit
 
 import (
@@ -60,6 +63,9 @@ func (b *Book) DeleteCells(sheet int, r model.Range, how Shift) (calc.Result, er
 	return b.shiftCells(sheet, r, how == ShiftUp, false)
 }
 
+// shiftCells inserts or deletes the block r, shifting cells down/up when
+// vertical, else right/left; a block spanning whole columns (rows) shifted
+// along them becomes a row (column) insertion or deletion.
 func (b *Book) shiftCells(sheet int, r model.Range, vertical, insert bool) (calc.Result, error) {
 	// A block spanning whole columns (rows) shifted along them is a
 	// row (column) insertion.
@@ -79,6 +85,10 @@ func (b *Book) shiftCells(sheet int, r model.Range, vertical, insert bool) (calc
 	return b.structural(op, Where{sheet, r})
 }
 
+// applyShiftCells performs a shiftCells operation: it refuses to split a
+// merged area or pivot table or push cells off the sheet, saves the sheet
+// for undo, adjusts the formulas pointing into the moved strip, shifts the
+// cells and recalculates.
 func (b *Book) applyShiftCells(op *structural) (calc.Result, error) {
 	sh := b.WB.Sheets[op.sheet]
 	c := op.cells
@@ -166,6 +176,7 @@ func (b *Book) setAnnots(list []annotChange, after bool) {
 	}
 }
 
+// notePtr is a copy of the note at r, c, or nil when there is none.
 func notePtr(sh *model.Sheet, r, c int) *model.Note {
 	if n, ok := sh.NoteAt(r, c); ok {
 		return &n
@@ -173,6 +184,7 @@ func notePtr(sh *model.Sheet, r, c int) *model.Note {
 	return nil
 }
 
+// linkPtr is a copy of the hyperlink at r, c, or nil when there is none.
 func linkPtr(sh *model.Sheet, r, c int) *model.Hyperlink {
 	if h, ok := sh.LinkAt(r, c); ok {
 		return &h
@@ -211,7 +223,8 @@ func (b *Book) ClearNotes(sheet int, r model.Range) bool {
 	return true
 }
 
-// HyperlinkStyle is the font of Excel's Hyperlink cell style.
+// HyperlinkStyle is st with the font of Excel's Hyperlink cell style (blue,
+// underlined).
 func HyperlinkStyle(st model.Style) model.Style {
 	st.Font.Color = color.NRGBA{R: 0x05, G: 0x63, B: 0xC1, A: 0xFF}
 	st.Font.Underline = true

@@ -38,6 +38,8 @@ func WriteFile(path string, data []byte, perm os.FileMode) error {
 	return err
 }
 
+// rename renames from over to, retrying briefly on Windows while another
+// process holds to open.
 func rename(from, to string) error {
 	err := os.Rename(from, to)
 	if runtime.GOOS != "windows" {

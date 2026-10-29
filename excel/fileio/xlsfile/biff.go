@@ -55,6 +55,7 @@ const (
 	bofTypeChart     = 0x0020
 )
 
+// u16 reads the little-endian uint16 at off, or 0 past the end of b.
 func u16(b []byte, off int) int {
 	if off+2 > len(b) {
 		return 0
@@ -62,6 +63,7 @@ func u16(b []byte, off int) int {
 	return int(binary.LittleEndian.Uint16(b[off:]))
 }
 
+// u32 reads the little-endian uint32 at off, or 0 past the end of b.
 func u32(b []byte, off int) uint32 {
 	if off+4 > len(b) {
 		return 0
@@ -69,6 +71,7 @@ func u32(b []byte, off int) uint32 {
 	return binary.LittleEndian.Uint32(b[off:])
 }
 
+// f64 reads the little-endian IEEE double at off, or 0 past the end of b.
 func f64(b []byte, off int) float64 {
 	if off+8 > len(b) {
 		return 0
@@ -137,6 +140,8 @@ func unicodeString(b []byte, off, cchBytes int) (string, int) {
 	return chars(b, off, cch, flags&0x01 != 0)
 }
 
+// chars reads cch characters at off, 16-bit when wide and Latin-1
+// otherwise, clipped to b, and returns them with the offset after them.
 func chars(b []byte, off, cch int, wide bool) (string, int) {
 	n := cch
 	if wide {
@@ -162,6 +167,8 @@ type segments struct {
 	pos  int // offset in current segment
 }
 
+// done reports whether every segment is used up, first advancing past
+// any exhausted ones.
 func (s *segments) done() bool {
 	for s.i < len(s.segs) && s.pos >= len(s.segs[s.i]) {
 		s.i++
@@ -170,6 +177,7 @@ func (s *segments) done() bool {
 	return s.i >= len(s.segs)
 }
 
+// byte reads the next byte across segment boundaries, or 0 when done.
 func (s *segments) byte() byte {
 	if s.done() {
 		return 0
@@ -179,10 +187,13 @@ func (s *segments) byte() byte {
 	return c
 }
 
+// u16 reads a little-endian uint16 across segment boundaries.
 func (s *segments) u16() int { return int(s.byte()) | int(s.byte())<<8 }
 
+// u32 reads a little-endian uint32 across segment boundaries.
 func (s *segments) u32() int { return s.u16() | s.u16()<<16 }
 
+// skip advances n bytes across segment boundaries, stopping when done.
 func (s *segments) skip(n int) {
 	for n > 0 && !s.done() {
 		k := min(n, len(s.segs[s.i])-s.pos)

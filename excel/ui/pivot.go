@@ -1,3 +1,5 @@
+// pivot.go handles PivotTables: creating and changing reports, their contextual Analyze and Design ribbons, and the report cell menu.
+
 package ui
 
 import (
@@ -267,10 +269,12 @@ func (a *App) pivotDelete() bool {
 	return true
 }
 
+// overlap reports whether ranges a and b share a cell.
 func overlap(a, b model.Range) bool {
 	return a.R1 <= b.R2 && b.R1 <= a.R2 && a.C1 <= b.C2 && b.C1 <= a.C2
 }
 
+// contains reports whether range in lies entirely within outer.
 func contains(outer, in model.Range) bool {
 	return in.R1 >= outer.R1 && in.R2 <= outer.R2 && in.C1 >= outer.C1 && in.C2 <= outer.C2
 }
@@ -517,8 +521,10 @@ func (a *App) layoutPivotRibbon(gtx layout.Context) layout.Dimensions {
 	return a.layoutAnalyzeRibbon(gtx, pt)
 }
 
+// refreshItems is the Refresh button's menu.
 var refreshItems = []string{"Refresh", "Refresh All"}
 
+// setTips sets the tooltips of the Analyze ribbon's buttons.
 func (r *analyzeRibbon) setTips() {
 	tip := gui.SetTip
 	tip(&r.fieldSettings, "Field Settings", "", "Show the settings of the selected field: its name, subtotals or how its values are summarized.")
@@ -531,6 +537,8 @@ func (r *analyzeRibbon) setTips() {
 	tip(&r.details, "Show Details", "", "Show the source rows behind the selected value on a new sheet.")
 }
 
+// layoutAnalyzeRibbon draws the PivotTable Analyze ribbon for report pt and
+// runs its clicked commands.
 func (a *App) layoutAnalyzeRibbon(gtx layout.Context, pt *model.PivotTable) layout.Dimensions {
 	r := &a.pv.an
 	if !r.tipsSet {
@@ -593,6 +601,7 @@ func (a *App) layoutAnalyzeRibbon(gtx layout.Context, pt *model.PivotTable) layo
 	return dims
 }
 
+// The Design ribbon's drop-down menus.
 var (
 	subtotalItems = []string{"Do Not Show Subtotals", "Show All Subtotals at Bottom of Group", "Show All Subtotals at Top of Group"}
 	grandItems    = []string{"Off for Rows and Columns", "On for Rows and Columns", "On for Rows Only", "On for Columns Only"}
@@ -600,6 +609,7 @@ var (
 	blankItems    = []string{"Insert Blank Line after Each Item", "Remove Blank Line after Each Item"}
 )
 
+// setTips sets the tooltips of the Design ribbon's drop-downs.
 func (r *designRibbon) setTips() {
 	tip := gui.SetTip
 	tip(&r.subtotalsDD, "Subtotals", "", "Show or hide subtotals, at the top or the bottom of their group.")
@@ -608,6 +618,8 @@ func (r *designRibbon) setTips() {
 	tip(&r.blank, "Blank Rows", "", "Emphasize groups by adding a blank line between each grouped item.")
 }
 
+// layoutDesignRibbon draws the Design ribbon for report pt and runs its chosen
+// menu items.
 func (a *App) layoutDesignRibbon(gtx layout.Context, pt *model.PivotTable) layout.Dimensions {
 	r := &a.pv.de
 	if !r.tipsSet {

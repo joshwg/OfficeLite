@@ -1,3 +1,6 @@
+// Tests of owner-file names and encoding, lock dialog text, cloud-folder
+// detection and the open-document registry, in and across processes.
+
 package lockfile
 
 import (
@@ -17,6 +20,8 @@ import (
 	"time"
 )
 
+// TestOwnerName checks Word's and Excel's owner file names and the
+// candidates ownerPaths tries.
 func TestOwnerName(t *testing.T) {
 	for name, want := range map[string]string{
 		"Report2024.docx":        "~$port2024.docx", // eight or more: two dropped
@@ -75,6 +80,8 @@ func layout(f Format, ansi []byte, utf []uint16) []byte {
 	return b.Bytes()
 }
 
+// TestEncode checks both formats' byte layout, the Windows-1252 ANSI copy
+// and the 52-character limit.
 func TestEncode(t *testing.T) {
 	josh := []uint16{'J', 'o', 's', 'h'}
 	word := Encode(Word, "Josh")
@@ -104,6 +111,8 @@ func TestEncode(t *testing.T) {
 	}
 }
 
+// TestDecode checks Encode round trips, the ANSI fallback and rejection of
+// malformed owner files.
 func TestDecode(t *testing.T) {
 	for _, name := range []string{"Josh", "José Müller", "東京", strings.Repeat("x", 32), strings.Repeat("y", 52), "A"} {
 		for _, f := range []Format{Word, Excel} {
@@ -124,6 +133,7 @@ func TestDecode(t *testing.T) {
 	}
 }
 
+// TestStatus checks Status's lock state, messages, buttons and choices.
 func TestStatus(t *testing.T) {
 	s := Status{Owner: "Alice"}
 	if !s.Locked() || !strings.Contains(s.Message("a.docx"), "locked for editing by Alice") || len(s.Buttons()) != 3 {
@@ -144,6 +154,8 @@ func TestStatus(t *testing.T) {
 	}
 }
 
+// TestSaveError checks the plain message for a save that failed for
+// another reason than a lock.
 func TestSaveError(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "a.docx")
 	if got := SaveError(p, errors.New("disk full")); got != "Save failed: disk full" {
@@ -151,6 +163,8 @@ func TestSaveError(t *testing.T) {
 	}
 }
 
+// TestCloudFolder checks cloud-sync folders by environment variable and by
+// path component.
 func TestCloudFolder(t *testing.T) {
 	t.Setenv("OneDrive", filepath.Join(string(filepath.Separator), "users", "josh", "Stuff"))
 	for path, want := range map[string]bool{
@@ -169,7 +183,7 @@ func TestCloudFolder(t *testing.T) {
 
 // testExe is this test binary, to run again as another process. Not on
 // Windows, where a test exe spawning itself trips antivirus heuristics;
-// the same-process handle tests in helper_windows_test.go cover locks
+// the same-process handle tests in lock_windows_test.go cover locks
 // there.
 func testExe(t *testing.T) string {
 	if runtime.GOOS == "windows" {
@@ -182,6 +196,8 @@ func testExe(t *testing.T) string {
 	return exe
 }
 
+// useRegistry points the registry at a fresh temporary directory for the
+// test and returns it.
 func useRegistry(t *testing.T) string {
 	dir := t.TempDir()
 	old := registryDir
@@ -190,6 +206,8 @@ func useRegistry(t *testing.T) string {
 	return dir
 }
 
+// TestRegistryInProcess checks Activate, re-registration on Save As,
+// cleanup on Close and a nil Doc within one process.
 func TestRegistryInProcess(t *testing.T) {
 	dir := useRegistry(t)
 	path := filepath.Join(t.TempDir(), "Book.xlsx")
@@ -223,6 +241,8 @@ func TestRegistryInProcess(t *testing.T) {
 	nilDoc.Close()
 }
 
+// TestRegistryStale checks that a dead process's entry is dropped and an
+// unreachable live one counts as open elsewhere.
 func TestRegistryStale(t *testing.T) {
 	dir := useRegistry(t)
 	path := filepath.Join(t.TempDir(), "a.docx")
@@ -258,6 +278,8 @@ func TestRegistryStale(t *testing.T) {
 	os.Remove(live)
 }
 
+// TestHandOff checks the hand-off protocol: raising, a wrong token and a
+// file not open.
 func TestHandOff(t *testing.T) {
 	useRegistry(t)
 	path := filepath.Join(t.TempDir(), "a.docx")
@@ -304,6 +326,8 @@ func TestHelperProcess(t *testing.T) {
 	os.Exit(0)
 }
 
+// TestCrossProcess checks Check and Activate against a helper process, and
+// cleanup of its entry once it exits.
 func TestCrossProcess(t *testing.T) {
 	dir := useRegistry(t)
 	path := filepath.Join(t.TempDir(), "Shared.docx")

@@ -29,6 +29,10 @@ func NewAxis(n int, def float32, sizes map[int]float32) *Axis {
 	return &Axis{off: off}
 }
 
+// Len is the number of entries; Start, End and Size give entry i's offsets
+// and size (i clamped to the axis); Span is the size of entries i through j;
+// Hidden reports a zero-size entry; Clamp clamps an index to the axis;
+// Total is the whole axis's size; Between is the offset from i's start to j's.
 func (a *Axis) Len() int                 { return len(a.off) - 1 }
 func (a *Axis) Start(i int) float64      { return a.off[min(max(i, 0), a.Len())] }
 func (a *Axis) End(i int) float64        { return a.Start(i + 1) }

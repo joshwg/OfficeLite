@@ -1,3 +1,5 @@
+// Computing a report: filtering, aggregating, axis trees and the cell layout.
+
 package pivot
 
 import (
@@ -105,6 +107,8 @@ type acc struct {
 	has              bool
 }
 
+// add counts item it into the accumulator; a blank marks the cell as
+// having records but adds no value.
 func (a *acc) add(it *Item) {
 	a.has = true
 	if it.Key == "" {
@@ -345,6 +349,8 @@ func (c *computer) tree(axis []int) *node {
 	return root
 }
 
+// grow adds n's children for the first field of axis, one per item with
+// records (one per value field under Σ Values), and recurses on the rest.
 func (c *computer) grow(n *node, axis []int) {
 	if len(axis) == 0 {
 		return
@@ -532,6 +538,7 @@ func (c *computer) value(r, cl *line) (cell Cell, ok bool) {
 	return cell, true
 }
 
+// format renders v with the report's formatter, or as General when it has none.
 func (c *computer) format(v float64, id int, code string) string {
 	if c.nf == nil {
 		return numfmt.General(v)

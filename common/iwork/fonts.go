@@ -1,3 +1,5 @@
+// Mapping of iWork PostScript font names to family names and bold/italic.
+
 package iwork
 
 import (

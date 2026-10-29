@@ -1,3 +1,5 @@
+// Non-Windows lock tests: owner-file liveness by age.
+
 //go:build !windows
 
 package lockfile
@@ -9,7 +11,9 @@ import (
 	"time"
 )
 
-// TestCheckAge: outside Windows an owner file is live for a day.
+// TestCheckAge checks that outside Windows an owner file is live for a
+// day, that only this user's stale one is deleted, and that none is
+// written.
 func TestCheckAge(t *testing.T) {
 	useRegistry(t)
 	dir := t.TempDir()

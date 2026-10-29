@@ -1,3 +1,6 @@
+// Aggregating functions: SUM, PRODUCT, SUMSQ, SUMPRODUCT, the SUMX2*Y2
+// pair sums, PERCENTOF, SUBTOTAL and AGGREGATE.
+
 package mathtrig
 
 import (
@@ -5,6 +8,7 @@ import (
 	"officelite/excel/formula/functions/internal/stats"
 )
 
+// registerAggregate adds the aggregating functions to r.
 func registerAggregate(r *f.Registry) {
 	r.Add(
 		statSpec("SUM", kNum, stSum),
@@ -30,7 +34,7 @@ func registerAggregate(r *f.Registry) {
 	)
 }
 
-// SUMPRODUCT(array1, [array2], ...): the arrays must have the same shape;
+// sumProduct implements SUMPRODUCT(array1, [array2], ...): the arrays must have the same shape;
 // entries that are not numbers count as 0, errors propagate.
 func sumProduct(e *f.Env, a []f.Value) f.Value {
 	gs := make([]*grid, len(a))
@@ -92,7 +96,7 @@ func pairSum(g func(x, y float64) float64) func(*f.Env, []f.Value) f.Value {
 	}
 }
 
-// PERCENTOF(data_subset, data_all) = SUM(data_subset) / SUM(data_all).
+// percentOf implements PERCENTOF(data_subset, data_all) = SUM(data_subset) / SUM(data_all).
 func percentOf(e *f.Env, a []f.Value) f.Value {
 	part, err := gather(e, a[:1], opts{k: kNum})
 	if err != nil {
@@ -109,7 +113,7 @@ func percentOf(e *f.Env, a []f.Value) f.Value {
 	return f.NumberOrErr(stats.Sum(part) / t)
 }
 
-// SUBTOTAL(function_num, ref1, [ref2], ...): function_num 1-11 (AVERAGE,
+// subtotal implements SUBTOTAL(function_num, ref1, [ref2], ...): function_num 1-11 (AVERAGE,
 // COUNT, COUNTA, MAX, MIN, PRODUCT, STDEV, STDEVP, SUM, VAR, VARP), or
 // 101-111 to also ignore rows hidden by hand. Rows the AutoFilter hid are
 // always left out, as are cells that hold SUBTOTAL or AGGREGATE formulas.
@@ -145,7 +149,7 @@ func aggregateRefs(e *f.Env, fn int, refs []f.Value, o opts) f.Value {
 	return stat(fn, xs, 0)
 }
 
-// AGGREGATE(function_num, options, ref1, [ref2], ...) for function_num
+// aggregate implements AGGREGATE(function_num, options, ref1, [ref2], ...) for function_num
 // 1-13, and AGGREGATE(function_num, options, array, k) for 14-19 (LARGE,
 // SMALL, PERCENTILE.INC, QUARTILE.INC, PERCENTILE.EXC, QUARTILE.EXC).
 // Options: 0/1 ignore nested SUBTOTAL/AGGREGATE cells, 2/3 also errors,

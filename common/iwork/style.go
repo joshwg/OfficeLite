@@ -1,3 +1,6 @@
+// Paragraph, character, cell and list styles: decoding their properties and
+// resolving them through their parent chains.
+
 package iwork
 
 import (
@@ -25,6 +28,7 @@ const (
 	Off
 )
 
+// triOf returns On for true and Off for false.
 func triOf(b bool) Tri {
 	if b {
 		return On
@@ -186,6 +190,7 @@ type ParaProps struct {
 	TabsSet         bool
 }
 
+// ptr returns a pointer to a copy of v.
 func ptr[T any](v T) *T { return &v }
 
 // Merge returns p with the properties set in over replacing it.
@@ -222,6 +227,7 @@ func (p ParaProps) Merge(over ParaProps) ParaProps {
 	return p
 }
 
+// readParaProps decodes a ParagraphStylePropertiesArchive.
 func readParaProps(m Message) ParaProps {
 	var p ParaProps
 	if v, ok := m.UintOK(1); ok {
@@ -285,6 +291,7 @@ type CellProps struct {
 	VAlign int // 0 unset, 1 top, 2 middle, 3 bottom
 }
 
+// readCellProps decodes a CellStylePropertiesArchive.
 func readCellProps(m Message) CellProps {
 	var p CellProps
 	if m.Has(1) { // an empty fill clears an inherited one

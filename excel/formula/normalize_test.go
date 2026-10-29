@@ -1,7 +1,11 @@
+// normalize_test.go tests Normalize.
+
 package formula
 
 import "testing"
 
+// TestNormalize checks upper-casing, closing of open parentheses and errors
+// for formulas that don't parse.
 func TestNormalize(t *testing.T) {
 	for _, tc := range []struct{ in, want string }{
 		{"sum(a1:b2)", "SUM(A1:B2)"},

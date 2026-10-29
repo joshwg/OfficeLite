@@ -103,6 +103,8 @@ func (e *engine) recalculate(mode Mode) Result {
 	return e.res
 }
 
+// newEngine returns an engine for wb with no formula scheduled, its clock
+// at now and its random numbers seeded from it. The caller closes e.nf.
 func newEngine(wb *model.Workbook, funcs *formula.Registry, now time.Time) *engine {
 	return &engine{
 		wb:      wb,
@@ -140,6 +142,8 @@ func clearSpill(sh *model.Sheet, anchor [2]int, rng model.Range) {
 	delete(sh.Spills, anchor)
 }
 
+// compute evaluates the formula of cell k (parsing it once; #NAME? when it
+// doesn't parse) and stores the result.
 func (e *engine) compute(k key) {
 	sh := e.wb.Sheets[k.sheet]
 	cell := sh.Get(k.row, k.col)
@@ -270,6 +274,9 @@ func (e *engine) format(style uint32, v float64, hint string) string {
 
 // --- formula.Context ------------------------------------------------------
 
+// CellValue returns a cell's value, calculating its formula first when it
+// is pending (0 for a circular reference, which is recorded) and any
+// dynamic array that may spill into an empty cell.
 func (e *engine) CellValue(sheet, row, col int) formula.Value {
 	if sheet < 0 || sheet >= len(e.wb.Sheets) {
 		return formula.ErrRef
@@ -306,6 +313,8 @@ func (e *engine) spillPending(sheet, row, col int) bool {
 // CellValue is a stored cell's value as formulas see it.
 func CellValue(c *model.Cell) formula.Value { return cellValue(c) }
 
+// cellValue converts a stored cell to a formula value; empty cells are
+// Blank.
 func cellValue(c *model.Cell) formula.Value {
 	switch c.Kind {
 	case model.KindNumber:
@@ -320,6 +329,8 @@ func cellValue(c *model.Cell) formula.Value {
 	return formula.Blank{}
 }
 
+// CellFormula returns a cell's formula text, "" for a constant or a
+// sheet that doesn't exist.
 func (e *engine) CellFormula(sheet, row, col int) string {
 	if sheet < 0 || sheet >= len(e.wb.Sheets) {
 		return ""
@@ -327,6 +338,8 @@ func (e *engine) CellFormula(sheet, row, col int) string {
 	return e.wb.Sheets[sheet].Get(row, col).Formula
 }
 
+// SheetIndex returns the index of the sheet named name (ignoring case),
+// or -1.
 func (e *engine) SheetIndex(name string) int {
 	for i, sh := range e.wb.Sheets {
 		if strings.EqualFold(sh.Name, name) {
@@ -336,6 +349,7 @@ func (e *engine) SheetIndex(name string) int {
 	return -1
 }
 
+// SheetName returns the name of sheet, or "" when it doesn't exist.
 func (e *engine) SheetName(sheet int) string {
 	if sheet < 0 || sheet >= len(e.wb.Sheets) {
 		return ""
@@ -343,8 +357,11 @@ func (e *engine) SheetName(sheet int) string {
 	return e.wb.Sheets[sheet].Name
 }
 
+// SheetCount returns the number of sheets.
 func (e *engine) SheetCount() int { return len(e.wb.Sheets) }
 
+// UsedSize returns sheet's stored extent (at least 1×1), cached for the
+// recalculation and grown as dynamic arrays spill.
 func (e *engine) UsedSize(sheet int) (rows, cols int) {
 	if u, ok := e.used[sheet]; ok {
 		return u[0], u[1]
@@ -380,6 +397,8 @@ func (e *engine) UsedSizeFor(r formula.Ref) (rows, cols int) {
 	return e.UsedSize(r.Sheet)
 }
 
+// Name returns the formula of defined name name as seen from sheet: the
+// sheet's own name first, else the workbook-level one.
 func (e *engine) Name(name string, sheet int) (string, bool) {
 	var global string
 	found := false
@@ -397,6 +416,8 @@ func (e *engine) Name(name string, sheet int) (string, bool) {
 	return global, found
 }
 
+// Spill returns the range the dynamic array at sheet, row, col spilled
+// into, calculating it first when it is pending.
 func (e *engine) Spill(sheet, row, col int) (formula.Ref, bool) {
 	if sheet < 0 || sheet >= len(e.wb.Sheets) {
 		return formula.Ref{}, false
@@ -412,16 +433,18 @@ func (e *engine) Spill(sheet, row, col int) (formula.Ref, bool) {
 	return formula.Ref{Sheet: sheet, R1: rng.R1, C1: rng.C1, R2: rng.R2, C2: rng.C2}, true
 }
 
+// Now returns the recalculation's fixed current time.
 func (e *engine) Now() time.Time { return e.now }
 
 // RowHidden reports whether a row is hidden, by its height or by the
-// AutoFilter, and RowFiltered whether the AutoFilter hid it: what
-// SUBTOTAL and AGGREGATE need to skip hidden rows (not part of
-// formula.Context; functions find them by a type assertion).
+// AutoFilter: what SUBTOTAL and AGGREGATE need to skip hidden rows (not
+// part of formula.Context; functions find it by a type assertion).
 func (e *engine) RowHidden(sheet, row int) bool {
 	return sheet >= 0 && sheet < len(e.wb.Sheets) && e.wb.Sheets[sheet].RowHidden(row)
 }
 
+// RowFiltered reports whether the AutoFilter hid a row (not part of
+// formula.Context; functions find it by a type assertion).
 func (e *engine) RowFiltered(sheet, row int) bool {
 	return sheet >= 0 && sheet < len(e.wb.Sheets) && e.wb.Sheets[sheet].RowFiltered(row)
 }
@@ -444,6 +467,8 @@ func (e *engine) PivotData(sheet, row, col int, dataField string, pairs []formul
 	return e.CellValue(sheet, r, c)
 }
 
+// Date1904 reports whether the workbook counts dates from 1904, and Rand
+// returns the next random number in [0, 1).
 func (e *engine) Date1904() bool { return e.wb.Date1904 }
 func (e *engine) Rand() float64  { return e.rnd.Float64() }
 
@@ -459,6 +484,7 @@ type overrideCtx struct {
 	o *Override
 }
 
+// CellValue returns the override's value for its cell, else the engine's.
 func (c overrideCtx) CellValue(sheet, row, col int) formula.Value {
 	if o := c.o; o != nil && o.Sheet == sheet && o.Row == row && o.Col == col {
 		return o.Value

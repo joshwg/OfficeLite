@@ -1,7 +1,12 @@
+// Tests for OpenURL's link filter.
+
 package gui
 
 import "testing"
 
+// TestOpenURLRefusesPrograms checks that OpenURL refuses programs, scripts
+// and unknown schemes, and that linkAllowed passes web, e-mail and
+// document links.
 func TestOpenURLRefusesPrograms(t *testing.T) {
 	for _, u := range []string{
 		`C:\Windows\System32\calc.exe`, `c:\tools\RUN.BAT`, `\\server\share\setup.MSI`,

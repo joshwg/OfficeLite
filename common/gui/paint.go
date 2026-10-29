@@ -1,3 +1,6 @@
+// Painting primitives: filled rectangles, solid and dashed lines, and text
+// material.
+
 package gui
 
 import (
@@ -30,7 +33,7 @@ func VLine(ops *op.Ops, x, y0, y1, thickness int, c color.NRGBA) {
 // DashedLine paints an axis-aligned line from (x0,y0) to (x1,y1) as a run
 // of dashes: on pixels drawn, off pixels skipped, repeating.
 func DashedLine(ops *op.Ops, x0, y0, x1, y1, thickness, on, off int, c color.NRGBA) {
-	if on <= 0 {
+	if on <= 0 || on+off <= 0 { // no dashes, or a step that never advances
 		return
 	}
 	horizontal := y0 == y1
@@ -48,7 +51,8 @@ func DashedLine(ops *op.Ops, x0, y0, x1, y1, thickness, on, off int, c color.NRG
 	}
 }
 
-// Text material: a recorded color op for widget.Label.
+// Material returns a recorded color op in c, the text material for
+// widget.Label.
 func Material(ops *op.Ops, c color.NRGBA) op.CallOp {
 	m := op.Record(ops)
 	paint.ColorOp{Color: c}.Add(ops)

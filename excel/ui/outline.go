@@ -1,3 +1,5 @@
+// outline.go implements the Data ribbon's Outline group: Group / Ungroup, Subtotal, Show / Hide Detail and outline button clicks.
+
 package ui
 
 import (
@@ -25,7 +27,7 @@ import (
 // dialog, Show Detail and Hide Detail, and clicks on the outline's +/-
 // and level buttons (drawn by render/outline.go).
 
-// The Ungroup button's menu.
+// ungroupItems is the Ungroup button's menu.
 var ungroupItems = []string{"Ungroup…", "Clear Outline"}
 
 // groupDialog is the Group (or Ungroup) dialog: rows or columns.
@@ -63,6 +65,8 @@ func (a *App) groupCmd() { a.groupOrUngroup(false) }
 // ungroupCmd ungroups them (Data > Ungroup, Shift+Alt+Left).
 func (a *App) ungroupCmd() { a.groupOrUngroup(true) }
 
+// groupOrUngroup groups (ungroups) the selection's whole rows or columns, or
+// asks Rows / Columns for a cell range.
 func (a *App) groupOrUngroup(ungroup bool) {
 	if !a.readyToChange() || !a.singleRange() {
 		return
@@ -99,6 +103,8 @@ func (a *App) runGroup(ungroup, rows bool, r model.Range) {
 	}
 }
 
+// layoutGroupDialog lays out the Group / Ungroup dialog and runs it on OK.
+// k is the dialog key: 1 for Enter, -1 for Esc, 0 for none.
 func (a *App) layoutGroupDialog(gtx layout.Context, k int) {
 	d := &a.ins.grp
 	for a.ins.ok.Clicked(gtx) {
@@ -143,6 +149,7 @@ func (a *App) clearOutline() {
 func (a *App) showDetail() { a.detail(false) }
 func (a *App) hideDetail() { a.detail(true) }
 
+// detail collapses (hide) or expands the groups of the selection.
 func (a *App) detail(hide bool) {
 	if !a.readyToChange() || !a.singleRange() {
 		return
@@ -160,7 +167,8 @@ func (a *App) detail(hide bool) {
 }
 
 // outlinePress runs a click on an outline button: a level button shows
-// that many levels, a group's - collapses it and + expands it.
+// that many levels, a group's - collapses it and + expands it. It reports
+// whether p was on a button.
 func (a *App) outlinePress(v *render.View, p f32.Point) bool {
 	b, ok := v.OutlineButtonAt(p.X, p.Y)
 	if !ok {
@@ -178,7 +186,7 @@ func (a *App) outlinePress(v *render.View, p f32.Point) bool {
 	return true
 }
 
-// outlineCursors shows the arrow over the outline's buttons.
+// outlineCursors shows the hand cursor over the outline's buttons.
 func (a *App) outlineCursors(gtx layout.Context, v *render.View) {
 	for _, b := range v.OutlineButtons() {
 		area := clip.Rect(b.Rect).Push(gtx.Ops)
@@ -256,6 +264,9 @@ func (a *App) subtotalLabels(d *subtotalDialog) []string {
 	return out
 }
 
+// layoutSubtotalDialog lays out the Subtotal dialog: OK adds subtotals for the
+// checked columns, Remove All removes them. k is the dialog key: 1 for Enter,
+// -1 for Esc, 0 for none.
 func (a *App) layoutSubtotalDialog(gtx layout.Context, k int) {
 	d := &a.ins.sub
 	for a.ins.ok.Clicked(gtx) {

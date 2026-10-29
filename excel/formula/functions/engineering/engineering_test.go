@@ -1,3 +1,6 @@
+// Tests for the engineering functions. Expected values are Microsoft's
+// documentation examples plus the edge cases its remarks describe.
+
 package engineering
 
 import (
@@ -7,8 +10,8 @@ import (
 	"officelite/excel/formula/functions/internal/ftest"
 )
 
-// Expected values are Microsoft's documentation examples plus the edge
-// cases its remarks describe.
+// TestBases covers the BIN/OCT/DEC/HEX conversions, including two's
+// complement, places and coercion.
 func TestBases(t *testing.T) {
 	r := f.NewRegistry()
 	Register(r)
@@ -105,6 +108,8 @@ func TestBases(t *testing.T) {
 	})
 }
 
+// TestConvert covers CONVERT across every unit class, temperatures,
+// prefixes and errors.
 func TestConvert(t *testing.T) {
 	r := f.NewRegistry()
 	Register(r)
@@ -261,6 +266,7 @@ func TestConvert(t *testing.T) {
 	})
 }
 
+// abs returns the absolute value of x.
 func abs(x float64) float64 {
 	if x < 0 {
 		return -x

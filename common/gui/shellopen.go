@@ -1,3 +1,6 @@
+// Link safety for OpenURL: which links and files a document may open,
+// refusing programs and scripts.
+
 package gui
 
 import (

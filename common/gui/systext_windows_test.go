@@ -1,3 +1,5 @@
+// Tests for the DirectWrite text path's mapping of glyph IDs to font files.
+
 package gui
 
 import (
@@ -10,9 +12,9 @@ import (
 	"golang.org/x/image/math/fixed"
 )
 
-// The face index in each glyph ID must lead to the file the shaper took
-// the glyph from, or DirectWrite draws it from another face (bold text
-// for regular, say).
+// TestFaceFilesMatchShaper checks that the face index in each glyph ID
+// leads to the file the shaper took the glyph from, or DirectWrite draws
+// it from another face (bold text for regular, say).
 func TestFaceFilesMatchShaper(t *testing.T) {
 	lib := NewFontLibrary(DefaultFontDirs()...)
 	if len(lib.Faces("Arial")) < 2 {

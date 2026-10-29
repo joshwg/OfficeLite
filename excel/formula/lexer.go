@@ -1,3 +1,6 @@
+// lexer.go splits formula text into tokens: numbers, strings, errors,
+// references, names, function names, operators and punctuation.
+
 package formula
 
 import (
@@ -6,6 +9,7 @@ import (
 	"strings"
 )
 
+// tokKind classifies a lexer token.
 type tokKind int
 
 const (
@@ -28,6 +32,7 @@ const (
 	tAt     // @ (implicit intersection)
 )
 
+// token is one lexer token; pos is its byte offset in the source.
 type token struct {
 	kind  tokKind
 	text  string
@@ -36,9 +41,11 @@ type token struct {
 	pos   int
 }
 
-// prefixes Excel writes in files for functions and names added after 2007.
+// futurePrefixes are the prefixes Excel writes in files for functions and
+// names added after 2007.
 var futurePrefixes = []string{"_XLFN._XLWS.", "_XLFN.", "_XLWS.", "_XLPM.", "_XLUDF.", "_XLETA."}
 
+// stripPrefixes removes any leading futurePrefixes from s, ignoring case.
 func stripPrefixes(s string) string {
 	for again := true; again; {
 		again = false
@@ -51,6 +58,7 @@ func stripPrefixes(s string) string {
 	return s
 }
 
+// lex splits formula text (without '=') into tokens ending with tEOF.
 func lex(src string) ([]token, error) {
 	var toks []token
 	i := 0
@@ -187,12 +195,15 @@ func lex(src string) ([]token, error) {
 	return append(toks, token{kind: tEOF, pos: len(src)}), nil
 }
 
+// errorLiterals are the error constants a formula can contain.
 var errorLiterals = []string{
 	"#GETTING_DATA", "#DIV/0!", "#VALUE!", "#NAME?", "#NULL!", "#SPILL!",
 	"#CALC!", "#REF!", "#NUM!", "#N/A", "#CONNECT!", "#BLOCKED!", "#UNKNOWN!",
 	"#FIELD!", "#BUSY!", "#EXTERNAL!",
 }
 
+// lexError matches an error literal at the start of s, ignoring case, and
+// returns its canonical text and length (0 if none).
 func lexError(s string) (string, int) {
 	for _, e := range errorLiterals {
 		if len(s) >= len(e) && strings.EqualFold(s[:len(e)], e) {
@@ -202,14 +213,20 @@ func lexError(s string) (string, int) {
 	return "", 0
 }
 
+// isIdentStart reports whether c can start a name: a letter, '_', '\' or a
+// non-ASCII byte.
 func isIdentStart(c byte) bool {
 	return c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c == '_' || c == '\\' || c >= 0x80
 }
 
+// isIdentChar reports whether c can continue a name: also digits, '.' and
+// '?'.
 func isIdentChar(c byte) bool {
 	return isIdentStart(c) || c >= '0' && c <= '9' || c == '.' || c == '?'
 }
 
+// scanNumber returns the length of the number literal (digits, fraction,
+// exponent) at the start of s, or 0.
 func scanNumber(s string) int {
 	i := 0
 	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
@@ -240,7 +257,8 @@ func scanNumber(s string) int {
 	return i
 }
 
-// cell reference pieces
+// matchCol returns the length of a column part ($ and up to three letters)
+// at the start of s, or 0.
 func matchCol(s string) int {
 	i := 0
 	if i < len(s) && s[i] == '$' {
@@ -256,6 +274,8 @@ func matchCol(s string) int {
 	return j
 }
 
+// matchRow returns the length of a row part ($ and digits not starting with
+// 0) at the start of s, or 0.
 func matchRow(s string) int {
 	i := 0
 	if i < len(s) && s[i] == '$' {
@@ -271,6 +291,8 @@ func matchRow(s string) int {
 	return j
 }
 
+// endsToken reports whether a match of length n is not followed by a name
+// character or '('.
 func endsToken(s string, n int) bool {
 	return n >= len(s) || !isIdentChar(s[n]) && s[n] != '('
 }

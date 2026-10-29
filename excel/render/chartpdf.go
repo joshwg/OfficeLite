@@ -1,3 +1,6 @@
+// Charts in PDF exports: laid out as on screen (chart.go) and drawn with
+// vector paths and embedded-font text, in pixels scaled to points.
+
 package render
 
 import (
@@ -7,9 +10,6 @@ import (
 	"officelite/excel/model"
 	"officelite/excel/numfmt"
 )
-
-// Charts in PDF exports: laid out as on screen (chart.go) and drawn with
-// vector paths and embedded-font text, in pixels scaled to points.
 
 // chartEnvPDF is the layout environment of the export's charts.
 func (x *sheetExport) chartEnvPDF() *chartEnv {

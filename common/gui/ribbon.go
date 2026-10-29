@@ -1,3 +1,7 @@
+// Ribbon is the Office-style Home bar: captioned groups of controls in a
+// sideways-scrolling row, plus the big, small, drop and split buttons
+// that go in them.
+
 package gui
 
 import (
@@ -79,7 +83,7 @@ type RibbonGroup struct {
 	// Launcher, when set, adds the small dialog launcher in the caption's
 	// right corner (Excel's Format Cells for the Font group).
 	Launcher *widget.Clickable
-	Content  layout.Widget // laid out in a ContentHeight-tall box
+	Content  layout.Widget // laid out in a RibbonContentHeight-tall box
 }
 
 // RibbonContentHeight is the height available to a group's content.
@@ -150,6 +154,8 @@ func (r *Ribbon) Layout(gtx layout.Context, th *Theme, groups ...RibbonGroup) la
 	return layout.Dimensions{Size: image.Pt(w, h)}
 }
 
+// group draws one ribbon group: its content, the caption centered below
+// it with the optional launcher, and a separator line at its right.
 func (r *Ribbon) group(gtx layout.Context, th *Theme, g RibbonGroup) layout.Dimensions {
 	h := gtx.Dp(RibbonHeight) - 1
 	capH := gtx.Dp(ribbonCaption)

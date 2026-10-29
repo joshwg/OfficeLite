@@ -1,3 +1,6 @@
+// core_test.go tests the evaluator core: operators, array broadcasting,
+// parse errors, number text, date serials and criteria matching.
+
 package formula
 
 import (
@@ -5,11 +8,14 @@ import (
 	"testing"
 )
 
+// evalIn evaluates src in ctx from its default cell.
 func evalIn(t *testing.T, ctx *TestContext, src string) Value {
 	t.Helper()
 	return ctx.Eval(src)
 }
 
+// TestOperators checks arithmetic, text, comparison and reference operators,
+// coercions, names and implicit intersection.
 func TestOperators(t *testing.T) {
 	ctx := NewTestContext(NewRegistry())
 	ctx.Set("A1", 2)
@@ -53,7 +59,7 @@ func TestOperators(t *testing.T) {
 		{"=UNDEFINED", ErrName},
 		{"=NOSUCHFUNC(1)", ErrName},
 		{"=#N/A", ErrNA},
-		{"=@A1:A3", Number(2)}, // A1000 is outside the range: first... see below
+		{"=@A1:A3", Number(2)}, // skipped here: Eval runs from A1000, so it is checked below
 	} {
 		got := evalIn(t, ctx, c.src)
 		if c.src == "=@A1:A3" {
@@ -71,6 +77,7 @@ func TestOperators(t *testing.T) {
 	}
 }
 
+// TestArrays checks element-wise array operators and broadcasting.
 func TestArrays(t *testing.T) {
 	ctx := NewTestContext(NewRegistry())
 	ctx.SetRange("A1", [][]any{{1, 2}, {3, 4}})
@@ -94,6 +101,8 @@ func TestArrays(t *testing.T) {
 	}
 }
 
+// TestParseErrors checks that malformed formulas fail to parse and valid
+// edge cases parse.
 func TestParseErrors(t *testing.T) {
 	for _, src := range []string{"=1+", "=SUM(1", "=(1", "={1,2;3}", "=\"abc", "=A1:"} {
 		if _, err := Parse(src); err == nil {
@@ -108,6 +117,7 @@ func TestParseErrors(t *testing.T) {
 	}
 }
 
+// TestNumberText checks the General-format text of numbers.
 func TestNumberText(t *testing.T) {
 	for v, want := range map[float64]string{
 		0: "0", 1: "1", -2.5: "-2.5", 1.0 / 3: "0.333333333333333", 1e20: "1E+20",
@@ -120,6 +130,8 @@ func TestNumberText(t *testing.T) {
 	}
 }
 
+// TestDates checks DateSerial, SerialToYMD and ParseDateTime, including the
+// 1900 leap-year bug.
 func TestDates(t *testing.T) {
 	for _, c := range []struct {
 		y, m, d int
@@ -157,6 +169,8 @@ func TestDates(t *testing.T) {
 	}
 }
 
+// TestCriteria checks COUNTIF-style criteria: comparisons, wildcards, blanks
+// and errors.
 func TestCriteria(t *testing.T) {
 	for _, c := range []struct {
 		crit Value
@@ -193,6 +207,7 @@ func TestCriteria(t *testing.T) {
 	}
 }
 
+// sameValue reports whether a and b are equal, numbers within 1e-9.
 func sameValue(a, b Value) bool {
 	if x, ok := a.(Number); ok {
 		y, ok := b.(Number)
@@ -201,6 +216,8 @@ func sameValue(a, b Value) bool {
 	return a == b
 }
 
+// TestLiftedResultsAreScalars checks that a function lifted over an array
+// argument has each reference or array result reduced to a single value.
 func TestLiftedResultsAreScalars(t *testing.T) {
 	reg := NewRegistry()
 	reg.Add(

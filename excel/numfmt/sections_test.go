@@ -1,3 +1,5 @@
+// Tests for SplitSections.
+
 package numfmt
 
 import (
@@ -5,6 +7,7 @@ import (
 	"testing"
 )
 
+// TestSplitSections checks that quoted, bracketed, escaped, _ and * semicolons don't split.
 func TestSplitSections(t *testing.T) {
 	for _, c := range []struct {
 		code string

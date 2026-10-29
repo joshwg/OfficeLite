@@ -1,3 +1,11 @@
+// The AutoFilter in BIFF8, read and written: its range is the sheet's
+// built-in _FilterDatabase NAME; the sheet has AUTOFILTERINFO (the column
+// count) and an AUTOFILTER record per filtered column with up to two
+// conditions (DOPERs) or a Top 10, FILTERMODE while rows are filtered, and
+// a drop-down drawing object per header cell (written with the notes'
+// drawing; see annot.go). Value lists of more than two values are an
+// Excel 2007 addition (AUTOFILTER12) .xls can't hold.
+
 package xlsfile
 
 import (
@@ -9,14 +17,6 @@ import (
 	"officelite/excel/formula"
 	"officelite/excel/model"
 )
-
-// The AutoFilter in BIFF8: its range is the sheet's built-in
-// _FilterDatabase NAME; the sheet has AUTOFILTERINFO (the column count)
-// and an AUTOFILTER record per filtered column with up to two conditions
-// (DOPERs) or a Top 10, FILTERMODE while rows are filtered, and a
-// drop-down drawing object per header cell (written with the notes'
-// drawing; see annot.go). Value lists of more than two values are an
-// Excel 2007 addition (AUTOFILTER12) .xls can't hold.
 
 const (
 	recFilterMode     = 0x009B
@@ -58,6 +58,8 @@ type filterReader struct {
 	future   bool                 // criteria only Excel 2007's records hold
 }
 
+// record handles a record that belongs to the AutoFilter and reports
+// whether it did.
 func (f *filterReader) record(r record) bool {
 	switch r.id {
 	case recAutoFilterInfo:
@@ -154,6 +156,7 @@ func parseAutoFilter(b []byte) (model.FilterColumn, bool) {
 	return fc, true
 }
 
+// doperNumber is the RK or IEEE number value of DOPER d.
 func doperNumber(d []byte) float64 {
 	if d[0] == vtRK {
 		return rkValue(u32(d, 2))
@@ -212,6 +215,8 @@ func parseAreaRef(s string) (model.Range, bool) {
 	return model.Range{R1: r1, C1: c1, R2: r2, C2: c2}, ok1 && ok2
 }
 
+// parseCell parses an A1-style cell name without $ into 0-based row and
+// column.
 func parseCell(s string) (row, col int, ok bool) {
 	i := strings.IndexFunc(s, func(r rune) bool { return r >= '0' && r <= '9' })
 	if i <= 0 {
@@ -275,6 +280,9 @@ func (x *writer) autoFilter(b []byte, sh *model.Sheet) []byte {
 	return b
 }
 
+// autoFilterRecord encodes fc as the AUTOFILTER body of filter column
+// entry; false (with an issue reported where criteria are lost) when it
+// has nothing .xls can hold.
 func (x *writer) autoFilterRecord(sh *model.Sheet, fc model.FilterColumn, entry int) ([]byte, bool) {
 	var (
 		flags int

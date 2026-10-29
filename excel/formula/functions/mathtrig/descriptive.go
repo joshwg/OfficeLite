@@ -1,3 +1,6 @@
+// Descriptive statistics beyond what SUBTOTAL/AGGREGATE need: GEOMEAN,
+// KURT, SKEW, TRIMMEAN, RANK, PERCENTRANK, FREQUENCY, ...
+
 package mathtrig
 
 import (
@@ -8,9 +11,7 @@ import (
 	"officelite/excel/formula/functions/internal/stats"
 )
 
-// Descriptive statistics beyond what SUBTOTAL/AGGREGATE need: GEOMEAN,
-// KURT, SKEW, TRIMMEAN, RANK, PERCENTRANK, FREQUENCY, ...
-
+// registerDescriptive adds the descriptive statistics functions to r.
 func registerDescriptive(r *f.Registry) {
 	r.Add(
 		listSpec("GEOMEAN", func(xs []float64) f.Value {
@@ -104,6 +105,7 @@ func listSpec(name string, g func(xs []float64) f.Value) f.Spec {
 		}}
 }
 
+// mean returns the arithmetic mean of xs (NaN when xs is empty).
 func mean(xs []float64) float64 { return stats.Sum(xs) / float64(len(xs)) }
 
 // devsq is the sum of squared deviations from the mean.
@@ -129,7 +131,7 @@ func moment(xs []float64, s float64, k float64) float64 {
 	return t
 }
 
-// TRIMMEAN(array, percent): the mean without the smallest and largest
+// trimmean implements TRIMMEAN(array, percent): the mean without the smallest and largest
 // values, percent·n of them rounded down to an even number.
 func trimmean(e *f.Env, a []f.Value) f.Value {
 	xs, err := gather(e, a[:1], opts{k: kNum})
@@ -234,7 +236,7 @@ func percentRank(exclusive bool) func(e *f.Env, a []f.Value) f.Value {
 	}
 }
 
-// FREQUENCY(data_array, bins_array): a vertical array counting the data
+// frequency implements FREQUENCY(data_array, bins_array): a vertical array counting the data
 // up to each bin (above the previous one), plus one more count of the
 // data above the largest bin. Bins need not be sorted.
 func frequency(e *f.Env, a []f.Value) f.Value {

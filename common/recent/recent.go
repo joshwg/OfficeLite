@@ -76,6 +76,7 @@ func Open(path string) *List {
 	return l
 }
 
+// load reads the list stored at path.
 func load(path string) ([]Entry, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

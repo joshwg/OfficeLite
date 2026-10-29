@@ -1,3 +1,5 @@
+// scroll.go sets the scrollbars' steps and drag hints and computes a sheet's data extent.
+
 package ui
 
 import (

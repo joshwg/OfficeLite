@@ -1,3 +1,5 @@
+// newsheet_test.go tests the + button that adds a sheet after the active one.
+
 package ui
 
 import (
@@ -5,7 +7,7 @@ import (
 	"testing"
 )
 
-// The + after the sheet tabs adds a sheet after the active one and
+// TestNewSheetButton: the + after the sheet tabs adds a sheet after the active one and
 // switches to it, as Excel's does.
 func TestNewSheetButton(t *testing.T) {
 	h := newHarness(t)

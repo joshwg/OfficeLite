@@ -1,3 +1,5 @@
+// Tests for the Windows file dialog's filter string.
+
 package gui
 
 import (
@@ -5,6 +7,8 @@ import (
 	"unsafe"
 )
 
+// TestFilterSpec checks that no filters give a nil spec and that a spec
+// ends in a double NUL.
 func TestFilterSpec(t *testing.T) {
 	if p := filterSpec(nil); p != nil {
 		t.Fatal("no filters: want a nil filter")

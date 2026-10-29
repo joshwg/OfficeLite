@@ -1,3 +1,5 @@
+// notes.go handles cell notes (the note dialog, markers and hover popups) and following hyperlinks.
+
 package ui
 
 import (
@@ -28,6 +30,8 @@ var (
 	noteBorder = colors.RGB(0x767676)
 )
 
+// noteDialog is the New / Edit Note dialog's state: the text, the cell it
+// belongs to, whether the cell already had a note, and the note's author.
 type noteDialog struct {
 	ed              widget.Editor
 	sheet, row, col int
@@ -86,6 +90,9 @@ func (a *App) clearNotes() {
 	}
 }
 
+// layoutNoteDialog lays out the note dialog and applies it: OK sets the note
+// (an empty new note adds nothing), Delete Note removes it, Cancel or Esc
+// closes. k is the dialog key: 1 for Enter, -1 for Esc, 0 for none.
 func (a *App) layoutNoteDialog(gtx layout.Context, k int) {
 	d := &a.ins.note
 	for a.ins.ok.Clicked(gtx) {

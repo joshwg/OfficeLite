@@ -1,3 +1,6 @@
+// NETWORKDAYS, WORKDAY and their .INTL forms: weekend masks, holiday sets
+// and working-day counting.
+
 package datetime
 
 import (
@@ -74,7 +77,7 @@ func holidaySet(e *f.Env, v f.Value) (map[float64]bool, f.Value) {
 	return set, bad
 }
 
-// NETWORKDAYS(start_date, end_date, [holidays]) and
+// networkdays implements NETWORKDAYS(start_date, end_date, [holidays]) and
 // NETWORKDAYS.INTL(start_date, end_date, [weekend], [holidays]): working
 // days between the dates inclusive, negative when start_date is later.
 func networkdays(e *f.Env, startV, endV, weekendV, holV f.Value) f.Value {
@@ -119,7 +122,7 @@ func networkdays(e *f.Env, startV, endV, weekendV, holV f.Value) f.Value {
 	return f.Number(sign * count)
 }
 
-// WORKDAY(start_date, days, [holidays]) and
+// workday implements WORKDAY(start_date, days, [holidays]) and
 // WORKDAY.INTL(start_date, days, [weekend], [holidays]): the date that is
 // the given number of working days before or after start_date.
 func workday(e *f.Env, startV, daysV, weekendV, holV f.Value) f.Value {

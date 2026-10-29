@@ -1,3 +1,6 @@
+// adjust_cells.go rewrites references after Insert/Delete Cells shifts that
+// cover only part of the sheet's rows or columns.
+
 package formula
 
 // AdjustRowsIn is AdjustRows for cells inserted or deleted with a shift

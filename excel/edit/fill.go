@@ -1,3 +1,6 @@
+// fill.go holds Fill Down / Fill Right and AutoFill: number trends, date
+// steps, numbered text, and day and month name series.
+
 package edit
 
 import (
@@ -36,6 +39,9 @@ func (b *Book) FillRight(sheet int, sel model.Range) calc.Result {
 	return b.fill(sheet, sel, false)
 }
 
+// fill copies sel's first row (down) or column into the rest of it, or the
+// row above / column left of a single-row / single-column selection,
+// skipping rows the AutoFilter hides.
 func (b *Book) fill(sheet int, sel model.Range, down bool) calc.Result {
 	sh := b.WB.Sheets[sheet]
 	// Whole columns or rows only fill the used area.
@@ -186,6 +192,7 @@ func (b *Book) AutoFill(sheet int, src, to model.Range) (calc.Result, error) {
 
 type fpos struct{ r, c int }
 
+// reverse reverses p in place.
 func reverse(p []fpos) {
 	for i, j := 0, len(p)-1; i < j; i, j = i+1, j-1 {
 		p[i], p[j] = p[j], p[i]
@@ -262,6 +269,7 @@ func (b *Book) series(sh *model.Sheet, child func(r, c int) bool, line, targets 
 	}
 }
 
+// allCells reports whether cs is not empty and f holds for every cell.
 func allCells(cs []model.Cell, f func(*model.Cell) bool) bool {
 	for i := range cs {
 		if !f(&cs[i]) {
@@ -322,6 +330,8 @@ func numberedTexts(cs []model.Cell) (string, []numSuffix, bool) {
 	return prefix, out, len(out) > 0
 }
 
+// padNumber formats n with leading zeros to width digits (sign not
+// counted).
 func padNumber(n, width int) string {
 	neg := n < 0
 	if neg {
@@ -397,6 +407,8 @@ func namedSeries(cs []model.Cell) (nameList, []int, func(nameList, int) string, 
 	return nameList{}, nil, nil, false
 }
 
+// findName is the index of s in l, ignoring case, and whether it matched
+// the short form; -1 when s isn't in l.
 func findName(l nameList, s string) (int, bool) {
 	for i := range l.long {
 		if strings.EqualFold(s, l.long[i]) {

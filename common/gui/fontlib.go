@@ -1,3 +1,6 @@
+// FontLibrary: indexing font folders by family, loading faces on demand and
+// building shapers, plus the cached name-table index behind it.
+
 package gui
 
 import (
@@ -64,6 +67,8 @@ func DefaultFontDirs() []string {
 	return dirs
 }
 
+// systemFontDirs returns the operating system's font folders for the
+// current platform, system-wide first, then the user's.
 func systemFontDirs() []string {
 	home, _ := os.UserHomeDir()
 	switch runtime.GOOS {
@@ -145,6 +150,8 @@ type shaperFaceList struct {
 	families []string
 }
 
+// shaperFacesOf returns the face list registered for sh, or nil if sh is nil
+// or was not made by a FontLibrary.
 func shaperFacesOf(sh *text.Shaper) *shaperFaceList {
 	if sh == nil {
 		return nil
@@ -155,6 +162,8 @@ func shaperFacesOf(sh *text.Shaper) *shaperFaceList {
 	return shaperFaces[k]
 }
 
+// faceFiles returns the source file of each of sh's faces by face index, or
+// nil if sh is not a FontLibrary shaper.
 func faceFiles(sh *text.Shaper) []FaceFile {
 	if sf := shaperFacesOf(sh); sf != nil {
 		return sf.files
@@ -175,6 +184,8 @@ func GlyphFamily(sh *text.Shaper, id text.GlyphID) string {
 	return ""
 }
 
+// NewFontLibrary returns a library over the given font folders, in priority
+// order; nothing is scanned until faces are first requested.
 func NewFontLibrary(dirs ...string) *FontLibrary {
 	return &FontLibrary{dirs: dirs, index: map[string][]string{}, loaded: map[string][]font.FontFace{}, files: map[font.Face]FaceFile{}}
 }
@@ -277,6 +288,8 @@ type fontCacheEntry struct {
 	Families []string `json:"families"`
 }
 
+// fontCachePath returns the path of the cached font index in the user's
+// cache folder, or "" if there is none.
 func fontCachePath() string {
 	dir, err := os.UserCacheDir()
 	if err != nil {
@@ -285,6 +298,9 @@ func fontCachePath() string {
 	return filepath.Join(dir, "officelite", "fontindex.json")
 }
 
+// scan builds the family index from every font file in l's folders, reusing
+// cached families for files whose size and modification time are unchanged
+// and rewriting the cache when anything changed. The caller holds l.mu.
 func (l *FontLibrary) scan() {
 	cache := map[string]fontCacheEntry{}
 	cachePath := fontCachePath()
@@ -367,6 +383,8 @@ func readFamilies(path string) []string {
 	return out
 }
 
+// fontFamilies returns the family names in the name table of the font whose
+// table directory starts at off in r.
 func fontFamilies(r io.ReaderAt, off int64) []string {
 	hdr := make([]byte, 12)
 	if _, err := r.ReadAt(hdr, off); err != nil {
@@ -396,6 +414,8 @@ func fontFamilies(r io.ReaderAt, off int64) []string {
 	return nil
 }
 
+// parseNameTable returns the family names (name IDs 1 and 16) in an
+// OpenType name table, from English Windows and Mac Roman records.
 func parseNameTable(t []byte) []string {
 	if len(t) < 6 {
 		return nil

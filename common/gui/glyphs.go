@@ -1,3 +1,6 @@
+// Glyph painting: PaintGlyphs (system rasterizer where available, else Gio
+// outlines) and TextLabel, a widget.Label that paints through it.
+
 package gui
 
 import (
@@ -48,6 +51,7 @@ func paintOutlines(ops *op.Ops, sh *text.Shaper, gs []text.Glyph, x, y float32, 
 	t.Pop()
 }
 
+// fixedToFloat converts a 26.6 fixed-point value to a float.
 func fixedToFloat(v fixed.Int26_6) float32 { return float32(v) / 64 }
 
 // TextLabel lays out and paints text like widget.Label (Alignment and

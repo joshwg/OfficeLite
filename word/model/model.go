@@ -84,7 +84,8 @@ type RunProps struct {
 	SmallCaps Tri
 	Hidden    Tri
 	Color     string // RRGGBB
-	Highlight string // Word highlight name ("yellow") or RRGGBB shading
+	Highlight string // Word highlight name ("yellow"); RRGGBB is read as Shading
+	Shading   string // RRGGBB character shading (w:shd), drawn behind the text
 	Vert      VertAlign
 	// DocxXML is the original <w:rPr> content of a run read from .docx, so
 	// the .docx writer can keep properties the model doesn't cover (language,
@@ -115,6 +116,9 @@ func (p RunProps) Merge(over RunProps) RunProps {
 	}
 	if over.Highlight != "" {
 		p.Highlight = over.Highlight
+	}
+	if over.Shading != "" {
+		p.Shading = over.Shading
 	}
 	if over.Vert != VertUnset {
 		p.Vert = over.Vert
@@ -174,7 +178,7 @@ type ParaProps struct {
 	// Borders are the paragraph's borders (top, left, bottom, right; see
 	// TableCell.Borders); nil leaves an edge to the style.
 	Borders      [4]*Border
-	Shading      string // RRGGBB background
+	Shading      string // RRGGBB background; "auto" clears a style's
 	Tabs         []TabStop
 	List         *ListRef
 	OutlineLevel int // 0 = body text, 1..9 = heading levels (from styles)

@@ -1,3 +1,7 @@
+// edit_test.go holds the package's shared test helpers and tests input
+// parsing, typing with undo, copy and paste, inserting and deleting rows
+// and columns, and sheets.
+
 package edit
 
 import (
@@ -8,6 +12,8 @@ import (
 	"officelite/excel/model"
 )
 
+// TestParseInput checks how typed text is read: numbers and their
+// formats, dates, times, booleans, errors, text and formulas.
 func TestParseInput(t *testing.T) {
 	for _, tc := range []struct {
 		in   string
@@ -58,6 +64,7 @@ func TestParseInput(t *testing.T) {
 
 var now = time.Date(2026, 10, 15, 13, 30, 0, 0, time.UTC)
 
+// newBook is a Book with empty sheets Sheet1 and Data and a fixed clock.
 func newBook() *Book {
 	wb := &model.Workbook{
 		Sheets: []*model.Sheet{model.NewSheet("Sheet1"), model.NewSheet("Data")},
@@ -81,12 +88,14 @@ func pos(ref string) (row, col int) {
 	return n - 1, model.ParseColName(ref[:i])
 }
 
+// rng is the range from A1 reference a to b.
 func rng(a, b string) model.Range {
 	r1, c1 := pos(a)
 	r2, c2 := pos(b)
 	return model.Range{R1: r1, C1: c1, R2: r2, C2: c2}
 }
 
+// enter types text into cell ref of sheet, failing the test on an error.
 func (b *Book) enter(t *testing.T, sheet int, ref, text string) {
 	t.Helper()
 	r, c := pos(ref)
@@ -95,6 +104,7 @@ func (b *Book) enter(t *testing.T, sheet int, ref, text string) {
 	}
 }
 
+// cell is cell ref of sheet.
 func (b *Book) cell(sheet int, ref string) *model.Cell {
 	r, c := pos(ref)
 	return b.WB.Sheets[sheet].Get(r, c)
@@ -110,6 +120,8 @@ func (b *Book) expect(t *testing.T, what string, want map[string]string) {
 	}
 }
 
+// TestEnterAndUndo checks typed values and formulas, spills, and their
+// undo and redo.
 func TestEnterAndUndo(t *testing.T) {
 	b := newBook()
 	b.enter(t, 0, "A1", "2")
@@ -150,6 +162,8 @@ func TestEnterAndUndo(t *testing.T) {
 	b.expect(t, "undo clear", map[string]string{"C1": "0.3", "C2": "0.6"})
 }
 
+// TestEnterKeepsStyle checks that typing and Clear keep a cell's style,
+// and a General cell takes the format the input implies.
 func TestEnterKeepsStyle(t *testing.T) {
 	b := newBook()
 	bold := model.DefaultStyle()
@@ -174,6 +188,8 @@ func TestEnterKeepsStyle(t *testing.T) {
 	}
 }
 
+// TestCopyPaste checks copy and paste with shifted references, tiling,
+// and cut and paste with references following.
 func TestCopyPaste(t *testing.T) {
 	b := newBook()
 	b.enter(t, 0, "A1", "1")
@@ -217,6 +233,7 @@ func TestCopyPaste(t *testing.T) {
 	}
 }
 
+// TestPasteText checks SplitText, PasteText and CopyText.
 func TestPasteText(t *testing.T) {
 	b := newBook()
 	if got := SplitText("a\tb\r\n\"x\ny\"\t\"q\"\"\"\r\n"); !reflect.DeepEqual(got, [][]string{{"a", "b"}, {"x\ny", `q"`}}) {
@@ -235,6 +252,8 @@ func TestPasteText(t *testing.T) {
 	}
 }
 
+// TestInsertDeleteRows checks that formulas, names, merges, heights and
+// panes follow inserted and deleted rows, with undo and redo.
 func TestInsertDeleteRows(t *testing.T) {
 	b := newBook()
 	sh := b.WB.Sheets[0]
@@ -294,6 +313,8 @@ func TestInsertDeleteRows(t *testing.T) {
 	}
 }
 
+// TestInsertDeleteCols checks that formulas and widths follow inserted
+// and deleted columns.
 func TestInsertDeleteCols(t *testing.T) {
 	b := newBook()
 	b.enter(t, 0, "A1", "5")
@@ -312,6 +333,8 @@ func TestInsertDeleteCols(t *testing.T) {
 	}
 }
 
+// TestSheets checks inserting, renaming and deleting sheets, the
+// formulas that refer to them, and undo and redo.
 func TestSheets(t *testing.T) {
 	b := newBook()
 	b.enter(t, 1, "A1", "4")

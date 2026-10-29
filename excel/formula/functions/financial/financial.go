@@ -109,7 +109,7 @@ func pmtOf(rate, nper, pv, fv, typ float64) float64 {
 	return -rate * (fv + pv*g) / ((1 + rate*typ) * gm1)
 }
 
-// FV(rate, nper, pmt, [pv], [type])
+// fv implements FV(rate, nper, pmt, [pv], [type]).
 func fv(e *f.Env, a []f.Value) f.Value {
 	x, err := nums(e, a, 5)
 	if err != nil {
@@ -118,7 +118,7 @@ func fv(e *f.Env, a []f.Value) f.Value {
 	return f.NumberOrErr(fvOf(x[0], x[1], x[2], x[3], due(x[4])))
 }
 
-// PV(rate, nper, pmt, [fv], [type])
+// pv implements PV(rate, nper, pmt, [fv], [type]).
 func pv(e *f.Env, a []f.Value) f.Value {
 	x, err := nums(e, a, 5)
 	if err != nil {
@@ -132,7 +132,7 @@ func pv(e *f.Env, a []f.Value) f.Value {
 	return f.NumberOrErr(-(fv + pay*(1+rate*typ)*gm1/rate) / g)
 }
 
-// PMT(rate, nper, pv, [fv], [type])
+// pmt implements PMT(rate, nper, pv, [fv], [type]); nper 0 is #NUM!.
 func pmt(e *f.Env, a []f.Value) f.Value {
 	x, err := nums(e, a, 5)
 	if err != nil {
@@ -144,7 +144,7 @@ func pmt(e *f.Env, a []f.Value) f.Value {
 	return f.NumberOrErr(pmtOf(x[0], x[1], x[2], x[3], due(x[4])))
 }
 
-// NPER(rate, pmt, pv, [fv], [type])
+// nper implements NPER(rate, pmt, pv, [fv], [type]).
 func nper(e *f.Env, a []f.Value) f.Value {
 	x, err := nums(e, a, 5)
 	if err != nil {
@@ -168,7 +168,7 @@ func nper(e *f.Env, a []f.Value) f.Value {
 	return f.NumberOrErr(math.Log(q) / math.Log1p(rate))
 }
 
-// RATE(nper, pmt, pv, [fv], [type], [guess]) solves the annuity equation
+// rate implements RATE(nper, pmt, pv, [fv], [type], [guess]), solving the annuity equation
 // by Newton's method from guess (10%); like Excel it gives up with #NUM!
 // when 20 steps don't bring successive results within 1e-7.
 func rate(e *f.Env, a []f.Value) f.Value {
@@ -239,7 +239,7 @@ func ipmtOf(rate, per, nper, pv, fv, typ float64) float64 {
 	return i
 }
 
-// IPMT / PPMT(rate, per, nper, pv, [fv], [type]): the interest or the
+// ipmtFn implements IPMT / PPMT(rate, per, nper, pv, [fv], [type]): the interest or the
 // principal part of payment per (truncated), which must be in 1..nper.
 func ipmtFn(e *f.Env, a []f.Value, principal bool) f.Value {
 	x, err := nums(e, a, 6)
@@ -257,8 +257,8 @@ func ipmtFn(e *f.Env, a []f.Value, principal bool) f.Value {
 	return f.NumberOrErr(i)
 }
 
-// CUMIPMT / CUMPRINC(rate, nper, pv, start_period, end_period, type): the
-// interest or principal paid over periods start..end (truncated). These
+// cumipmt implements CUMIPMT / CUMPRINC(rate, nper, pv, start_period,
+// end_period, type): the interest or principal paid over periods start..end (truncated). These
 // insist on rate, nper and pv > 0 and type 0 or 1.
 func cumipmt(e *f.Env, a []f.Value, principal bool) f.Value {
 	x, err := nums(e, a, 6)
@@ -282,7 +282,7 @@ func cumipmt(e *f.Env, a []f.Value, principal bool) f.Value {
 	return f.NumberOrErr(sum)
 }
 
-// ISPMT(rate, per, nper, pv): interest paid in period per (counted from 0)
+// ispmt implements ISPMT(rate, per, nper, pv): interest paid in period per (counted from 0)
 // of a loan repaid in even principal installments.
 func ispmt(e *f.Env, a []f.Value) f.Value {
 	x, err := nums(e, a, 4)
@@ -296,7 +296,7 @@ func ispmt(e *f.Env, a []f.Value) f.Value {
 	return f.NumberOrErr(pv * rate * (per/n - 1))
 }
 
-// NPV(rate, value1, [value2], ...): values are discounted one period each,
+// npv implements NPV(rate, value1, [value2], ...): values are discounted one period each,
 // in order. Numbers in ranges and arrays count while their text, logical
 // values and blank cells are skipped; values typed directly are coerced.
 func npv(e *f.Env, a []f.Value) f.Value {

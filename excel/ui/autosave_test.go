@@ -1,3 +1,6 @@
+// Tests for AutoSave: the switch's availability, timed background saves,
+// failures and the on-by-default setting.
+
 package ui
 
 import (
@@ -15,7 +18,7 @@ import (
 	"officelite/excel/fileio"
 )
 
-// autoSaveAt is where the harness's title bar has the AutoSave switch.
+// autoSaveX, autoSaveY are where the harness's title bar has the AutoSave switch.
 const autoSaveX, autoSaveY = 150, 18
 
 // startAutoSave gives the harness's window an AutoSave saver on a clock
@@ -55,7 +58,7 @@ func fileA1(t *testing.T, path string) string {
 	return wb.Sheets[0].Get(0, 0).Text
 }
 
-// TestAutoSaveUnavailable: the switch is greyed, with the reason as its
+// TestAutoSaveUnavailable: the switch is grayed, with the reason as its
 // tooltip, for a new workbook, a .xls, a read-only or recovered workbook,
 // and clicking it does nothing.
 func TestAutoSaveUnavailable(t *testing.T) {

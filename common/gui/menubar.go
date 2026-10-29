@@ -1,3 +1,5 @@
+// MenuBar: the menu bar of menus and ribbon tabs, with its drop-down menus.
+
 package gui
 
 import (
@@ -108,6 +110,9 @@ func (m *MenuBar) Layout(gtx layout.Context, th *Theme, menus []Menu, choose fun
 	return layout.Dimensions{Size: image.Pt(w, h)}
 }
 
+// update handles last frame's clicks on headers and items and the open
+// drop-down's outside presses and header hovers, opening, switching or
+// closing drop-downs and calling choose for each selection.
 func (m *MenuBar) update(gtx layout.Context, menus []Menu, choose func(MenuEvent)) {
 	for i := range menus {
 		for m.heads[i].Clicked(gtx) {
@@ -171,6 +176,8 @@ func (m *MenuBar) update(gtx layout.Context, menus []Menu, choose func(MenuEvent
 	}
 }
 
+// header draws menu i's header button: accent-filled when Primary,
+// highlighted while its drop-down is open, and underlined when Selected.
 func (m *MenuBar) header(gtx layout.Context, th *Theme, i int, mn Menu) layout.Dimensions {
 	bg, hover, fg := colors.Transparent, HoverBG, ChromeText
 	if mn.Primary {

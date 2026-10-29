@@ -1,3 +1,6 @@
+// DropDown, the combo-box style button with a drop-down list or panel,
+// and its DropItem entries.
+
 package gui
 
 import (
@@ -166,6 +169,8 @@ func (d *DropDown) popup(gtx layout.Context, th *Theme, width unit.Dp, items []D
 	op.Defer(gtx.Ops, rec.Stop())
 }
 
+// item draws list entry i: a divider for a separator, an unclickable
+// title for a header, else a hoverable row with its swatch and label.
 func (d *DropDown) item(gtx layout.Context, th *Theme, i int, it DropItem) layout.Dimensions {
 	w := gtx.Constraints.Max.X
 	if it.Separator {

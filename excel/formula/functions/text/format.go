@@ -1,3 +1,6 @@
+// TEXT, FIXED, DOLLAR, VALUE, NUMBERVALUE, VALUETOTEXT and ARRAYTOTEXT:
+// converting between numbers and formatted text.
+
 package text
 
 import (
@@ -19,6 +22,8 @@ var (
 	formatter *numfmt.Formatter
 )
 
+// formatNumber renders v with format code using the shared 1900-system
+// formatter.
 func formatNumber(v float64, code string) string {
 	fmtMu.Lock()
 	defer fmtMu.Unlock()
@@ -29,8 +34,9 @@ func formatNumber(v float64, code string) string {
 }
 
 // isDateFormat reports whether a format section shows a calendar date
-// (y, m, d, e outside quotes; E+ and E- are scientific notation), so a 1904 serial must be shifted. Elapsed
-// time ([h], [m], [s]) is a duration and is not shifted.
+// (y, m, d, e outside quotes; E+ and E- are scientific notation), so a
+// 1904 serial must be shifted. Elapsed time ([h], [m], [s]) is a duration
+// and is not shifted.
 func isDateFormat(sec string) bool {
 	date := false
 	for i := 0; i < len(sec); i++ {
@@ -73,7 +79,7 @@ func parseNumber(e *f.Env, s string) (float64, bool) {
 
 // --- TEXT ----------------------------------------------------------------------
 
-// TEXT(value, format_text)
+// textFn implements TEXT(value, format_text).
 func textFn(e *f.Env, a []f.Value) f.Value {
 	code, err := f.Str(a[1])
 	if err != nil {
@@ -220,7 +226,7 @@ func decimalsArg(v f.Value) (int, f.Value) {
 	return max(d, -400), nil
 }
 
-// FIXED(number, [decimals], [no_commas])
+// fixed implements FIXED(number, [decimals], [no_commas]).
 func fixed(_ *f.Env, a []f.Value) f.Value {
 	x, err := f.Num(a[0])
 	if err != nil {
@@ -241,7 +247,7 @@ func fixed(_ *f.Env, a []f.Value) f.Value {
 	return f.String(s)
 }
 
-// DOLLAR(number, [decimals]) in en-US currency format: $1,234.57 and
+// dollar implements DOLLAR(number, [decimals]) in en-US currency format: $1,234.57 and
 // ($1,234.57) for negatives.
 func dollar(_ *f.Env, a []f.Value) f.Value {
 	x, err := f.Num(a[0])
@@ -261,7 +267,7 @@ func dollar(_ *f.Env, a []f.Value) f.Value {
 
 // --- VALUE / NUMBERVALUE ----------------------------------------------------------------
 
-// VALUE(text) converts number, date, time, percent or currency text.
+// value implements VALUE(text), converting number, date, time, percent or currency text.
 func value(e *f.Env, a []f.Value) f.Value {
 	switch v := a[0].(type) {
 	case f.Number, f.Error:
@@ -291,8 +297,8 @@ func sepArg(v f.Value, def rune) (rune, f.Value) {
 	return []rune(s)[0], nil
 }
 
-// NUMBERVALUE(text, [decimal_separator], [group_separator]) converts text
-// with the given separators. Spaces are ignored anywhere, group
+// numberValue implements NUMBERVALUE(text, [decimal_separator],
+// [group_separator]), converting text with the given separators. Spaces are ignored anywhere, group
 // separators may only appear before the decimal separator, and trailing
 // percent signs each divide by 100.
 func numberValue(e *f.Env, a []f.Value) f.Value {
@@ -392,7 +398,7 @@ func valueText(v f.Value, strict bool) string {
 	return s
 }
 
-// VALUETOTEXT(value, [format])
+// valueToText implements VALUETOTEXT(value, [format]).
 func valueToText(_ *f.Env, a []f.Value) f.Value {
 	strict, err := toTextFormat(arg(a, 1))
 	if err != nil {
@@ -401,7 +407,7 @@ func valueToText(_ *f.Env, a []f.Value) f.Value {
 	return result(valueText(a[0], strict))
 }
 
-// ARRAYTOTEXT(array, [format]): concise joins the values with ", ";
+// arrayToText implements ARRAYTOTEXT(array, [format]): concise joins the values with ", ";
 // strict writes an array constant such as {1,"a";TRUE,#N/A}.
 func arrayToText(e *f.Env, a []f.Value) f.Value {
 	strict, err := toTextFormat(arg(a, 1))

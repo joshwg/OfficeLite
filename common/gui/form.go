@@ -1,3 +1,6 @@
+// Dialog form helpers: label/control rows, combos, check boxes, radio
+// buttons and text fields.
+
 package gui
 
 import (

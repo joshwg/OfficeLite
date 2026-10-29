@@ -1,14 +1,14 @@
+// Chart data: a series' references are read from the cells each time the
+// chart is drawn, so it follows edits. References are formula text such
+// as Sheet1!$B$2:$B$10, 'My Sheet'!$A$1, (Sheet1!$A$1,Sheet1!$A$3:$A$4)
+// or a defined name standing for one of those.
+
 package model
 
 import (
 	"strconv"
 	"strings"
 )
-
-// Chart data: a series' references are read from the cells each time the
-// chart is drawn, so it follows edits. References are formula text such
-// as Sheet1!$B$2:$B$10, 'My Sheet'!$A$1, (Sheet1!$A$1,Sheet1!$A$3:$A$4)
-// or a defined name standing for one of those.
 
 // SheetRange is a range on a sheet named in a reference.
 type SheetRange struct {
@@ -52,6 +52,9 @@ func splitTopLevel(s string) []string {
 	return append(out, s[start:])
 }
 
+// parseSheetRange parses one reference (Sheet1!$A$1:$B$2, 'My Sheet'!A:A,
+// 1:1, [Book]Sheet!A1), on home when unqualified; whole rows and columns
+// span the sheet's limits.
 func parseSheetRange(s, home string) (SheetRange, bool) {
 	sheet, ref := home, s
 	if i := strings.LastIndexByte(s, '!'); i >= 0 {
@@ -217,6 +220,8 @@ func (wb *Workbook) ChartValues(ref, home string, visibleOnly bool) (vals []Char
 	return vals, levels, fmtStyle, true
 }
 
+// cellValue is c as a chart value: numbers as numbers, text and booleans
+// as text, and empty cells and errors blank.
 func cellValue(c *Cell) ChartValue {
 	switch c.Kind {
 	case KindNumber:
@@ -238,8 +243,8 @@ func (wb *Workbook) SeriesData(d *ChartData, home string, visibleOnly bool) []Ch
 	return d.Cache
 }
 
-// SeriesName returns a series' name: its referenced cell's text, the
-// literal, the cached text, or "Series<n>".
+// SeriesName returns a series' name: the literal, else its referenced
+// cells' (or cached) text joined by spaces, else "Series<n+1>".
 func (wb *Workbook) SeriesName(s *ChartSeries, home string, n int) string {
 	if s.Name.Literal != "" {
 		return s.Name.Literal

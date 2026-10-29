@@ -1,3 +1,6 @@
+// Font programs for embedding: TrueType subsetting, standalone sfnt files
+// and a minimal format 4 cmap.
+
 package pdf
 
 import (
@@ -225,6 +228,8 @@ func writeSfnt(tables map[string][]byte, version uint32) []byte {
 	return b
 }
 
+// checksum is the sfnt table checksum of b: the sum of its big-endian
+// 32-bit words, the last zero-padded.
 func checksum(b []byte) uint32 {
 	var sum uint32
 	for i := 0; i < len(b); i += 4 {

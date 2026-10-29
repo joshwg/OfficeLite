@@ -1,3 +1,5 @@
+// Tests for Compute: layouts, subtotals, Show Values As, sorting, filters and empty reports.
+
 package pivot
 
 import (
@@ -21,6 +23,8 @@ var sales = [][]string{
 	{"West", "ink", "1", "1"},
 }
 
+// sheetOf builds a sheet from rows of text, storing numeric strings as numbers
+// and skipping empty ones.
 func sheetOf(rows [][]string) *model.Sheet {
 	sh := model.NewSheet("Data")
 	for r, row := range rows {
@@ -38,6 +42,7 @@ func sheetOf(rows [][]string) *model.Sheet {
 	return sh
 }
 
+// source reads rows as pivot source data, failing the test on error.
 func source(t *testing.T, rows [][]string) *Source {
 	t.Helper()
 	sh := sheetOf(rows)
@@ -48,6 +53,7 @@ func source(t *testing.T, rows [][]string) *Source {
 	return src
 }
 
+// newPT returns an empty report at row 2 with one field per source column.
 func newPT(src *Source) *model.PivotTable {
 	pt := &model.PivotTable{Name: "PivotTable1", Row: 2}
 	for _, f := range src.Fields {
@@ -56,12 +62,13 @@ func newPT(src *Source) *model.PivotTable {
 	return pt
 }
 
+// sum returns a Sum value field over source field f.
 func sum(src *Source, f int) model.PivotValue {
 	return model.PivotValue{Field: f, Func: model.FuncSum, Name: ValueName(model.FuncSum, src.Fields[f].Name)}
 }
 
-// grid renders a result as lines of tab-separated cell texts, from the
-// area's top-left; "|" marks bold cells' ends... kept simple: texts only.
+// grid renders a result's area as lines of tab-separated cell texts,
+// indents as leading spaces and trailing tabs trimmed.
 func grid(res *Result) string {
 	a := res.Out.Area
 	rows := make([][]string, a.R2-a.R1+1)
@@ -83,6 +90,7 @@ func grid(res *Result) string {
 	return b.String()
 }
 
+// check fails the test when res's grid differs from want.
 func check(t *testing.T, name string, res *Result, want string) {
 	t.Helper()
 	if got := grid(res); got != want {
@@ -90,6 +98,7 @@ func check(t *testing.T, name string, res *Result, want string) {
 	}
 }
 
+// TestCompactRowsAndColumns checks a compact report with a row and a column field.
 func TestCompactRowsAndColumns(t *testing.T) {
 	src := source(t, sales)
 	pt := newPT(src)
@@ -112,12 +121,13 @@ func TestCompactRowsAndColumns(t *testing.T) {
 	if len(o.Buttons) != 2 || o.Buttons[0].Row != 2 || o.Buttons[0].Col != 1 || o.Buttons[1].Row != 3 || o.Buttons[1].Col != 0 {
 		t.Errorf("buttons %+v", o.Buttons)
 	}
-	// "ink" and "Ink" are one item, labelled as first seen.
+	// "ink" and "Ink" are one item, labeled as first seen.
 	if n := len(src.Fields[1].Items); n != 3 {
 		t.Errorf("%d products", n)
 	}
 }
 
+// TestTwoValuesAndSubtotals checks subtotals across compact, tabular and outline layouts.
 func TestTwoValuesAndSubtotals(t *testing.T) {
 	src := source(t, sales)
 	pt := newPT(src)
@@ -178,6 +188,7 @@ func TestTwoValuesAndSubtotals(t *testing.T) {
 		"West Total\t\t28\n")
 }
 
+// TestShowValuesAsAndSort checks % of total and % of column with item sorting.
 func TestShowValuesAsAndSort(t *testing.T) {
 	src := source(t, sales)
 	pt := newPT(src)
@@ -210,6 +221,7 @@ func TestShowValuesAsAndSort(t *testing.T) {
 	}
 }
 
+// TestFiltersAndFunctions checks report filters and the Average and StdDev functions.
 func TestFiltersAndFunctions(t *testing.T) {
 	src := source(t, sales)
 	pt := newPT(src)
@@ -237,6 +249,7 @@ func TestFiltersAndFunctions(t *testing.T) {
 	}
 }
 
+// TestNoAxisAndEmpty checks the placeholder and reports with values but no row field.
 func TestNoAxisAndEmpty(t *testing.T) {
 	src := source(t, sales)
 	pt := newPT(src)

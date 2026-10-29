@@ -1,3 +1,6 @@
+// Toolbar buttons: formatting icons, the square ToolButton and
+// GlyphButton, and the separator between groups.
+
 package gui
 
 import (
@@ -105,7 +108,7 @@ func GlyphButton(gtx layout.Context, th *Theme, btn *widget.Clickable, glyph str
 	if checked {
 		bg, hover = th.AccentTint, colors.Mix(th.AccentTint, th.Accent, 0.15)
 	}
-	d := Hoverable(gtx, btn, bg, hover, func(gtx layout.Context) layout.Dimensions {
+	return Hoverable(gtx, btn, bg, hover, func(gtx layout.Context) layout.Dimensions {
 		size := gtx.Dp(28)
 		gtx.Constraints = layout.Exact(image.Pt(size, size))
 		fg := ChromeText
@@ -116,8 +119,9 @@ func GlyphButton(gtx layout.Context, th *Theme, btn *widget.Clickable, glyph str
 		if checked {
 			strokeRect(gtx.Ops, image.Rect(0, 0, size, size), colors.Mix(th.Accent, colors.White, 0.5))
 		}
+		// The tip's handler goes inside the button's area, as in
+		// ToolButton: on top of it, it would take the button's clicks.
+		tipButton(gtx, btn, btn.Hovered(), image.Pt(size, size))
 		return layout.Dimensions{Size: image.Pt(size, size)}
 	})
-	tipButton(gtx, btn, btn.Hovered(), d.Size)
-	return d
 }

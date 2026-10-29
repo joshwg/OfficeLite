@@ -1,3 +1,5 @@
+// Tests for the backstage's recent-file time formatting.
+
 package gui
 
 import (
@@ -5,6 +7,8 @@ import (
 	"time"
 )
 
+// TestWhen checks When's today, yesterday, this-week, this-year, older
+// and zero-time forms.
 func TestWhen(t *testing.T) {
 	now := time.Date(2026, 10, 16, 14, 0, 0, 0, time.Local)
 	for _, c := range []struct {

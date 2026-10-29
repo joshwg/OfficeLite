@@ -1,3 +1,6 @@
+// proc_other.go stubs processStart where process creation times aren't
+// read (everywhere but Windows).
+
 //go:build !windows
 
 package autorecover

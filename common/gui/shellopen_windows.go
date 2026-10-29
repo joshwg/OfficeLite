@@ -1,3 +1,6 @@
+// Opening files and links with the default program on Windows
+// (ShellExecute).
+
 package gui
 
 import (
@@ -62,6 +65,6 @@ func shellOpen(target string) (uintptr, error) {
 	return r, nil
 }
 
-// isExecutableFile reports whether path is a program by its file
-// attributes; on Windows the extension check in linkAllowed decides.
+// isExecutableFile always reports false on Windows, where the extension
+// check in linkAllowed decides what is a program.
 func isExecutableFile(string) bool { return false }

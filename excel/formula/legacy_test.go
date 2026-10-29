@@ -1,3 +1,6 @@
+// legacy_test.go tests implicit intersection, whole columns and rows across
+// sheets, 15-digit comparison and zero snapping, and ranges of errors.
+
 package formula
 
 import "testing"
@@ -15,6 +18,8 @@ func evalLegacy(ctx *TestContext, ref, src string) Value {
 	return env.Evaluate(n).Value
 }
 
+// TestLegacyImplicitIntersection checks that a legacy formula intersects a
+// range with its row or column while a dynamic-array formula keeps the array.
 func TestLegacyImplicitIntersection(t *testing.T) {
 	ctx := NewTestContext(NewRegistry())
 	ctx.SetRange("B1", [][]any{{1}, {2}, {3}})
@@ -45,6 +50,7 @@ func TestLegacyImplicitIntersection(t *testing.T) {
 	}
 }
 
+// TestIntersectOtherSheet checks '@' on ranges of another sheet.
 func TestIntersectOtherSheet(t *testing.T) {
 	ctx := NewTestContext(NewRegistry())
 	ctx.SetRange("Sheet2!A1", [][]any{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}})
@@ -65,6 +71,8 @@ func TestIntersectOtherSheet(t *testing.T) {
 	}
 }
 
+// TestWholeColumnsAcrossSheets checks that whole columns (rows) on different
+// sheets are trimmed to a common size and combine element by element.
 func TestWholeColumnsAcrossSheets(t *testing.T) {
 	ctx := NewTestContext(NewRegistry())
 	ctx.SetRange("Sheet2!A1", [][]any{{1}, {2}, {3}, {4}, {5}})
@@ -93,6 +101,8 @@ func TestWholeColumnsAcrossSheets(t *testing.T) {
 	}
 }
 
+// TestFifteenDigits checks 15-digit comparisons and the snapping of a final
+// sum or difference to zero.
 func TestFifteenDigits(t *testing.T) {
 	ctx := NewTestContext(NewRegistry())
 	for _, c := range []struct {
@@ -121,6 +131,7 @@ func TestFifteenDigits(t *testing.T) {
 	}
 }
 
+// TestRangeOfError checks that a range with an error endpoint is #REF!.
 func TestRangeOfError(t *testing.T) {
 	ctx := NewTestContext(NewRegistry())
 	for _, src := range []string{"=#REF!:B1", "=B1:#REF!", "=" + Shift("A1:B2", -1, 0)} {

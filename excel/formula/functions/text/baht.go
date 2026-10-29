@@ -1,3 +1,5 @@
+// BAHTTEXT: spelling an amount in Thai baht and satang words.
+
 package text
 
 import (
@@ -53,7 +55,7 @@ func thaiBlock(b *strings.Builder, n int) {
 	}
 }
 
-// BAHTTEXT(number) spells an amount in Thai baht and satang, e.g. 1234 is
+// bahtText implements BAHTTEXT(number), spelling an amount in Thai baht and satang, e.g. 1234 is
 // หนึ่งพันสองร้อยสามสิบสี่บาทถ้วน. The amount is rounded to whole satang;
 // amounts of a million and more repeat ล้าน per six-digit block.
 func bahtText(_ *f.Env, a []f.Value) f.Value {

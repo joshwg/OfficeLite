@@ -1,3 +1,7 @@
+// Windows OS hooks: share-mode checks, owner-file liveness and creation,
+// network-drive detection, process liveness, foreground rights and the
+// user's display name.
+
 package lockfile
 
 import (
@@ -27,10 +31,14 @@ var (
 	shareAll           uint32 = syscall.FILE_SHARE_READ | syscall.FILE_SHARE_WRITE | syscall.FILE_SHARE_DELETE
 )
 
+// sharingViolation reports whether err is a Windows sharing or lock
+// violation.
 func sharingViolation(err error) bool {
 	return errors.Is(err, errorSharingViolation) || errors.Is(err, errorLockViolation)
 }
 
+// createFile is CreateFileW on path with the given access, share mode,
+// disposition and attributes.
 func createFile(path string, access, share, disposition, attrs uint32) (syscall.Handle, error) {
 	p, err := syscall.UTF16PtrFromString(path)
 	if err != nil {
@@ -92,6 +100,7 @@ func isNetwork(path string) bool {
 	return r == driveRemote
 }
 
+// hasPrefixFold reports whether s begins with prefix, ignoring case.
 func hasPrefixFold(s, prefix string) bool {
 	return len(s) >= len(prefix) && strings.EqualFold(s[:len(prefix)], prefix)
 }

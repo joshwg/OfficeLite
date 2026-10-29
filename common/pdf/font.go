@@ -1,3 +1,6 @@
+// Fonts: resolving a FontSpec to a chain of embeddable faces with
+// fallbacks, and measuring text with it.
+
 package pdf
 
 import (
@@ -30,6 +33,8 @@ var fileCache = struct {
 	files map[string][]*face
 }{files: map[string][]*face{}}
 
+// loadFile returns the faces of the font file at path, parsed once and
+// cached (nil when it can't be read or parsed).
 func loadFile(path string) []*face {
 	fileCache.Lock()
 	defer fileCache.Unlock()
@@ -44,6 +49,7 @@ func loadFile(path string) []*face {
 	return fs
 }
 
+// goFaces is the built-in Go fonts by {bold, italic}, parsed once.
 var goFaces = sync.OnceValue(func() map[[2]bool]*face {
 	out := map[[2]bool]*face{}
 	for k, b := range map[[2]bool][]byte{
@@ -163,6 +169,7 @@ func (d *Document) findFace(family string, bold, italic bool) *face {
 	return best
 }
 
+// sameFamily reports whether b has any of a's family names.
 func sameFamily(a, b *face) bool {
 	for _, n := range a.family {
 		if b.hasFamily(n) {
@@ -199,13 +206,14 @@ func (f *Font) Measure(s string, size float64) float64 {
 	return w
 }
 
-// Ascent and Descent are the primary face's line metrics at size, in
-// points; Descent is positive (below the baseline).
+// Ascent is the primary face's ascent at size, in points.
 func (f *Font) Ascent(size float64) float64 {
 	fc := f.chain[0].face
 	return fc.ascent / fc.unitsPerEm * size
 }
 
+// Descent is the primary face's descent at size, in points, positive
+// (below the baseline).
 func (f *Font) Descent(size float64) float64 {
 	fc := f.chain[0].face
 	return -fc.descent / fc.unitsPerEm * size

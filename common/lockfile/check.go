@@ -1,3 +1,7 @@
+// Lock checks before opening a document: Status and its dialog text,
+// Check, SaveError, the owner-file user name and acquiring/releasing this
+// process's own owner file.
+
 package lockfile
 
 import (
@@ -161,6 +165,7 @@ type owner struct {
 
 var held sync.Map // key(owner path) → true
 
+// holds reports whether this process holds the owner file at path.
 func holds(path string) bool {
 	_, ok := held.Load(key(path))
 	return ok
@@ -223,6 +228,7 @@ func cloudFolder(path string) bool {
 	return false
 }
 
+// withinDir reports whether path is dir or lies beneath it.
 func withinDir(path, dir string) bool {
 	rel, err := filepath.Rel(dir, path)
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)

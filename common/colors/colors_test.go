@@ -1,3 +1,5 @@
+// Tests for the hex color parsing and formatting helpers.
+
 package colors
 
 import (
@@ -5,6 +7,8 @@ import (
 	"testing"
 )
 
+// TestHex checks Hex formatting and that ParseHex accepts the Office hex
+// forms and rejects malformed ones.
 func TestHex(t *testing.T) {
 	c := color.NRGBA{R: 0x0A, G: 0xBC, B: 0xF0, A: 0x80}
 	if got := Hex(c); got != "0ABCF0" {

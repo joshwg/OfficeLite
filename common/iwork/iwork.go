@@ -44,6 +44,7 @@ const (
 	Keynote
 )
 
+// String returns the app's name ("Numbers", "Pages", "Keynote" or "unknown").
 func (a App) String() string {
 	return [...]string{"unknown", "Numbers", "Pages", "Keynote"}[a]
 }
@@ -83,6 +84,9 @@ func Open(data []byte) (*Document, error) {
 	return open(zr)
 }
 
+// open indexes the objects of an opened zip (or of its inner Index.zip) and
+// identifies the app, returning ErrOldFormat, ErrEncrypted or ErrNotIWork
+// for packages it can't read.
 func open(zr *zip.Reader) (*Document, error) {
 	d := &Document{Objects: map[uint64]*Object{}, files: map[string]*zip.File{}, datas: map[uint64]string{}}
 	for _, f := range zr.File {
@@ -139,6 +143,7 @@ func open(zr *zip.Reader) (*Document, error) {
 	return d, nil
 }
 
+// hasIWA reports whether the package has any Index/*.iwa archive.
 func (d *Document) hasIWA() bool {
 	for name := range d.files {
 		if strings.HasPrefix(name, "Index/") && strings.HasSuffix(name, ".iwa") {
@@ -159,6 +164,8 @@ func (d *Document) isOldFormat() bool {
 	return false
 }
 
+// app identifies the document's app from the type of object 1, telling
+// Keynote from Numbers by its slide archives.
 func (d *Document) app() App {
 	switch d.Objects[1].Type {
 	case typePagesDocument:
@@ -277,6 +284,7 @@ func (d *Document) File(name string) []byte {
 	return b
 }
 
+// readZipFile returns the contents of a zip entry, capped at 1 GiB.
 func readZipFile(f *zip.File) ([]byte, error) {
 	rc, err := f.Open()
 	if err != nil {
@@ -334,6 +342,7 @@ func IsPackage(data []byte) bool {
 	return isPackage(zr)
 }
 
+// isPackage is IsPackage for an opened zip.
 func isPackage(zr *zip.Reader) bool {
 	for _, f := range zr.File {
 		name := strings.TrimPrefix(f.Name, "/")

@@ -1,3 +1,7 @@
+// adjust.go rewrites the references in formula text after structural
+// edits: inserted/deleted rows and columns, cut-and-paste moves, and sheet
+// renames and deletions.
+
 package formula
 
 import (
@@ -182,6 +186,7 @@ type adjRef struct {
 	rng                bool // a cell range rather than one cell
 }
 
+// String formats r in A1 style, with its $ markers.
 func (r adjRef) String() string {
 	col := func(abs bool, c int) string {
 		if abs {
@@ -372,11 +377,15 @@ func scanRef(s string) (refTok, bool) {
 	return t, true
 }
 
+// parseAbsCol parses a column part ("C" or "$C") into its absolute flag and
+// zero-based index.
 func parseAbsCol(s string) (bool, int) {
 	abs := strings.HasPrefix(s, "$")
 	return abs, model.ParseColName(strings.TrimPrefix(s, "$"))
 }
 
+// parseAbsRow parses a row part ("3" or "$3") into its absolute flag and
+// zero-based index.
 func parseAbsRow(s string) (bool, int) {
 	abs := strings.HasPrefix(s, "$")
 	n, _ := strconv.Atoi(strings.TrimPrefix(s, "$"))

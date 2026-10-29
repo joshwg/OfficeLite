@@ -1,3 +1,6 @@
+// Diagnostic dumps of a document's raw objects and tables, run on demand via
+// $IWORK_DUMP.
+
 package iwork
 
 import (
@@ -40,6 +43,9 @@ func TestDump(t *testing.T) {
 	fmt.Print(b.String())
 }
 
+// dumpMsg writes m's fields to b, one per line at the given indent, nesting
+// into bytes fields that look like messages (up to depth 12) and showing
+// others as strings or hex.
 func dumpMsg(b *strings.Builder, m Message, indent, depth int) {
 	pad := strings.Repeat("  ", indent)
 	for _, f := range m {
@@ -81,6 +87,7 @@ func looksLikeMessage(raw []byte, m Message) bool {
 	return n == len(raw)
 }
 
+// protoSize returns the encoded size of f, key included.
 func protoSize(f Field) int {
 	key := uvarintLen(uint64(f.Num<<3 | f.Wire))
 	switch f.Wire {
@@ -94,6 +101,7 @@ func protoSize(f Field) int {
 	return key + uvarintLen(uint64(len(f.B))) + len(f.B)
 }
 
+// uvarintLen returns the number of bytes v takes as a varint.
 func uvarintLen(v uint64) int {
 	n := 1
 	for v >= 0x80 {

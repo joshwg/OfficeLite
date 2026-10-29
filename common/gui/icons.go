@@ -1,3 +1,6 @@
+// Icon: IconVG icons with per-size, per-color cached renderings, and the
+// Material Design icons used by the chrome.
+
 package gui
 
 import (
@@ -60,6 +63,7 @@ func NewIcon(data []byte) (*Icon, error) {
 	return &Icon{src: data}, nil
 }
 
+// mustIcon is NewIcon for built-in data; it panics on an error.
 func mustIcon(data []byte) *Icon {
 	ic, err := NewIcon(data)
 	if err != nil {
@@ -83,6 +87,8 @@ func (ic *Icon) Layout(gtx layout.Context, c color.NRGBA) layout.Dimensions {
 	return layout.Dimensions{Size: img.Size()}
 }
 
+// image returns the icon rasterized sz pixels wide in color c, rendering
+// and caching it on first use.
 func (ic *Icon) image(sz int, c color.NRGBA) paint.ImageOp {
 	k := iconKey{sz, c}
 	ic.mu.Lock()

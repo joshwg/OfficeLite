@@ -1,3 +1,6 @@
+// Office-style tooltips for ribbon buttons and menu items: the weakly
+// keyed tip registry and the tipper that times and draws them.
+
 package gui
 
 import (
@@ -84,12 +87,14 @@ func SetTip(btn any, name, keys, desc string) {
 	}
 }
 
+// dropTip removes k's tip; it is the cleanup for a collected button.
 func dropTip(k tipKey) {
 	tipsMu.Lock()
 	delete(tips, k)
 	tipsMu.Unlock()
 }
 
+// tipFor returns btn's tip and whether it has one.
 func tipFor(btn any) (Tip, bool) {
 	k, _ := tipKeyOf(btn)
 	tipsMu.RLock()
@@ -122,6 +127,7 @@ type tipper struct {
 
 const tipperKey = "gui.tipper"
 
+// tipperOf returns the tipper gtx carries, or nil.
 func tipperOf(gtx layout.Context) *tipper {
 	t, _ := gtx.Values[tipperKey].(*tipper)
 	return t

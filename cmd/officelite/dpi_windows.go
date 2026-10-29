@@ -1,3 +1,5 @@
+// Per-monitor DPI awareness for the whole process on Windows.
+
 package main
 
 import "syscall"

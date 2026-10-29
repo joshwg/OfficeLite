@@ -1,3 +1,6 @@
+// Parsing OpenType/TrueType files: the table directory, metrics, names,
+// cmap lookup and license bits a font needs to be embedded.
+
 package pdf
 
 import (
@@ -66,6 +69,9 @@ func parseFaces(b []byte) ([]*face, error) {
 	return out, nil
 }
 
+// parseFace parses the font whose table directory starts at off in b. It
+// fails for formats other than TrueType and CFF OpenType, and for fonts
+// missing head/hhea/maxp or a Unicode cmap.
 func parseFace(b []byte, off int) (*face, error) {
 	if off+12 > len(b) {
 		return nil, errors.New("pdf: bad font offset")
@@ -151,6 +157,8 @@ func parseFace(b []byte, off int) (*face, error) {
 	return f, nil
 }
 
+// readNames reads the family names (IDs 1 and 16) and the PostScript name
+// (ID 6) from the name table, Windows English or Mac Roman records only.
 func (f *face) readNames() {
 	t := f.tables["name"]
 	if len(t) < 6 {
@@ -260,6 +268,8 @@ func (f *face) glyph(r rune) uint16 {
 	return g
 }
 
+// lookup maps r through the chosen cmap subtable (format 4 or 12), 0 when
+// it isn't mapped.
 func (f *face) lookup(r rune) uint16 {
 	t := f.cmap
 	switch f.cmapFmt {
@@ -349,4 +359,5 @@ func (f *face) embeddable() bool {
 // subsettable reports whether the license allows embedding a subset.
 func (f *face) subsettable() bool { return f.fsType&0x0100 == 0 }
 
+// bold reports whether the face is semibold or heavier (weight 600+).
 func (f *face) bold() bool { return f.weight >= 600 }

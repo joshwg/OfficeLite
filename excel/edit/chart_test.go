@@ -1,3 +1,6 @@
+// chart_test.go tests chart references following structural edits and
+// chart deletion.
+
 package edit
 
 import (
@@ -28,8 +31,11 @@ func chartBook(t *testing.T) *Book {
 	return b
 }
 
+// valRef is the values reference of c's first series.
 func valRef(c *model.Chart) string { return c.Plots[0].Series[0].Val.Ref }
 
+// TestChartRefsFollowRowsAndCols checks that chart references and anchors
+// follow inserted and deleted rows and columns, with undo and redo.
 func TestChartRefsFollowRowsAndCols(t *testing.T) {
 	b := chartBook(t)
 	data, other, cs := b.WB.Sheets[1], b.WB.Sheets[0], b.WB.Sheets[2]
@@ -85,6 +91,8 @@ func TestChartRefsFollowRowsAndCols(t *testing.T) {
 	}
 }
 
+// TestChartRefsFollowSheets checks that chart references follow a renamed
+// sheet and become #REF! when it is deleted, with undo.
 func TestChartRefsFollowSheets(t *testing.T) {
 	b := chartBook(t)
 	if _, err := b.RenameSheet(1, "Sales Data"); err != nil {
@@ -112,6 +120,7 @@ func TestChartRefsFollowSheets(t *testing.T) {
 	}
 }
 
+// TestDeleteChartUndo checks DeleteChart with undo and redo.
 func TestDeleteChartUndo(t *testing.T) {
 	b := chartBook(t)
 	data := b.WB.Sheets[1]
@@ -129,7 +138,8 @@ func TestDeleteChartUndo(t *testing.T) {
 	}
 }
 
-// Charts draw from the cells: an edit shows at once.
+// TestChartLiveValues checks that charts draw from the cells: an edit
+// shows at once.
 func TestChartLiveValues(t *testing.T) {
 	b := chartBook(t)
 	c := b.WB.Sheets[0].Charts[0]

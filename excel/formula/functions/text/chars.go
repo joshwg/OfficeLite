@@ -1,3 +1,6 @@
+// ASC and DBCS: full-width ↔ half-width character conversion, including
+// voiced katakana.
+
 package text
 
 import (

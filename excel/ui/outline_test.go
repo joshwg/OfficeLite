@@ -1,3 +1,5 @@
+// outline_test.go tests grouping, outline buttons, Show / Hide Detail, Clear Outline and Subtotal through the UI.
+
 package ui
 
 import (
@@ -32,6 +34,8 @@ func (h *harness) clickOutline(rows bool, n, summary int) {
 	h.click(float32(b.Rect.Min.X+b.Rect.Max.X)/2, float32(gridTop+(b.Rect.Min.Y+b.Rect.Max.Y)/2))
 }
 
+// TestOutlineGroupUI checks grouping rows and columns, the gutters, the +/-
+// and level buttons, Show / Hide Detail, Ungroup and Clear Outline.
 func TestOutlineGroupUI(t *testing.T) {
 	h := newHarness(t)
 	a := h.a
@@ -155,6 +159,8 @@ func TestOutlineGroupUI(t *testing.T) {
 	}
 }
 
+// TestSubtotalUI checks Subtotal adds per-group sums with an outline, level
+// buttons show the totals only, and Remove All is undoable.
 func TestSubtotalUI(t *testing.T) {
 	h := newHarness(t)
 	a := h.a

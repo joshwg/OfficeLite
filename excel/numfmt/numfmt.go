@@ -22,6 +22,7 @@ type Formatter struct {
 	failed   map[fmtKey]bool
 }
 
+// fmtKey identifies a number format by built-in id and custom code.
 type fmtKey struct {
 	id   int
 	code string
@@ -76,6 +77,7 @@ func showsCalendarDate(id int, code string) bool {
 	return strings.Contains(s, "m") && !strings.ContainsAny(s, "hs")
 }
 
+// Close releases the formatter's scratch workbook.
 func (nf *Formatter) Close() { _ = nf.scratch.Close() }
 
 // IsGeneral reports whether a format id/code is plain General.
@@ -160,6 +162,8 @@ func General(v float64) string {
 	return s
 }
 
+// formatScientific renders v in General's scientific form: at most five
+// decimals, trailing zeros trimmed (e.g. 1.23457E+11, 1E-10).
 func formatScientific(v float64) string {
 	s := strconv.FormatFloat(v, 'E', 5, 64) // e.g. 1.23450E+11
 	mant, exp, _ := strings.Cut(s, "E")

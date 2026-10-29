@@ -1,3 +1,5 @@
+// Snappy block decompression and the chunked .iwa container around it.
+
 package iwork
 
 import (

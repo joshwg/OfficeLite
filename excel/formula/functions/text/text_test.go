@@ -1,3 +1,5 @@
+// Tests for the text functions, run as formula cases through ftest.
+
 package text
 
 import (
@@ -7,12 +9,15 @@ import (
 	"officelite/excel/formula/functions/internal/ftest"
 )
 
+// registry returns a registry holding only the text functions.
 func registry() *f.Registry {
 	r := f.NewRegistry()
 	Register(r)
 	return r
 }
 
+// setup fills the sheet TestBasics reads: A1:C3, an error in D1 and
+// full-width text in E1.
 func setup(ctx *f.TestContext) {
 	ctx.SetRange("A1", [][]any{
 		{"Sale Price", 1234.567, "a"},
@@ -23,6 +28,8 @@ func setup(ctx *f.TestContext) {
 	ctx.Set("E1", "Ｅｘｃｅｌ")
 }
 
+// TestBasics covers length, slicing, searching, SUBSTITUTE, REPT, case and
+// trimming functions and the character functions.
 func TestBasics(t *testing.T) {
 	ftest.Run(t, registry(), setup, []ftest.Case{
 		// LEN
@@ -183,6 +190,7 @@ func TestBasics(t *testing.T) {
 	})
 }
 
+// TestJoin covers CONCAT, CONCATENATE and TEXTJOIN.
 func TestJoin(t *testing.T) {
 	ftest.Run(t, registry(), func(ctx *f.TestContext) {
 		ctx.SetRange("A1", [][]any{{"a1", "b1"}, {"a2", "b2"}, {"a4", "b4"}})
@@ -212,6 +220,7 @@ func TestJoin(t *testing.T) {
 	})
 }
 
+// TestFormat covers TEXT, FIXED, DOLLAR, VALUE and NUMBERVALUE.
 func TestFormat(t *testing.T) {
 	ftest.Run(t, registry(), func(ctx *f.TestContext) {
 		ctx.Set("A1", 1234.567)
@@ -306,6 +315,7 @@ func TestFormat(t *testing.T) {
 	})
 }
 
+// TestToText covers VALUETOTEXT and ARRAYTOTEXT in both formats.
 func TestToText(t *testing.T) {
 	ftest.Run(t, registry(), func(ctx *f.TestContext) {
 		ctx.SetRange("A1", [][]any{{true, f.ErrValue}, {1234.01234, "Seattle"}, {"Hello", "1,123"}})
@@ -326,6 +336,7 @@ func TestToText(t *testing.T) {
 	})
 }
 
+// TestSplit covers TEXTBEFORE, TEXTAFTER and TEXTSPLIT.
 func TestSplit(t *testing.T) {
 	ftest.Run(t, registry(), func(ctx *f.TestContext) {
 		ctx.Set("A1", "Little Red Riding Hood's red hood")
@@ -396,6 +407,7 @@ func TestSplit(t *testing.T) {
 	})
 }
 
+// TestRegex covers REGEXTEST, REGEXEXTRACT and REGEXREPLACE.
 func TestRegex(t *testing.T) {
 	ftest.Run(t, registry(), func(ctx *f.TestContext) {
 		ctx.Set("A1", "Sonia Rees(378) 555-4195Angel Brown(878) 555-8622")
@@ -434,6 +446,7 @@ func TestRegex(t *testing.T) {
 	})
 }
 
+// TestMisc covers BAHTTEXT, PHONETIC and the online-only functions.
 func TestMisc(t *testing.T) {
 	ftest.Run(t, registry(), func(ctx *f.TestContext) {
 		ctx.Set("A1", "東京")
@@ -461,6 +474,7 @@ func TestMisc(t *testing.T) {
 	})
 }
 
+// TestDate1904 checks that VALUE and TEXT honor the 1904 date system.
 func TestDate1904(t *testing.T) {
 	ftest.Run(t, registry(), func(ctx *f.TestContext) { ctx.Use1904 = true }, []ftest.Case{
 		{`=VALUE("1/2/1904")`, 1},
@@ -469,6 +483,8 @@ func TestDate1904(t *testing.T) {
 	})
 }
 
+// TestDateFormatDetection checks which format codes isDateFormat treats as
+// calendar dates.
 func TestDateFormatDetection(t *testing.T) {
 	for code, want := range map[string]bool{
 		"yyyy-mm-dd": true, "h:mm": true, "[h]:mm": false, "0.00": false,

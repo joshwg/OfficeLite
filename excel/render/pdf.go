@@ -1,3 +1,5 @@
+// PDF export of worksheets: pagination, cell fills, text, borders and charts.
+
 package render
 
 import (
@@ -38,7 +40,7 @@ const (
 var printGridColor = colors.RGB(0xA6A6A6)
 
 // ExportPDF adds the sheets to d as Excel prints them: the used range
-// (cells with values, fills or borders), paginated down then over onto
+// (cells with values, fills or borders, and charts), paginated down then over onto
 // pages of the paper size inside Excel's normal margins, with column
 // widths and row heights, cell text as displayed (number formats applied),
 // fonts, fills, borders, alignment, wrapping and merged cells. Hidden
@@ -65,6 +67,7 @@ func ExportPDF(d *pdf.Document, wb *model.Workbook, o PDFOptions) error {
 	return nil
 }
 
+// sheetExport holds the state of one ExportPDF run.
 type sheetExport struct {
 	d     *pdf.Document
 	wb    *model.Workbook
@@ -81,6 +84,7 @@ type sheetExport struct {
 	nf   *numfmt.Formatter // charts' number formats (chartpdf.go)
 }
 
+// font returns the PDF font for f, embedding it on first use.
 func (x *sheetExport) font(f model.Font) *pdf.Font {
 	if pf, ok := x.fonts[f]; ok {
 		return pf
@@ -90,6 +94,7 @@ func (x *sheetExport) font(f model.Font) *pdf.Font {
 	return pf
 }
 
+// style returns cell c's style, or the default style when its index is out of range.
 func (x *sheetExport) style(c *model.Cell) *model.Style {
 	if int(c.Style) < len(x.wb.Styles) {
 		return &x.wb.Styles[c.Style]
@@ -97,6 +102,7 @@ func (x *sheetExport) style(c *model.Cell) *model.Style {
 	return &x.wb.Styles[0]
 }
 
+// defaultFont is the workbook's Normal style font (Calibri 11 without styles).
 func (x *sheetExport) defaultFont() model.Font {
 	if len(x.wb.Styles) > 0 {
 		return x.wb.Styles[0].Font
@@ -105,7 +111,7 @@ func (x *sheetExport) defaultFont() model.Font {
 }
 
 // usedRange is the print area Excel uses by default: every cell with a
-// value, a fill or a border, and merges holding one.
+// value, a fill or a border, merges holding one, and charts.
 func (x *sheetExport) usedRange() (model.Range, bool) {
 	sh := x.sh
 	r := model.Range{R1: math.MaxInt, C1: math.MaxInt, R2: -1, C2: -1}
@@ -168,6 +174,8 @@ func bands(ax *Axis, first, last int, avail, s float64) [][2]int {
 	return out
 }
 
+// sheet exports one sheet: a chart sheet as its chart, otherwise its used
+// range split into pages (scaled to the page width with FitWidth).
 func (x *sheetExport) sheet(sh *model.Sheet) {
 	x.sh = sh
 	if sh.IsChartSheet() {
@@ -206,33 +214,41 @@ func (x *sheetExport) sheet(sh *model.Sheet) {
 	}
 }
 
-// Cell geometry on the current page, in unscaled points relative to the
-// band's top-left corner (the page applies the margin and scale).
+// colX is column c's left edge on the current page, in unscaled points
+// relative to the band's top-left corner (the page applies the margin and scale).
 func (x *sheetExport) colX(c int) float64 {
 	return (x.geo.Cols.Start(c) - x.geo.Cols.Start(x.band.C1)) * pxToPt
 }
 
+// rowY is row r's top edge on the current page, as colX.
 func (x *sheetExport) rowY(r int) float64 {
 	return (x.geo.Rows.Start(r) - x.geo.Rows.Start(x.band.R1)) * pxToPt
 }
 
+// rect is a rectangle in page points.
 type rect struct{ x0, y0, x1, y1 float64 }
 
+// w and h are the rectangle's width and height.
 func (r rect) w() float64 { return r.x1 - r.x0 }
 func (r rect) h() float64 { return r.y1 - r.y0 }
 
+// cellRect is cell r, c's rectangle on the current page.
 func (x *sheetExport) cellRect(r, c int) rect {
 	return rect{x.colX(c), x.rowY(r), x.colX(c + 1), x.rowY(r + 1)}
 }
 
+// rangeRect is range m's rectangle on the current page.
 func (x *sheetExport) rangeRect(m model.Range) rect {
 	return rect{x.colX(m.C1), x.rowY(m.R1), x.colX(m.C2 + 1), x.rowY(m.R2 + 1)}
 }
 
+// fill paints r in color c.
 func (x *sheetExport) fill(r rect, c color.NRGBA) {
 	x.p.FillRect(r.x0, r.y0, r.w(), r.h(), c)
 }
 
+// page adds a page showing the cells of band at scale s: gridlines, fills,
+// merged areas, text, borders, then charts.
 func (x *sheetExport) page(band model.Range, s float64) {
 	sh, g := x.sh, x.geo
 	x.band = band
@@ -455,6 +471,8 @@ func (x *sheetExport) textTop(st *model.Style, inner rect, h float64) float64 {
 	}
 }
 
+// drawLine draws one line of text at baseline base, w points wide and
+// squeezed horizontally by squeeze, with its underline and strikethrough.
 func (x *sheetExport) drawLine(st *model.Style, f *pdf.Font, s string, tx, base, w, squeeze float64) {
 	size := float64(st.Font.SizePt)
 	x.p.DrawText(pdf.Run{Font: f, Size: size, X: tx, Y: base, Text: s, Color: st.Font.Color, HScale: squeeze})

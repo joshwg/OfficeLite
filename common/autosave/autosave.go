@@ -30,9 +30,13 @@ type Clock interface {
 	AfterFunc(d time.Duration, f func()) (stop func() bool)
 }
 
+// realClock is the Clock of real time.
 type realClock struct{}
 
+// Now is the current time.
 func (realClock) Now() time.Time { return time.Now() }
+
+// AfterFunc calls f after d with time.AfterFunc.
 func (realClock) AfterFunc(d time.Duration, f func()) func() bool {
 	return time.AfterFunc(d, f).Stop
 }
@@ -44,6 +48,7 @@ type ManualClock struct {
 	timers []*manualTimer
 }
 
+// manualTimer is a function a ManualClock calls once its time comes.
 type manualTimer struct {
 	at      time.Time
 	f       func()
@@ -53,12 +58,15 @@ type manualTimer struct {
 // NewManualClock starts a clock at some time.
 func NewManualClock() *ManualClock { return &ManualClock{now: time.Unix(1e9, 0)} }
 
+// Now is the clock's current time.
 func (c *ManualClock) Now() time.Time {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.now
 }
 
+// AfterFunc registers f to be called by the Advance that moves the clock
+// d past now; the returned stop cancels it.
 func (c *ManualClock) AfterFunc(d time.Duration, f func()) func() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -129,6 +137,7 @@ func New(post func(func()), snapshot func() func() error, done func(err error)) 
 	return &Saver{post: post, snapshot: snapshot, done: done}
 }
 
+// clock is the saver's Clock: real time when none is set.
 func (s *Saver) clock() Clock {
 	if s.Clock == nil {
 		return realClock{}
@@ -207,6 +216,8 @@ func (s *Saver) schedule() {
 	})
 }
 
+// stopTimer cancels the timer and bumps the generation, so a call already
+// posted is ignored.
 func (s *Saver) stopTimer() {
 	if s.stop != nil {
 		s.stop()

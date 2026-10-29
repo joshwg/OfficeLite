@@ -1,3 +1,6 @@
+// Charts in the grid: selecting, moving, sizing, nudging, deleting,
+// copying and pasting them, inserting them, and editing a title in place.
+
 package ui
 
 import (
@@ -240,6 +243,8 @@ func (a *App) handleAt(v *render.View, c *model.Chart, pos f32.Point) int {
 	return -1
 }
 
+// startChartDrag starts moving chart idx (handle -1) or sizing it by a
+// handle, from the press at pos.
 func (a *App) startChartDrag(v *render.View, c *model.Chart, idx, handle int, pos f32.Point) {
 	x0, y0, x1, y1 := render.ChartBox(c, v.Geo)
 	box := [4]float64{x0, y0, x1, y1}
@@ -724,7 +729,7 @@ func (a *App) layoutTitleEdit(gtx layout.Context, v *render.View) {
 	g.Constraints = layout.Constraints{Min: image.Pt(box.Dx()-8, 0), Max: image.Pt(box.Dx()-8, box.Dy())}
 	cs := clip.Rect(box).Push(gtx.Ops)
 	off := op.Offset(box.Min.Add(image.Pt(4, 2))).Push(gtx.Ops)
-	t.ed.Alignment = text.Middle // centred, as the title
+	t.ed.Alignment = text.Middle // centered, as the title
 	t.ed.Layout(g, a.th.Shaper, gui.UIFont, size, gui.Material(gtx.Ops, chromeText), gui.Material(gtx.Ops, editSelection))
 	off.Pop()
 	cs.Pop()

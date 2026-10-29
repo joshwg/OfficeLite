@@ -1,3 +1,6 @@
+// AutoSave controls: the on/off Switch, the title bar's AutoSave switch and
+// the backstage Info page's AutoSave default setting.
+
 package gui
 
 import (
@@ -43,7 +46,7 @@ func Switch(gtx layout.Context, th *Theme, on bool, fg, bg color.NRGBA) layout.D
 	m := op.Record(gtx.Ops)
 	d := l.Layout(g)
 	call := m.Stop()
-	// The text is centred in the room beside the knob.
+	// The text is centered in the room beside the knob.
 	room := image.Pt(pad+knob+gtx.Dp(2), w-pad)
 	if on {
 		room = image.Pt(pad, knobAt.X-gtx.Dp(2))
@@ -73,7 +76,7 @@ func AutoSaveWorksWith(ext string) string {
 }
 
 // Layout draws the control in white on a title bar of color bg. why, when
-// not "", is why AutoSave isn't available: the switch is greyed, ignores
+// not "", is why AutoSave isn't available: the switch is grayed, ignores
 // clicks and its tooltip says why. It reports whether it was clicked.
 func (s *AutoSaveSwitch) Layout(gtx layout.Context, th *Theme, on bool, why string, bg color.NRGBA) (bool, layout.Dimensions) {
 	clicked := false

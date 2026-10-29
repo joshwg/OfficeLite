@@ -1,7 +1,10 @@
+// Tests for niceScale.
+
 package render
 
 import "testing"
 
+// TestNiceScale checks automatic, fixed, step-limited and log axis scales.
 func TestNiceScale(t *testing.T) {
 	for _, c := range []struct {
 		lo, hi         float64
@@ -45,4 +48,5 @@ func TestNiceScale(t *testing.T) {
 	}
 }
 
+// near reports whether a and b differ by less than 1e-9.
 func near(a, b float64) bool { return a-b < 1e-9 && b-a < 1e-9 }

@@ -1,3 +1,5 @@
+// atomicfile_test.go tests WriteFile's replacement and cleanup.
+
 package atomicfile
 
 import (
@@ -6,6 +8,8 @@ import (
 	"testing"
 )
 
+// TestWriteFile checks that WriteFile creates and replaces a file, leaves no
+// temporary file, and fails cleanly when a directory is in the way.
 func TestWriteFile(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "sub", "data.json")

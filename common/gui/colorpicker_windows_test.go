@@ -1,3 +1,5 @@
+// A Windows-only screenshot test that renders the ColorPicker headlessly.
+
 package gui
 
 import (
@@ -47,6 +49,7 @@ func TestColorPickerShot(t *testing.T) {
 	}
 }
 
+// colorsFromHex parses hex color s, failing the test if it is malformed.
 func colorsFromHex(t *testing.T, s string) color.NRGBA {
 	v, ok := colors.ParseHex(s)
 	if !ok {

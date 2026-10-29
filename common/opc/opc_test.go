@@ -1,7 +1,10 @@
+// opc_test.go tests the relationship-part and target-resolution helpers.
+
 package opc
 
 import "testing"
 
+// TestRelsPath checks the relationships part of the package and of parts.
 func TestRelsPath(t *testing.T) {
 	for in, want := range map[string]string{
 		"":                  "_rels/.rels",
@@ -14,6 +17,7 @@ func TestRelsPath(t *testing.T) {
 	}
 }
 
+// TestResolve checks relative, parent, absolute and dotted targets.
 func TestResolve(t *testing.T) {
 	for _, c := range []struct{ from, target, want string }{
 		{"", "word/document.xml", "word/document.xml"},

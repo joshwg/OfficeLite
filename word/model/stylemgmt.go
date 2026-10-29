@@ -163,6 +163,9 @@ func clearSame(p, s RunProps) RunProps {
 	if s.Highlight != "" && p.Highlight == s.Highlight {
 		p.Highlight = ""
 	}
+	if s.Shading != "" && p.Shading == s.Shading {
+		p.Shading = ""
+	}
 	if s.Vert != VertUnset && p.Vert == s.Vert {
 		p.Vert = VertUnset
 	}

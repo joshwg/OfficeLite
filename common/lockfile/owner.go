@@ -64,6 +64,7 @@ func OwnerName(name string) string {
 	return "~$" + name
 }
 
+// wordOwnerName is Word's owner file name for a document file name.
 func wordOwnerName(name string) string {
 	ext := filepath.Ext(name)
 	base := []rune(strings.TrimSuffix(name, ext))

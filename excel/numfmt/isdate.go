@@ -1,3 +1,5 @@
+// Calendar-date format detection, exported for AutoFill.
+
 package numfmt
 
 // IsDate reports whether a number format shows a calendar date, so that

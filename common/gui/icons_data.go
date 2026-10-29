@@ -1,3 +1,6 @@
+// Data tab icons and vectorIcon, which encodes line and fill paths on a
+// 24×24 grid as IconVG.
+
 package gui
 
 import (
@@ -68,11 +71,12 @@ func vectorIcon(lines, fills [][]pt) *Icon {
 	return mustIcon(data)
 }
 
-// letterA and letterZ are 7 wide and 9 tall with the top-left at x, y.
+// letterA is an A 7 wide and 9 tall with the top-left at x, y.
 func letterA(x, y float32) [][]pt {
 	return [][]pt{{{x, y + 9}, {x + 3.5, y}, {x + 7, y + 9}}, {{x + 1.6, y + 6}, {x + 5.4, y + 6}}}
 }
 
+// letterZ is a Z 7 wide and 9 tall with the top-left at x, y.
 func letterZ(x, y float32) [][]pt {
 	return [][]pt{{{x, y}, {x + 7, y}, {x, y + 9}, {x + 7, y + 9}}}
 }
@@ -153,8 +157,8 @@ func outlineRows() [][]pt {
 	return [][]pt{{{11, 5}, {22, 5}}, {{11, 12}, {22, 12}}, {{11, 19}, {22, 19}}}
 }
 
-// outlineGroup is rows joined by the outline's bracket (Group), or with
-// the bracket crossed out (Ungroup).
+// outlineGroup is rows joined by the outline's bracket (Group), or with a
+// cross in the bracket's place (Ungroup).
 func outlineGroup(ungroup bool) (lines, fills [][]pt) {
 	lines = outlineRows()
 	if ungroup {

@@ -1,3 +1,6 @@
+// FileDrop on Windows: a subclassed window procedure that takes
+// WM_DROPFILES.
+
 package gui
 
 import (
@@ -49,6 +52,8 @@ type dropWin struct {
 	orig uintptr // Gio's window procedure
 }
 
+// listen attaches the window of a Win32ViewEvent so it takes dropped
+// files.
 func (f *FileDrop) listen(e event.Event) {
 	v, ok := e.(app.Win32ViewEvent)
 	if !ok || v.HWND == 0 {

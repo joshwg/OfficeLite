@@ -1,3 +1,6 @@
+// Tests for structural edits: span shifting, spills under row and column
+// edits, and pixel-to-width round trips.
+
 package model
 
 import (
@@ -5,6 +8,8 @@ import (
 	"testing"
 )
 
+// TestShiftSpan checks ShiftSpan for insertions and deletions before,
+// inside and after a span.
 func TestShiftSpan(t *testing.T) {
 	for _, tc := range []struct {
 		lo, hi, at, n int
@@ -26,6 +31,8 @@ func TestShiftSpan(t *testing.T) {
 	}
 }
 
+// TestDeleteRowsSpills checks that deleting a spill's anchor row empties
+// its spilled values and that other spills move with rows and columns.
 func TestDeleteRowsSpills(t *testing.T) {
 	s := NewSheet("S")
 	num := func(v float64) Cell { return Cell{Kind: KindNumber, Num: v, Text: "x"} }
@@ -55,6 +62,8 @@ func TestDeleteRowsSpills(t *testing.T) {
 	}
 }
 
+// TestPxToColWidth checks that PxToColWidth round-trips through
+// ColWidthToPx for every pixel width, and that 0 px hides.
 func TestPxToColWidth(t *testing.T) {
 	for _, mdw := range []float64{6, 7, 8, 9} {
 		for px := 6.0; px < 400; px++ {

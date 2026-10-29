@@ -1,3 +1,6 @@
+// Criteria functions: SUMIF(S), AVERAGEIF(S), COUNTIF(S), MINIFS and
+// MAXIFS.
+
 package mathtrig
 
 import (
@@ -11,6 +14,7 @@ import (
 // are scalar arguments: an array of criteria lifts, e.g.
 // SUMIFS(C:C,A:A,{"a","b"}) returns two sums.
 
+// registerConditional adds the criteria functions to r.
 func registerConditional(r *f.Registry) {
 	sumRangeFirst := func(i int) bool { return i == 0 || i%2 == 1 }
 	pairs := func(i int) bool { return i%2 == 0 }
@@ -82,9 +86,8 @@ func ifFn(e *f.Env, a []f.Value, k aggKind) f.Value {
 }
 
 // ifsFnAgg aggregates the values of vals (or counts, for aggCount, when
-// vals is nil) at the
-// positions where every (range, criteria) pair in a matches. All ranges
-// must have the same shape.
+// vals is nil) at the positions where every (range, criteria) pair in a
+// matches. All ranges must have the same shape.
 func ifsFnAgg(e *f.Env, vals *grid, a []f.Value, k aggKind) f.Value {
 	type cond struct {
 		g *grid

@@ -1,3 +1,5 @@
+// Windows-only AutoSave test: a save into a file another program holds open.
+
 package ui
 
 import (

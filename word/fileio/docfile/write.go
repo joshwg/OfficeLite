@@ -942,12 +942,16 @@ func (w *writer) encRun(g *grpprl, p model.RunProps) {
 			g.l(sprmCCv, binary.LittleEndian.Uint32(cv[:]))
 		}
 	}
+	shd := p.Shading
 	if p.Highlight != "" {
 		if ico, ok := highlightIco(p.Highlight); ok {
 			g.b(sprmCHighlight, ico)
-		} else if cv := encColorRef(p.Highlight); cv[3] == 0 {
-			g.v(sprmCShd, encShd(p.Highlight))
+		} else if shd == "" {
+			shd = p.Highlight // an RRGGBB highlight is shading
 		}
+	}
+	if cv := encColorRef(shd); shd != "" && cv[3] == 0 {
+		g.v(sprmCShd, encShd(shd))
 	}
 	switch p.Vert {
 	case model.VertBaseline:

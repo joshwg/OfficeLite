@@ -1,3 +1,6 @@
+// Numbers cell formats: conversion to Excel format codes and display
+// rendering of cell values and dates.
+
 package iwork
 
 import (
@@ -69,6 +72,9 @@ var currencySymbols = map[string]string{
 	"ILS": "₪", "TRY": "₺", "PLN": "zł ",
 }
 
+// currencySymbol returns the symbol (with any trailing space) for an ISO
+// currency code: "$" when code is empty, else the code and a space when the
+// symbol isn't known.
 func currencySymbol(code string) string {
 	if s, ok := currencySymbols[code]; ok {
 		return s
@@ -173,6 +179,7 @@ func (d *Document) ExcelFormat(f Message) string {
 	return ""
 }
 
+// quoteLiteral quotes s as an Excel format-code literal ("$" stays bare).
 func quoteLiteral(s string) string {
 	if s == "$" {
 		return "$"
@@ -388,6 +395,7 @@ func formatNumber(v float64, places int, thousands bool, neg uint64) string {
 	return s
 }
 
+// mustParse parses s as a float, 0 if it isn't one.
 func mustParse(s string) float64 {
 	v, _ := strconv.ParseFloat(s, 64)
 	return v

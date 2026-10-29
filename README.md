@@ -24,7 +24,7 @@ Lightweight, macro-free Office apps in Go. MIT licensed. Version 0.7.0.1
   Modify Style, New Style, Update Style to Match Selection, Delete Style
   and a Styles pane, fonts, sizes, bold/italic/underline/strike,
   sub/superscript, highlight, change case, color, alignment, spacing,
-  indents, tabs, bullets and numbering, undo, clipboard (Paste Special /
+  shading, indents, tabs, bullets and numbering, undo, clipboard (Paste Special /
   Keep Text Only), Format Painter, Find & Replace and Go To, and Show/Hide
   ¶ (Ctrl+Shift+8: paragraph, cell and row marks, spaces, tabs, line and
   page breaks, and hidden text with a dotted underline; never exported or
@@ -114,7 +114,17 @@ hide/unhide rows, columns and sheets, rename, Format Cells) and Editing
 (AutoSum ▾, Fill ▾, Clear ▾, Sort & Filter ▾, Find & Select ▾). The
 controls show the active cell's format; on a narrow window the ribbon
 scrolls sideways (wheel or the ‹ › buttons). WordLite's ribbon has Undo,
-Clipboard, Font, Paragraph, Styles and Editing groups.
+Clipboard, Font, Paragraph, Styles and Editing groups. Besides Text
+Highlight Color (Word's 15 highlighter colors) it has Word's **Shading ▾**
+in the Paragraph group, which colors the background in any color from the
+color menu (No Color removes it; More Colors… for any other): the
+selected text when the selection is part of one paragraph (character
+shading), the paragraph(s) when whole paragraphs or just the caret are
+selected (paragraph shading, from indent to indent; neighbors with the
+same shading and indents join into one block), and the cells when whole
+table cells are selected (cell shading). The button repeats the last
+color, starting with White, Background 1, Darker 15% (a light gray). All
+three are saved in `.docx` and `.doc`.
 
 **Undo and Redo** are split buttons in both apps, as in Office: the
 button takes back (or repeats) one step; its ▾ opens the history list,

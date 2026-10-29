@@ -1,3 +1,7 @@
+// Notes (NOTE records with the text in the OBJ/TXO pair of their drawing
+// object) and hyperlinks (HLINK, HLINKTOOLTIP), read and written, plus the
+// OfficeArt drawing that holds note text boxes and AutoFilter buttons.
+
 package xlsfile
 
 import (
@@ -10,9 +14,6 @@ import (
 	"officelite/common/textenc"
 	"officelite/excel/model"
 )
-
-// Notes (NOTE records with the text in the OBJ/TXO pair of their drawing
-// object) and hyperlinks (HLINK, HLINKTOOLTIP), read and written.
 
 const (
 	recNote         = 0x001C
@@ -160,6 +161,8 @@ type hcursor struct {
 	bad bool
 }
 
+// take returns the next n bytes, or nil (marking the cursor bad) when
+// they run past the end.
 func (c *hcursor) take(n int) []byte {
 	if c.bad || n < 0 || c.off+n > len(c.b) {
 		c.bad = true
@@ -170,6 +173,7 @@ func (c *hcursor) take(n int) []byte {
 	return s
 }
 
+// u32 reads a little-endian uint32, 0 past the end.
 func (c *hcursor) u32() int {
 	s := c.take(4)
 	if s == nil {
@@ -178,6 +182,7 @@ func (c *hcursor) u32() int {
 	return int(binary.LittleEndian.Uint32(s))
 }
 
+// u16 reads a little-endian uint16, 0 past the end.
 func (c *hcursor) u16() int {
 	s := c.take(2)
 	if s == nil {
@@ -197,6 +202,8 @@ func (c *hcursor) hstring() string {
 	return strings.TrimRight(textenc.UTF16LE(c.take(2*n)), "\x00")
 }
 
+// parseHLink decodes an HLINK body into its cell range and target or
+// location; ok is false when it is damaged or links nowhere.
 func parseHLink(b []byte) (linkRec, bool) {
 	c := &hcursor{b: b}
 	var l linkRec
@@ -258,6 +265,8 @@ func (c *hcursor) moniker() string {
 // utf16z is s as UTF-16LE with a terminating null.
 func utf16z(s string) []byte { return append(textenc.AppendUTF16LE(nil, s), 0, 0) }
 
+// appendHString appends s as a HyperlinkString: its character count
+// (with the null) and null-terminated UTF-16 text.
 func appendHString(b []byte, s string) []byte {
 	b = binary.LittleEndian.AppendUint32(b, uint32(len(utf16.Encode([]rune(s)))+1))
 	return append(b, utf16z(s)...)
@@ -449,7 +458,8 @@ func (x *writer) noteDrawings() (dg map[int]int, counts []int) {
 	return dg, counts
 }
 
-// drawingGroup writes MSODRAWINGGROUP when some sheet has notes.
+// drawingGroup writes MSODRAWINGGROUP when some sheet has notes or
+// AutoFilter buttons.
 func (x *writer) drawingGroup(b []byte) []byte {
 	_, counts := x.noteDrawings()
 	if len(counts) == 0 {

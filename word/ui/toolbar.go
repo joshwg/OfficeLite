@@ -37,7 +37,7 @@ type toolbar struct {
 	ribbon gui.Ribbon
 
 	styleDD, fontDD, sizeDD, spacingDD gui.DropDown
-	colorCP                            gui.ColorPicker
+	colorCP, shadeCP                   gui.ColorPicker
 	pasteDD, hlDD, caseDD, selectDD    gui.DropDown
 	undoHL, redoHL                     gui.HistoryList
 
@@ -47,14 +47,15 @@ type toolbar struct {
 	modify                                    widget.Clickable
 	cut, copy, painter                        widget.Clickable
 	grow, shrink, sub, super, hl, color       widget.Clickable
+	shade                                     widget.Clickable
 	find, replace, stylesPane, newStyle       widget.Clickable
 	marks                                     widget.Clickable
 	state                                     toolState
 	stateKey                                  toolKey
 	styleIDs                                  []string
 
-	// The Highlight and Font Color buttons repeat the last choice.
-	lastHL, lastColor string
+	// The Highlight, Font Color and Shading buttons repeat the last choice.
+	lastHL, lastColor, lastShade string
 
 	tipsSet bool
 }
@@ -92,6 +93,8 @@ func (t *toolbar) setTips() {
 	tip(&t.alignR, "Align Right", "Ctrl+R", "Align your content with the right margin.")
 	tip(&t.alignJ, "Justify", "Ctrl+J", "Distribute your text evenly between the margins.")
 	tip(&t.marks, "Show/Hide ¶", "Ctrl+Shift+8", "Show paragraph marks and other hidden formatting symbols.")
+	tip(&t.shade, "Shading", "", "Color the background behind the selected text or paragraph.")
+	tip(&t.shadeCP, "Shading", "", "Color the background behind the selected text or paragraph.")
 	tip(&t.spacingDD, "Line and Paragraph Spacing", "", "Choose how much space appears between lines of text or between paragraphs.")
 	tip(&t.modify, "Modify Style", "", "Change the formatting of the current style.")
 	tip(&t.newStyle, "New Style", "", "Create a new style.")
@@ -249,6 +252,11 @@ var (
 	}
 )
 
+// defaultShade is what the Shading button applies until a color is
+// chosen: White, Background 1, Darker 15% from the color menu, a light
+// gray that reads under any text color.
+const defaultShade = "D8D8D8"
+
 // ribbonHeight is the ribbon's height in dp, for tests.
 const ribbonHeight = int(gui.RibbonHeight)
 
@@ -291,7 +299,11 @@ func (d *window) toolbar(gtx layout.Context) layout.Dimensions {
 		t.lastColor = "FF0000"
 	}
 	click(&t.hl, func() { ed.SetHighlight(t.lastHL) })
+	if t.lastShade == "" {
+		t.lastShade = defaultShade
+	}
 	click(&t.color, func() { ed.SetColor(t.lastColor) })
+	click(&t.shade, func() { ed.SetShading(t.lastShade) })
 	click(&t.alignL, func() { ed.SetAlign(model.AlignLeft) })
 	click(&t.alignC, func() { ed.SetAlign(model.AlignCenter) })
 	click(&t.alignR, func() { ed.SetAlign(model.AlignRight) })
@@ -438,6 +450,12 @@ func (d *window) toolbar(gtx layout.Context) layout.Dimensions {
 					case i == len(lineSpacings)+4:
 						ed.SetSpacing(nil, model.F(0))
 					}
+				}),
+				k.ColorSplit(&t.shade, &t.shadeCP, gui.IconFill, colors.HexOr(t.lastShade, colors.White), "No Color", func(c gui.ColorChoice) {
+					if !c.None {
+						t.lastShade = colors.Hex(c.Color)
+					}
+					ed.SetShading(choiceHex(c))
 				}),
 			),
 		)},

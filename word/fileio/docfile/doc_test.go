@@ -332,7 +332,7 @@ func builtDoc() *model.Document {
 			text("O "),
 			{Text: "marked", Props: model.RunProps{Highlight: "green"}},
 			text(" "),
-			{Text: "shaded", Props: model.RunProps{Highlight: "FFCC00"}},
+			{Text: "shaded", Props: model.RunProps{Shading: "FFCC00"}},
 			text(" "),
 			{Text: "accent", Style: "Accent"},
 			text(" "),
@@ -606,7 +606,7 @@ func TestPropsRoundTrip(t *testing.T) {
 	w := newWriter(model.New("x"))
 	r := &reader{fonts: w.fonts, doc: model.New("x")}
 	rp := model.RunProps{Font: "Arial", Size: 13.5, Bold: model.On, Italic: model.Off, Underline: model.UnderlineWave,
-		Strike: model.On, Caps: model.Off, SmallCaps: model.On, Hidden: model.On, Color: "123456", Highlight: "darkCyan", Vert: model.VertSuper}
+		Strike: model.On, Caps: model.Off, SmallCaps: model.On, Hidden: model.On, Color: "123456", Highlight: "darkCyan", Shading: "FFC000", Vert: model.VertSuper}
 	var g grpprl
 	w.encRun(&g, rp)
 	c := &chpInfo{istd: -1}

@@ -1,3 +1,5 @@
+// Looking up a report's records and cells: drill-down records and GETPIVOTDATA.
+
 package pivot
 
 import (
@@ -89,9 +91,8 @@ func GetData(pt *model.PivotTable, dataField string, pairs []formula.Value) (row
 		}
 		want[f] = pairs[i+1]
 	}
-	// A pair for a report filter must agree with its selection (only
-	// "(All)" or the one item shown is checked here loosely: the
-	// filtered report holds just those records anyway).
+	// Pairs naming a report filter are dropped, not checked against its
+	// selection: the filtered report holds just those records anyway.
 	for _, f := range pt.Pages {
 		delete(want, f)
 	}
@@ -151,6 +152,8 @@ func GetData(pt *model.PivotTable, dataField string, pairs []formula.Value) (row
 	return o.Body.R1 + o.FirstDataRow + ri, o.Body.C1 + o.FirstDataCol + ci, true
 }
 
+// isBlankArg reports whether a GETPIVOTDATA item argument names the blank
+// item: empty text or "(blank)".
 func isBlankArg(v formula.Value) bool {
 	s, ok := v.(formula.String)
 	return ok && (s == "" || strings.EqualFold(string(s), Blank))

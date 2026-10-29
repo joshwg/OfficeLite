@@ -1,3 +1,6 @@
+// WordMetrics: the GDI-style ascent and descent Word gives a face, read from
+// its OS/2 and hhea tables.
+
 package gui
 
 import (
@@ -45,7 +48,8 @@ func WordMetrics(sh *text.Shaper, id text.GlyphID) (asc, desc float64, ok bool) 
 }
 
 // readWinMetrics reads the head, hhea and OS/2 tables of a font file (a
-// face of a collection).
+// face of a collection) and returns Word's ascent and descent for it; ok is
+// false when a table is missing or unreadable.
 func readWinMetrics(ff FaceFile) winMetrics {
 	f, err := os.Open(ff.Path)
 	if err != nil {

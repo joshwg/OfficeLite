@@ -1,3 +1,5 @@
+// ContextMenu, the right-click menu.
+
 package gui
 
 import (

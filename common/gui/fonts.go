@@ -23,7 +23,7 @@ var metricCompatible = map[string]string{
 }
 
 // Typeface returns a Gio typeface list for an Office font name: the font
-// itself, metric-compatible substitutes, then a generic sans-serif.
+// itself, metric-compatible substitutes, then FallbackFamilies and Go.
 func Typeface(name string) font.Typeface {
 	list := strings.ReplaceAll(name, ",", " ")
 	if fb, ok := metricCompatible[strings.ToLower(name)]; ok {
@@ -32,6 +32,7 @@ func Typeface(name string) font.Typeface {
 	return font.Typeface(list + ", " + strings.Join(FallbackFamilies, ", ") + ", Go")
 }
 
+// gofontCollection returns the embedded Go font faces.
 func gofontCollection() []font.FontFace { return gofont.Collection() }
 
 // UIFont is the font used for application chrome (headers, tabs, bars).

@@ -1,3 +1,5 @@
+// Tests for Icon's concurrent, cached rendering.
+
 package gui
 
 import (

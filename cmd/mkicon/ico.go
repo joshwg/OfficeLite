@@ -1,3 +1,6 @@
+// Icon images and the .ico file and RT_GROUP_ICON directory that list
+// them.
+
 package main
 
 import (
@@ -16,6 +19,8 @@ type iconImage struct {
 	data []byte
 }
 
+// encodeIconImage encodes img for an icon: as a PNG at 256 pixels and up,
+// otherwise as a 32-bit DIB with its AND mask.
 func encodeIconImage(img *image.RGBA) iconImage {
 	n := img.Bounds().Dx()
 	var b bytes.Buffer
@@ -60,6 +65,7 @@ func encodeIconImage(img *image.RGBA) iconImage {
 	return iconImage{n, b.Bytes()}
 }
 
+// unpremul undoes alpha premultiplication of channel c, rounding.
 func unpremul(c, a uint8) uint8 {
 	return uint8(min(255, (int(c)*255+int(a)/2)/int(a)))
 }
@@ -84,6 +90,7 @@ func iconDir(count int) []byte {
 	return h
 }
 
+// icoFile returns a .ico file holding the images.
 func icoFile(images []iconImage) []byte {
 	var b bytes.Buffer
 	b.Write(iconDir(len(images)))

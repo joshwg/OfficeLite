@@ -1,3 +1,6 @@
+// Writing embedded fonts: the Type0/CIDFont objects, font descriptor,
+// font program and ToUnicode map for each face a document uses.
+
 package pdf
 
 import (

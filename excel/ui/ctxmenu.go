@@ -1,3 +1,7 @@
+// Right-click menus of the cells, the row and column headers and the
+// sheet tabs, as in Excel. Each item runs the command the menus and the
+// ribbon run.
+
 package ui
 
 import (
@@ -15,10 +19,6 @@ import (
 	"officelite/excel/model"
 	"officelite/excel/render"
 )
-
-// Right-click menus of the cells, the row and column headers and the
-// sheet tabs, as in Excel. Each item runs the command the menus and the
-// ribbon run.
 
 // ctxMenus holds the open context menu's state.
 type ctxMenus struct {
@@ -281,8 +281,8 @@ func (a *App) tabMenu(i int) []ctxItem {
 	}
 }
 
-// singleRange refuses a command that can't act on a multiple selection,
-// as Excel does.
+// singleRange reports whether the selection is a single range; for a
+// multiple selection it refuses the command with Excel's message.
 func (a *App) singleRange() bool {
 	if a.state().view.Sel.Multiple() {
 		a.errMsg = "This action won't work on multiple selections."

@@ -1,3 +1,6 @@
+// ColorPicker, Office's color menu (theme colors and shades, standard and
+// recent colors, More Colors...), and the HSL / HSV conversions it uses.
+
 package gui
 
 import (
@@ -85,6 +88,7 @@ func themeShades(c color.NRGBA) ([5]color.NRGBA, [5]string) {
 	return out, names
 }
 
+// toHSL converts c to hue, saturation and lightness, each in [0, 1].
 func toHSL(c color.NRGBA) (h, s, l float64) {
 	r, g, b := float64(c.R)/255, float64(c.G)/255, float64(c.B)/255
 	mx, mn := max(r, g, b), min(r, g, b)
@@ -109,6 +113,8 @@ func toHSL(c color.NRGBA) (h, s, l float64) {
 	return h / 6, s, l
 }
 
+// fromHSL returns the opaque color of hue h, saturation s and lightness l,
+// each in [0, 1]; l is clamped to that range.
 func fromHSL(h, s, l float64) color.NRGBA {
 	l = min(max(l, 0), 1)
 	if s == 0 {
@@ -159,6 +165,18 @@ type ColorPicker struct {
 	custom customColor
 	tipped bool
 }
+
+// IsOpen reports whether the menu is showing.
+func (p *ColorPicker) IsOpen() bool { return p.dd.IsOpen() }
+
+// Arrow is the button that opens the menu, Swatch the button of color i
+// (the theme row, its five shade rows, then the standard colors), NoColor
+// the "No Fill" / "Automatic" entry and SwatchColor the color of swatch i,
+// for tests that click them.
+func (p *ColorPicker) Arrow() *widget.Clickable       { return &p.dd.btn }
+func (p *ColorPicker) Swatch(i int) *widget.Clickable { return &p.cells[i] }
+func (p *ColorPicker) NoColor() *widget.Clickable     { return &p.none }
+func (p *ColorPicker) SwatchColor(i int) color.NRGBA  { return p.cellColor(i) }
 
 // SplitButton draws a ribbon split button (btn applies the last color;
 // the arrow opens the picker) and returns a color picked from the menu.
@@ -294,9 +312,11 @@ func (p *ColorPicker) panel(gtx layout.Context, th *Theme, noneLabel string) (la
 				strokeRect(gtx.Ops, r, ChromeLine) // light swatches need an edge
 			}
 			pointer.CursorPointer.Add(gtx.Ops)
+			// The tip's handler goes inside the swatch's area: on top of
+			// it, it would take the swatch's clicks.
+			tipButton(gtx, btn, btn.Hovered(), r.Size())
 			return layout.Dimensions{Size: r.Size()}
 		})
-		tipButton(gtx, btn, btn.Hovered(), image.Pt(sw, sw))
 		off.Pop()
 	}
 	heading("Theme Colors")
@@ -357,6 +377,8 @@ func (p *ColorPicker) cellColor(i int) color.NRGBA {
 	return StandardColors[i-60].C
 }
 
+// lastCustom is the color More Colors... starts from: the most recent
+// custom color, else the first accent.
 func (p *ColorPicker) lastCustom() color.NRGBA {
 	if len(p.recent) > 0 {
 		return p.recent[0]
@@ -392,6 +414,7 @@ type customColor struct {
 	stripValid    bool
 }
 
+// start opens the panel at color c, which it also shows as Current.
 func (cc *customColor) start(c color.NRGBA) {
 	cc.open, cc.start0 = true, c
 	cc.h, cc.s, cc.v = toHSV(c)
@@ -399,8 +422,12 @@ func (cc *customColor) start(c color.NRGBA) {
 	cc.hex.SetText(hexOf(c))
 }
 
+// color returns the color being picked.
 func (cc *customColor) color() color.NRGBA { return fromHSV(cc.h, cc.s, cc.v) }
 
+// layout handles the panel's input and draws it. Like ColorPicker.panel,
+// it returns the color chosen, if any (OK also adds it to p's recent
+// colors), and whether the menu should close.
 func (cc *customColor) layout(gtx layout.Context, th *Theme, p *ColorPicker) (layout.Dimensions, *ColorChoice, bool) {
 	sq, stripW := gtx.Dp(160), gtx.Dp(18)
 	pad, gap := gtx.Dp(10), gtx.Dp(10)
@@ -543,6 +570,7 @@ func (cc *customColor) layout(gtx layout.Context, th *Theme, p *ColorPicker) (la
 	return layout.Dimensions{Size: image.Pt(w, y)}, nil, false
 }
 
+// toHSV converts c to hue, saturation and value, each in [0, 1].
 func toHSV(c color.NRGBA) (h, s, v float64) {
 	r, g, b := float64(c.R)/255, float64(c.G)/255, float64(c.B)/255
 	mx, mn := max(r, g, b), min(r, g, b)
@@ -566,6 +594,8 @@ func toHSV(c color.NRGBA) (h, s, v float64) {
 	return h / 6, s, v
 }
 
+// fromHSV returns the opaque color of hue h (wrapped into [0, 1)),
+// saturation s and value v.
 func fromHSV(h, s, v float64) color.NRGBA {
 	h = math.Mod(h, 1) * 6
 	i := math.Floor(h)
@@ -590,4 +620,5 @@ func fromHSV(h, s, v float64) color.NRGBA {
 	return color.NRGBA{R: u(r), G: u(g), B: u(b), A: 0xFF}
 }
 
+// hexOf formats c as "#RRGGBB" for the hex box.
 func hexOf(c color.NRGBA) string { return "#" + colors.Hex(c) }

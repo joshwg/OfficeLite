@@ -1,3 +1,6 @@
+// autosave_test.go tests the Saver's debounce, periodic saves, saves during
+// a save, errors and the default setting, on a ManualClock.
+
 package autosave
 
 import (
@@ -28,6 +31,7 @@ type rig struct {
 	pendOK bool          // unsaved changes
 }
 
+// newRig makes a rig with AutoSave off on a ManualClock.
 func newRig(t *testing.T) *rig {
 	r := &rig{t: t, clock: NewManualClock()}
 	r.s = New(r.post, r.snapshot, func(err error) { r.errs = append(r.errs, err) })
@@ -35,6 +39,7 @@ func newRig(t *testing.T) *rig {
 	return r
 }
 
+// post queues f for the rig's "UI goroutine" (run).
 func (r *rig) post(f func()) {
 	r.mu.Lock()
 	r.calls = append(r.calls, f)
@@ -59,6 +64,8 @@ func (r *rig) run() {
 	}
 }
 
+// snapshot is the write of the current rev while there are unsaved
+// changes, nil otherwise; the write honors block and fail as they are now.
 func (r *rig) snapshot() func() error {
 	if !r.pendOK {
 		return nil
@@ -78,6 +85,7 @@ func (r *rig) snapshot() func() error {
 	}
 }
 
+// edit changes the document and tells the saver.
 func (r *rig) edit() {
 	r.rev++
 	r.pendOK = true
@@ -90,6 +98,7 @@ func (r *rig) tick(d time.Duration) {
 	r.run()
 }
 
+// wantSaved fails the test unless exactly revs were written, in order.
 func (r *rig) wantSaved(what string, revs ...int) {
 	r.t.Helper()
 	r.mu.Lock()
@@ -230,6 +239,8 @@ func waitPosted(r *rig) {
 	}
 }
 
+// TestDefault checks that AutoSave is off by default and SetDefault saves
+// the default while keeping other settings.
 func TestDefault(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "settings.json")
 	old := autorecover.SettingsPath

@@ -1,3 +1,6 @@
+// Cell notes and hyperlinks: their types, accessors, and how they move
+// when rows or columns are inserted or deleted.
+
 package model
 
 // Note is a cell note (what Excel 365 calls a Note and older versions a

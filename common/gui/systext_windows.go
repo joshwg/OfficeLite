@@ -1,3 +1,6 @@
+// Windows text rendering: Gio-shaped glyph runs rasterized by DirectWrite
+// through raw COM calls, with a cache of run images.
+
 package gui
 
 import (
@@ -49,6 +52,7 @@ var dw struct {
 	cur, old map[string]*runImage
 }
 
+// runImage is a cached, rasterized glyph run.
 type runImage struct {
 	img  paint.ImageOp
 	off  image.Point // of the image's top left from the pen's pixel
@@ -104,8 +108,12 @@ func comRelease(obj unsafe.Pointer) { syscall.SyscallN(method(obj, mRelease), ui
 // hr is a COM call's HRESULT.
 func hr(r, _ uintptr, _ syscall.Errno) uintptr { return r }
 
+// f32arg passes a float32 to a COM call as its bits.
 func f32arg(v float32) uintptr { return uintptr(math.Float32bits(v)) }
 
+// dwInit reads the OFFICELITE_TEXT settings and creates the DirectWrite
+// factory; dw.factory stays nil for "gio" mode or when DirectWrite is
+// unavailable.
 func dwInit() {
 	dw.mode = dwriteRenderingModeNaturalSymmetric
 	switch os.Getenv("OFFICELITE_TEXT") {
@@ -170,6 +178,10 @@ func fontFace(ff FaceFile) unsafe.Pointer {
 	return face
 }
 
+// paintSystemGlyphs paints glyphs gs, shaped by sh, at (x, y) in color c
+// with DirectWrite, falling back to Gio's outlines for runs whose face
+// DirectWrite can't load. It reports false, painting nothing, when
+// DirectWrite is off or the text is right-to-left or not from sh's files.
 func paintSystemGlyphs(ops *op.Ops, sh *text.Shaper, gs []text.Glyph, x, y float32, c color.NRGBA) bool {
 	dw.once.Do(dwInit)
 	if dw.factory == nil {
@@ -238,6 +250,8 @@ type dwriteGlyphRun struct {
 	bidiLevel     uint32
 }
 
+// paintRun paints one run of glyphs from face at ppem, rasterizing it
+// or reusing its cached image; it reports false if DirectWrite fails.
 func paintRun(ops *op.Ops, face unsafe.Pointer, ppem fixed.Int26_6, gs []text.Glyph, x, y float32, c color.NRGBA) bool {
 	// The pen starts on a whole pixel; the run keeps its fraction, in
 	// quarter pixels, as DirectWrite positions glyphs.
@@ -404,6 +418,7 @@ func coverageLUT(c color.NRGBA) *[256][4]uint8 {
 	return &lut
 }
 
+// srgbToLinear decodes an sRGB channel value (0 to 1) to linear light.
 func srgbToLinear(v float64) float64 {
 	if v <= 0.04045 {
 		return v / 12.92
@@ -411,6 +426,7 @@ func srgbToLinear(v float64) float64 {
 	return math.Pow((v+0.055)/1.055, 2.4)
 }
 
+// linearToSRGB encodes a linear-light channel value (0 to 1) as sRGB.
 func linearToSRGB(v float64) float64 {
 	if v <= 0.0031308 {
 		return v * 12.92

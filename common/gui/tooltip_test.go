@@ -1,3 +1,6 @@
+// Tests for tooltips: show delay, switching and timeout on a ribbon,
+// menu item tips, and the weak tip registry.
+
 package gui
 
 import (
@@ -26,6 +29,7 @@ type tipRig struct {
 	now    time.Time
 }
 
+// newTipRig returns a rig whose buttons carry Bold and Italic tips.
 func newTipRig() *tipRig {
 	g := &tipRig{th: NewTheme(NewFontLibrary(), ChromeText, ChromeText), now: time.Unix(1e9, 0)}
 	SetTip(&g.a, "Bold", "Ctrl+B", "Make your text bold.")
@@ -33,6 +37,7 @@ func newTipRig() *tipRig {
 	return g
 }
 
+// frame lays the ribbon out at size and g.now.
 func (g *tipRig) frame(size image.Point) {
 	g.ops.Reset()
 	gtx := layout.Context{Ops: &g.ops, Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1},
@@ -48,18 +53,24 @@ func (g *tipRig) frame(size image.Point) {
 	g.r.Frame(&g.ops)
 }
 
+// move moves the mouse to (x, y) and runs a frame.
 func (g *tipRig) move(x, y float32) {
 	g.r.Queue(pointer.Event{Kind: pointer.Move, Source: pointer.Mouse, Position: f32.Pt(x, y)})
 	g.frame(image.Pt(800, 300))
 }
 
+// after advances the clock by d and runs a frame.
 func (g *tipRig) after(d time.Duration) {
 	g.now = g.now.Add(d)
 	g.frame(image.Pt(800, 300))
 }
 
+// shown reports whether the last frame drew a tip.
 func (g *tipRig) shown() bool { return g.ribbon.tips.lastShow.Equal(g.now) }
 
+// TestTooltipTiming checks that a tip shows after the delay, switches at
+// once to a neighbor, hides after the timeout, and is forgotten on leaving
+// and suppressed by a press.
 func TestTooltipTiming(t *testing.T) {
 	g := newTipRig()
 	g.frame(image.Pt(800, 300))
@@ -79,7 +90,7 @@ func TestTooltipTiming(t *testing.T) {
 	if !g.shown() {
 		t.Fatal("not shown after the delay")
 	}
-	g.move(45, 15) // the neighbour switches at once
+	g.move(45, 15) // the neighbor switches at once
 	if g.ribbon.tips.key != &g.b || !g.shown() {
 		t.Fatalf("switch: key %v shown %v", g.ribbon.tips.key, g.shown())
 	}
@@ -100,6 +111,7 @@ func TestTooltipTiming(t *testing.T) {
 	}
 }
 
+// TestMenuTip checks that a hovered context-menu item shows its Tip.
 func TestMenuTip(t *testing.T) {
 	th := NewTheme(NewFontLibrary(), ChromeText, ChromeText)
 	var r input.Router

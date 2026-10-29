@@ -1,7 +1,11 @@
+// Tests for the window helpers: size and point formatting, menu items and
+// the call queue.
+
 package gui
 
 import "testing"
 
+// TestWindowHelpers checks ByteSize, OrNone, FormatPt and MenuItems.
 func TestWindowHelpers(t *testing.T) {
 	for n, want := range map[int64]string{0: "0 bytes", 1023: "1023 bytes", 1536: "1.5 KB", 3 << 20: "3.0 MB"} {
 		if got := ByteSize(n); got != want {
@@ -22,6 +26,8 @@ func TestWindowHelpers(t *testing.T) {
 	}
 }
 
+// TestCallQueue checks that posted calls run in order on Run and that each
+// post wakes the window.
 func TestCallQueue(t *testing.T) {
 	woken := 0
 	q := NewCallQueue(func() { woken++ })
@@ -38,4 +44,24 @@ func TestCallQueue(t *testing.T) {
 		t.Errorf("ran %v, woken %d times", got, woken)
 	}
 	q.Run() // nothing queued: returns at once
+}
+
+// TestCallQueuePostFromUI checks that the UI goroutine can post many
+// calls without blocking, including from inside a queued call, and that
+// Run runs those too.
+func TestCallQueuePostFromUI(t *testing.T) {
+	q := NewCallQueue(nil)
+	n := 0
+	for range 40 {
+		q.Post(func() { n++ })
+	}
+	q.Post(func() {
+		for range 40 {
+			q.Post(func() { n++ })
+		}
+	})
+	q.Run()
+	if n != 80 {
+		t.Errorf("ran %d calls, want 80", n)
+	}
 }

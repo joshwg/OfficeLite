@@ -244,6 +244,7 @@ func (s *Saver) Wait() {
 	}
 }
 
+// paths is the saver's recovery copy and sidecar file in Dir.
 func (s *Saver) paths() (copyPath, sidecar string) {
 	b := filepath.Join(s.Dir, s.base)
 	return b + Ext(s.App), b + ".json"
@@ -265,6 +266,7 @@ func (s *Saver) enqueue(job func()) {
 	}
 }
 
+// work runs the saver's queued jobs in order until the queue is empty.
 func (s *Saver) work() {
 	for {
 		s.mu.Lock()
@@ -318,6 +320,7 @@ func baseName(name string) string {
 	return stem + "~" + hex.EncodeToString(b[:])
 }
 
+// writeEntry writes e as a sidecar to path, atomically.
 func writeEntry(path string, e Entry) error {
 	b, err := json.MarshalIndent(e, "", "  ")
 	if err != nil {

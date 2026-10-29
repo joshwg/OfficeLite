@@ -1,3 +1,6 @@
+// Tests for chart references, live chart data, anchor shifting, cloning
+// and theme series colors.
+
 package model
 
 import (
@@ -5,6 +8,8 @@ import (
 	"testing"
 )
 
+// TestParseRefList checks parsing of qualified, quoted, union, external
+// and whole-column references, and rejection of non-references.
 func TestParseRefList(t *testing.T) {
 	for _, c := range []struct {
 		in   string
@@ -36,6 +41,8 @@ func TestParseRefList(t *testing.T) {
 	}
 }
 
+// chartBook returns a one-sheet workbook with labels A..D in column A,
+// 10..40 in column B and the defined name Vals for B1:B4.
 func chartBook() *Workbook {
 	sh := NewSheet("Data")
 	for r, v := range []float64{10, 20, 30, 40} {
@@ -46,6 +53,8 @@ func chartBook() *Workbook {
 		Names: []DefinedName{{Name: "Vals", Sheet: -1, Formula: "Data!$B$1:$B$4"}}}
 }
 
+// TestChartValues checks reading series values from cells: hidden rows,
+// defined names, multi-level blocks, the cache fallback and live edits.
 func TestChartValues(t *testing.T) {
 	wb := chartBook()
 	sh := wb.Sheets[0]
@@ -81,6 +90,9 @@ func TestChartValues(t *testing.T) {
 	}
 }
 
+// TestChartAnchorShift checks how two-cell, one-cell and absolute anchors
+// move with inserted and deleted rows and columns, and that sheet clones
+// don't share charts.
 func TestChartAnchorShift(t *testing.T) {
 	sh := NewSheet("S")
 	two := &Chart{Anchor: Anchor{Kind: AnchorTwoCell, From: CellOffset{Row: 2, Col: 1, DY: 100}, To: CellOffset{Row: 10, Col: 5, DY: 50}}}
@@ -116,6 +128,8 @@ func TestChartAnchorShift(t *testing.T) {
 	}
 }
 
+// TestChartRefsAndClone checks that Refs visits and rewrites every
+// reference, RefAt reads one back, and Clone copies deeply.
 func TestChartRefsAndClone(t *testing.T) {
 	c := &Chart{
 		Plots: []ChartPlot{{Series: []ChartSeries{{Name: ChartData{Ref: "S!$B$1"}, Cat: ChartData{Ref: "S!$A$2:$A$4"}, Val: ChartData{Ref: "S!$B$2:$B$4"}}}}},
@@ -138,6 +152,8 @@ func TestChartRefsAndClone(t *testing.T) {
 	}
 }
 
+// TestSeriesColors checks the automatic series colors and LumMod against
+// Excel's values.
 func TestSeriesColors(t *testing.T) {
 	th := DefaultTheme()
 	if th.SeriesColor(0) != th.Colors[ThemeAccent1] || th.SeriesColor(5) != th.Colors[ThemeAccent1+5] {
@@ -161,4 +177,5 @@ func TestSeriesColors(t *testing.T) {
 	}
 }
 
+// lum is a rough brightness of c: the sum of its channels.
 func lum(c color.NRGBA) int { return int(c.R) + int(c.G) + int(c.B) }

@@ -202,3 +202,23 @@ func TestNestedTableCell(t *testing.T) {
 		t.Errorf("row height %v, %v without the paragraph", h, h2)
 	}
 }
+
+// A next-column section break moves to the next column of the same page
+// with the new section's setup, and to a new page from the last column.
+func TestSectionNextColumn(t *testing.T) {
+	setup := model.PageSetup{Width: 612, Height: 792, MarginTop: 72, MarginBottom: 72, MarginLeft: 72, MarginRight: 72}
+	build := func(cols int) *Engine {
+		first := para("One")
+		first.Sect = &model.Section{Page: setup, Columns: model.Columns{Count: cols, Space: 36}}
+		d := docOf(first, para("Two"))
+		d.Page, d.Columns, d.Break = setup, model.Columns{Count: cols, Space: 36}, model.BreakNextColumn
+		return layoutDoc(d)
+	}
+	e := build(2)
+	if len(e.Pages) != 1 || len(e.Pages[0].Lines) != 2 || e.Pages[0].Lines[1].X <= e.Pages[0].Lines[0].X {
+		t.Errorf("two columns: %d pages, lines %+v", len(e.Pages), e.Pages[0].Lines)
+	}
+	if e := build(1); len(e.Pages) != 2 {
+		t.Errorf("one column: %d pages, want the break to start a new page", len(e.Pages))
+	}
+}

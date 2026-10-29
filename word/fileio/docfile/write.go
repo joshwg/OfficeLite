@@ -275,7 +275,12 @@ func (w *writer) chpxFkps(textEnd int) ([][]byte, []uint32) {
 		if i+1 < len(w.runs) {
 			end = w.runs[i+1].cp
 		}
-		runs = append(runs, run{textStart + 2*uint32(r.cp), textStart + 2*uint32(end), r.grpprl})
+		g := r.grpprl
+		if len(g) > 255 { // a CHPX's length is one byte
+			w.warn("Some character formatting is too complex for a .doc file and is left out.")
+			g = nil
+		}
+		runs = append(runs, run{textStart + 2*uint32(r.cp), textStart + 2*uint32(end), g})
 	}
 	_ = textEnd
 	var pages [][]byte
@@ -434,10 +439,10 @@ func (w *writer) blocks(blocks []model.Block, main bool) {
 	if len(blocks) == 0 {
 		blocks = []model.Block{&model.Paragraph{}}
 	}
-	for i, b := range blocks {
+	for _, b := range blocks {
 		switch b := b.(type) {
 		case *model.Paragraph:
-			if main && b.Sect != nil && i < len(blocks)-1 {
+			if main && b.Sect != nil {
 				w.para(b, 0x0C, nil, false)
 				w.secEnds = append(w.secEnds, len(w.text))
 				continue
@@ -447,8 +452,13 @@ func (w *writer) blocks(blocks []model.Block, main bool) {
 			w.table(b, 1)
 		}
 	}
-	if _, ok := blocks[len(blocks)-1].(*model.Table); ok {
+	switch last := blocks[len(blocks)-1].(type) {
+	case *model.Table:
 		w.para(&model.Paragraph{}, 0x0D, nil, false) // Word needs a paragraph after a table
+	case *model.Paragraph:
+		if main && last.Sect != nil {
+			w.para(&model.Paragraph{}, 0x0D, nil, false) // the last section needs a paragraph of its own
+		}
 	}
 }
 

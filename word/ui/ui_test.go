@@ -31,7 +31,7 @@ func newHarness(t *testing.T) *harness {
 	fonts := gui.NewFontLibrary(gui.DefaultFontDirs()...)
 	d := newWindow(nil, Config{Fonts: fonts, Recent: recent.Open("")})
 	doc := model.New("Test")
-	d.setDoc(doc, fonts.Shaper(docFonts(doc)...), docFonts(doc))
+	d.setDoc(doc, fonts.Shaper(DocFonts(doc)...), DocFonts(doc))
 	h := &harness{t: t, d: d}
 	h.frame()
 	h.frame()

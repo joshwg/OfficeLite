@@ -97,6 +97,9 @@ func (d *window) findMatches() []model.Match {
 	}
 	k := findKey{q, f.options(), d.ed, d.ed.Version}
 	if k != f.key {
+		if k.q != f.key.q || k.opts != f.key.opts {
+			f.msg = "" // a new search: the last result's message no longer applies
+		}
 		f.key = k
 		f.matches = d.ed.FindAll(q, k.opts)
 	}

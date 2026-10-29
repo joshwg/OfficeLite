@@ -195,7 +195,7 @@ func (e *Engine) textItem(st *TextStyle, w string, off int) Item {
 	}
 	if st.Hidden {
 		it.Adv = make([]float32, it.N)
-		it.W, it.trail = 0, 0
+		it.W, it.trail, it.spaces = 0, 0, 0 // no width to widen when justified
 	}
 	if st.Shift > 0 {
 		it.Asc += st.Shift
@@ -255,6 +255,9 @@ func splitCase(s string) []caseSeg {
 	cur := false
 	for i, r := range s {
 		l := unicode.IsLower(r)
+		if unicode.IsSpace(r) && i > start {
+			l = cur // spaces take the size of the text they follow
+		}
 		if i > start && l != cur {
 			out = append(out, caseSeg{s[start:i], cur})
 			start = i
@@ -442,9 +445,18 @@ func (e *Engine) layoutPara(p *model.Paragraph, width float64, label string, t *
 			if stop.Align == model.AlignRight || stop.Align == model.AlignCenter || stop.Decimal {
 				// The text up to the next tab ends at (or centers on) the
 				// stop; finishLine places it exactly.
+				end := i
 				seg := 0.0
-				for k := i; k < len(atoms) && atoms[k].Kind != ItemTab && atoms[k].Kind != ItemBreak && atoms[k].Kind != ItemPageBreak; k++ {
-					seg += atoms[k].W
+				for end < len(atoms) && atoms[end].Kind != ItemTab && atoms[end].Kind != ItemBreak && atoms[end].Kind != ItemPageBreak {
+					seg += atoms[end].W
+					end++
+				}
+				if stop.Decimal {
+					// Only the text before the decimal point lies left of the
+					// stop, as finishLine places it.
+					if d := decimalAt(atoms[i:end]); d >= 0 {
+						seg = d
+					}
 				}
 				if stop.Align == model.AlignCenter {
 					seg /= 2
@@ -519,8 +531,33 @@ func splitItem(a Item, k int) (Item, Item) {
 		t.W += float64(v)
 	}
 	h.trail, h.spaces, h.brk = 0, 0, false
+	if k > a.N-a.spaces {
+		// Split inside the trailing spaces: the tail keeps only the ones
+		// after the split.
+		t.spaces = t.N
+		t.trail = 0
+		for _, v := range t.Adv {
+			t.trail += float64(v)
+		}
+	}
 	t.Off = a.Off + k
 	return h, t
+}
+
+// decimalAt is the width of items before the first decimal point, or -1
+// when there is none.
+func decimalAt(items []Item) float64 {
+	w := 0.0
+	for _, it := range items {
+		if i := slices.Index([]rune(it.Text), '.'); i >= 0 && i < len(it.Adv) {
+			for _, a := range it.Adv[:i] {
+				w += float64(a)
+			}
+			return w
+		}
+		w += it.W
+	}
+	return -1
 }
 
 // finishLine positions a line's items (tab alignment, paragraph alignment
@@ -536,12 +573,8 @@ func (e *Engine) finishLine(l *Line, start float64, pp model.ParaProps, mark *me
 			seg, dec := 0.0, -1.0
 			for m := k + 1; m < len(items) && items[m].Kind != ItemTab && items[m].Kind != ItemBreak && items[m].Kind != ItemPageBreak; m++ {
 				if dec < 0 && it.tab.Decimal {
-					if i := slices.Index([]rune(items[m].Text), '.'); i >= 0 {
-						d := seg
-						for _, a := range items[m].Adv[:i] {
-							d += float64(a)
-						}
-						dec = d
+					if d := decimalAt(items[m : m+1]); d >= 0 {
+						dec = seg + d
 					}
 				}
 				seg += items[m].W

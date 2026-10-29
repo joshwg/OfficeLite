@@ -24,7 +24,7 @@ import (
 // shown.
 func Preview(gtx layout.Context, fonts *gui.FontLibrary, list *recent.List, doc *model.Document, path, page string, menu int, dialog string, marks bool) {
 	d := newWindow(nil, Config{Fonts: fonts, Recent: list})
-	d.setDoc(doc, fonts.Shaper(docFonts(doc)...), docFonts(doc))
+	d.setDoc(doc, fonts.Shaper(DocFonts(doc)...), DocFonts(doc))
 	if marks && dialog != "marks" { // that dialog turns them on itself
 		d.toggleMarks()
 	}

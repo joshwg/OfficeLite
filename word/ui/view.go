@@ -46,6 +46,7 @@ type docView struct {
 	hasGoal      bool
 	dragging     bool
 	clicks       int
+	wordA, wordB model.Pos // the word or paragraph a double or triple click selected
 	lastClick    time.Time
 	lastPos      f32.Point
 	blinkStart   time.Time
@@ -86,7 +87,7 @@ func (d *window) layoutDoc(gtx layout.Context) layout.Dimensions {
 	v.size = gtx.Constraints.Max
 	v.scale = v.zoom * float64(gtx.Metric.PxPerDp) * 96 / 72
 	tag := &d.v
-	if v.focusPending && !d.dlg.open && !d.confirm.show {
+	if v.focusPending && !d.modalOpen() {
 		v.focusPending = false
 		gtx.Execute(key.FocusCmd{Tag: tag})
 	}
@@ -268,6 +269,7 @@ func (d *window) docPointer(gtx layout.Context) {
 			default:
 				d.ed.SetCaret(pos, e.Modifiers.Contain(key.ModShift))
 			}
+			v.wordA, v.wordB = d.ed.Sel.Ordered()
 			v.dragging = true
 			v.hasGoal = false
 			v.resetBlink()
@@ -290,7 +292,7 @@ func (d *window) docPointer(gtx layout.Context) {
 				d.dragTo(pos)
 			} else {
 				// Extend by words or paragraphs from the original selection.
-				a, b := d.ed.Sel.Ordered()
+				a, b := v.wordA, v.wordB
 				lo, hi := d.ed.WordAt(pos)
 				if v.clicks == 3 {
 					lo, hi = model.Pos{Para: pos.Para}, model.Pos{Para: pos.Para, Off: d.ed.Para(pos.Para).Len()}
@@ -306,8 +308,11 @@ func (d *window) docPointer(gtx layout.Context) {
 			if e.Kind == pointer.Cancel {
 				d.cancelMouse()
 			}
-			moved := d.releaseMove(e) || d.releaseBorder()
+			moved := d.releaseMove(e) || d.releaseBorder() || d.ins.resizing
 			d.releaseMargin()
+			if e.Kind == pointer.Cancel {
+				d.ins.resizing = false // a cancelled picture resize changes nothing
+			}
 			if v.dragging && e.Kind == pointer.Release && !moved {
 				d.painterRelease()
 			}
@@ -618,7 +623,7 @@ func (d *window) pageMove(down bool, extend bool) {
 	}
 	y := d.ceng().Pages[c.Page].Top + c.Y + c.H/2 + dy
 	v.scrollY += dy
-	to := d.ceng().HitView(v.goalX, min(max(y, 0), d.eng.Height))
+	to := d.ceng().HitView(v.goalX+d.ceng().Pages[c.Page].X, min(max(y, 0), d.eng.Height)) // goalX is page-local; HitView takes view x
 	d.ed.SetCaret(to, extend)
 }
 

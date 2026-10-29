@@ -70,6 +70,11 @@ func (d *window) enterHF(i int, footer bool) {
 		d.ed.Version++ // a change to save
 		d.eng.Invalidate(nil, len(doc.Styles.Styles) != n)
 	}
+	if len(hf.Blocks) == 0 {
+		// The editor keeps the paragraph the sub-document starts with, so
+		// the header must hold that very paragraph.
+		hf.Blocks = []model.Block{&model.Paragraph{}}
+	}
 	if d.hf.eds == nil {
 		d.hf.eds = map[*model.HeaderFooter]*model.Editor{}
 	}
@@ -80,9 +85,6 @@ func (d *window) enterHF(i int, footer bool) {
 	}
 	sub := ed.Doc
 	sub.Styles, sub.Lists, sub.Body = doc.Styles, doc.Lists, hf.Blocks
-	if len(sub.Body) == 0 {
-		sub.Body = []model.Block{&model.Paragraph{}}
-	}
 	ed.Doc.Page = doc.Page
 	d.hf.on, d.hf.page, d.hf.footer, d.hf.kind, d.hf.hf = true, i, footer, kind, hf
 	d.hf.body, d.hf.synced = d.ed, ed.Version
@@ -216,10 +218,21 @@ func (d *window) removeHF(footer bool) {
 	}
 	hfs, kind := d.eng.PageHF(page)
 	slot := hfs.Slot(kind, footer)
-	if *slot == nil {
+	if *slot != nil {
+		*slot = nil
+	} else if shown := d.eng.PageHeader(page, footer); shown != nil {
+		// The page's section links to an earlier one's: remove it where it
+		// is defined, as Word does for linked sections.
+		for _, sec := range d.doc.Sections() {
+			for _, k := range []model.HFKind{model.HFDefault, model.HFFirst, model.HFEven} {
+				if p := sec.HF.Slot(k, footer); *p == shown {
+					*p = nil
+				}
+			}
+		}
+	} else {
 		return
 	}
-	*slot = nil
 	d.ed.Version++
 	d.eng.InvalidateHF()
 	d.laidOut = -1

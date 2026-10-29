@@ -644,6 +644,7 @@ func (w *writer) cell(b *strings.Builder, c *model.TableCell) {
 		{[]string{"w:tcW"}, c.Width == o.width, width},
 		{[]string{"w:gridSpan"}, max(c.Span, 1) == max(o.span, 1), span},
 		{[]string{"w:vMerge"}, c.VMerge == o.vmerge, vm},
+		{[]string{"w:tcBorders"}, eqBorders(c.Borders, o.borders), bordersXML("w:tcBorders", c.Borders)},
 		{[]string{"w:shd"}, c.Shading == o.shading, shd},
 		{[]string{"w:vAlign"}, c.VAlign == o.valign, va},
 	}, tcPrOrder)
@@ -930,16 +931,30 @@ func (w *writer) writeInto(out io.Writer, docXML, styles, numbering []byte) erro
 		replace["[Content_Types].xml"] = ct.xml()
 	}
 
+	// Part names are case-insensitive: a relationship may spell a name
+	// differently from the archive's entry.
+	type replacement struct {
+		name string
+		data []byte
+	}
+	byName := map[string]replacement{}
+	for name, data := range replace {
+		byName[strings.ToLower(name)] = replacement{name, data}
+	}
+	dropped := map[string]bool{}
+	for name := range drop {
+		dropped[strings.ToLower(name)] = true
+	}
 	zw := zip.NewWriter(out)
 	written := map[string]bool{}
 	for _, f := range p.zr.File {
-		name := strings.TrimPrefix(f.Name, "/")
-		if drop[name] || written[name] {
+		name := strings.ToLower(strings.TrimPrefix(f.Name, "/"))
+		if dropped[name] || written[name] {
 			continue
 		}
 		written[name] = true
-		if data, ok := replace[name]; ok {
-			if err := deflate(zw, f.Name, data); err != nil {
+		if r, ok := byName[name]; ok {
+			if err := deflate(zw, f.Name, r.data); err != nil {
 				return err
 			}
 			continue
@@ -948,15 +963,15 @@ func (w *writer) writeInto(out io.Writer, docXML, styles, numbering []byte) erro
 			return err
 		}
 	}
-	var extra []string
-	for name := range replace {
+	var extra []replacement
+	for name, r := range byName {
 		if !written[name] {
-			extra = append(extra, name)
+			extra = append(extra, r)
 		}
 	}
-	sort.Strings(extra)
-	for _, name := range extra {
-		if err := deflate(zw, name, replace[name]); err != nil {
+	sort.Slice(extra, func(a, b int) bool { return extra[a].name < extra[b].name })
+	for _, r := range extra {
+		if err := deflate(zw, r.name, r.data); err != nil {
 			return err
 		}
 	}

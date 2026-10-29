@@ -234,7 +234,7 @@ func (e *Editor) DeleteStyle(id string) error {
 	if st.Type == ParagraphStyle && (base == "" || base == normalID(e.Doc)) {
 		base = ""
 	}
-	hf := e.Doc.HF.Clone() // headers and footers using the style change too
+	hf := e.Doc.HF.Clone() // headers and footers using the style change too (the earlier sections' are in the body paragraphs)
 	e.edit("style", 0, len(e.Doc.Body)-1, true, func() {
 		ss := &e.Doc.Styles
 		out := ss.Styles[:0:0]
@@ -256,16 +256,21 @@ func (e *Editor) DeleteStyle(id string) error {
 				if st.Type == ParagraphStyle && p.Style == id {
 					p.Style = base
 				}
+				changed := false
 				for k := range p.Runs {
 					if p.Runs[k].Style == id {
 						p.Runs[k].Style = base
+						changed = true
 					}
+				}
+				if changed {
+					normalize(p) // runs that now look alike merge
 				}
 				return true
 			})
 		}
 		fix(e.Doc.Body)
-		e.Doc.HF.All(func(hf *HeaderFooter) { fix(hf.Blocks) })
+		e.Doc.AllHF(func(hf *HeaderFooter) { fix(hf.Blocks) })
 	})
 	e.undo[len(e.undo)-1].hf = &hf
 	return nil
@@ -288,6 +293,6 @@ func (d *Document) StyleInUse(id string) bool {
 		})
 	}
 	check(d.Body)
-	d.HF.All(func(hf *HeaderFooter) { check(hf.Blocks) })
+	d.AllHF(func(hf *HeaderFooter) { check(hf.Blocks) })
 	return used
 }

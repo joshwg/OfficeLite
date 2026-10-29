@@ -18,6 +18,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"gioui.org/gpu/headless"
 	"gioui.org/io/input"
@@ -72,19 +73,9 @@ func main() {
 		gtx.Source = router.Source()
 		ui.Preview(gtx, fonts, recent.Open(""), doc, path, *backstage, *menu, *dialog, *marks)
 	} else {
-		fams := []string{"Calibri", "Calibri Light", "Aptos", "Times New Roman", "Arial", "Symbol", "Courier New"}
-		doc.Paragraphs(func(p *model.Paragraph) bool {
-			for _, r := range p.Runs {
-				if r.Props.Font != "" {
-					fams = append(fams, r.Props.Font)
-				}
-			}
-			return true
-		})
-		for _, st := range doc.Styles.Styles {
-			if st.Run.Font != "" {
-				fams = append(fams, st.Run.Font)
-			}
+		fams := ui.DocFonts(doc)
+		if !slices.Contains(fams, "Courier New") {
+			fams = append(fams, "Courier New")
 		}
 		eng := wl.New(doc, fonts.Shaper(fams...))
 		eng.SetShowHidden(*marks)

@@ -480,3 +480,24 @@ func TestEndOfHyphenatedLine(t *testing.T) {
 		t.Errorf("space-wrapped End %v eol %v (line end %d)", end, eol, l.End)
 	}
 }
+
+// A list paragraph in a merged-away table cell (VMerge 2) isn't shown, so
+// it doesn't take a number.
+func TestListSkipsHiddenCells(t *testing.T) {
+	item := func() *model.Paragraph {
+		p := para("item")
+		p.Props.List = &model.ListRef{NumID: 1}
+		return p
+	}
+	first, hidden, last := item(), item(), item()
+	tbl := &model.Table{Columns: []float64{200}, Rows: []*model.TableRow{
+		{Cells: []*model.TableCell{{VMerge: 1, Blocks: []model.Block{first}}}},
+		{Cells: []*model.TableCell{{VMerge: 2, Blocks: []model.Block{hidden}}}},
+	}}
+	d := docOf(tbl, last)
+	d.Lists = map[int]*model.List{1: {Levels: []model.ListLevel{{Format: "decimal", Text: "%1.", Start: 1, Indent: 36, Hang: 18}}}}
+	e := layoutDoc(d)
+	if e.labels[first] != "1." || e.labels[last] != "2." || e.labels[hidden] != "" {
+		t.Errorf("labels %q %q %q, want 1. / (none) / 2.", e.labels[first], e.labels[hidden], e.labels[last])
+	}
+}

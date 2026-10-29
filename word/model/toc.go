@@ -47,6 +47,12 @@ func FieldRangesIn(locs []ParaLoc) []FieldRange {
 			}
 			off += RunLen(r)
 		}
+		// A nested field still open at the end of the paragraph it began in
+		// lost its end (a TOC entry's PAGEREF is closed within its line):
+		// drop it, or the enclosing field's end would close it instead.
+		for n := len(open); n > 1 && out[open[n-1]].From.Para == i; n = len(open) {
+			open = open[:n-1]
+		}
 	}
 	// Drop fields left open.
 	kept := out[:0]

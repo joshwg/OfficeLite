@@ -1,6 +1,8 @@
 package layout
 
 import (
+	"math"
+
 	"officelite/word/model"
 )
 
@@ -124,6 +126,7 @@ func (e *Engine) separator(b *Band, x, y float64) {
 	mid := y + h/2
 	b.Rules = append(b.Rules, Rect{x, mid, x + separatorWidth, mid + 0.5})
 	sep := e.para(e.notes.sep, e.areaWidth(), nil)
+	sep.mark = nil // the separator line has no paragraph mark to show
 	b.Lines = append(b.Lines, Placed{Line: sep.Lines[0], Box: sep, X: x, Y: y, W: e.areaWidth()})
 }
 
@@ -172,28 +175,60 @@ func (e *Engine) placeEndnotes() {
 	e.separator(b, e.textLeft(), e.y)
 	e.y += e.sepHeight()
 	e.empty = false
+	// piece is the part of a note placed in one column: where the flow's
+	// y range [lo, hi) went (the first piece also keeps what hangs above).
+	type piece struct {
+		b                 *Band
+		left, base, start float64
+		lo, hi            float64
+	}
 	for _, n := range notes {
 		f := e.noteFlow(n, e.textWidth())
 		start := 0.0 // the flow's y placed at the top of the current piece
 		base := e.y
+		var pieces []piece
 		for _, pl := range f.lines {
+			split := false
 			if !e.empty && base+pl.Y-start+pl.Line.Height > e.textBottom()+0.01 {
 				e.nextColumn()
 				start, base = pl.Y, e.y
+				split = true
 			}
 			b = band()
+			if len(pieces) == 0 || split {
+				lo := start
+				if len(pieces) == 0 {
+					lo = math.Inf(-1)
+				} else {
+					pieces[len(pieces)-1].hi = pl.Y
+				}
+				pieces = append(pieces, piece{b, e.textLeft(), base, start, lo, math.Inf(1)})
+			}
 			pl.X += e.textLeft()
 			pl.Y += base - start
 			b.Lines = append(b.Lines, pl)
 			e.y = pl.Y + pl.Line.Height
 			e.empty = false
 		}
-		for _, fl := range f.fills {
-			fl.R = Rect{fl.R.X0 + e.textLeft(), fl.R.Y0 + base - start, fl.R.X1 + e.textLeft(), fl.R.Y1 + base - start}
-			b.Fills = append(b.Fills, fl)
+		if len(pieces) == 0 {
+			pieces = append(pieces, piece{b, e.textLeft(), base, start, math.Inf(-1), math.Inf(1)})
 		}
-		for _, r := range f.rules {
-			b.Rules = append(b.Rules, Rect{r.X0 + e.textLeft(), r.Y0 + base - start, r.X1 + e.textLeft(), r.Y1 + base - start})
+		// Fills and rules go with the piece they lie in.
+		for _, p := range pieces {
+			at := func(r Rect) Rect {
+				return Rect{r.X0 + p.left, r.Y0 + p.base - p.start, r.X1 + p.left, r.Y1 + p.base - p.start}
+			}
+			for _, fl := range f.fills {
+				if r, ok := clipY(fl.R, p.lo, p.hi); ok {
+					fl.R = at(r)
+					p.b.Fills = append(p.b.Fills, fl)
+				}
+			}
+			for _, r := range f.rules {
+				if r, ok := clipY(r, p.lo, p.hi); ok {
+					p.b.Rules = append(p.b.Rules, at(r))
+				}
+			}
 		}
 		e.y = base + f.height - start
 	}

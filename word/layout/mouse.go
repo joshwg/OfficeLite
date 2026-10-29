@@ -9,8 +9,13 @@ import (
 // Queries for the page view's mouse features: selecting lines from the
 // left margin and resizing tables by their borders.
 
-// TextLeft is the left edge of the text column, page points.
-func (e *Engine) TextLeft() float64 { return e.textLeft() }
+// TextLeft is the left margin of the page setup the layout ended with, page
+// points (not a column's left edge: the layout finishes in some column).
+func (e *Engine) TextLeft() float64 { return math.Abs(e.setup.MarginLeft) }
+
+// PageTextLeft is the left margin of page pg, which its section may set
+// differently from the last one's.
+func (e *Engine) PageTextLeft(pg *Page) float64 { return math.Abs(e.pageSetup(pg).MarginLeft) }
 
 // LineAtY returns the start and end of the line at page y on page pg (the
 // leftmost one when several share the height, as table cells do), or the

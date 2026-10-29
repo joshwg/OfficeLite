@@ -431,3 +431,53 @@ func TestWithDecls(t *testing.T) {
 		t.Error(got)
 	}
 }
+
+// TestBordersRoundTrip checks that paragraph and cell borders are written.
+func TestBordersRoundTrip(t *testing.T) {
+	p := &model.Paragraph{Runs: []model.Run{{Text: "boxed"}}}
+	p.Props.Borders[model.EdgeTop] = &model.Border{Width: 1.5, Color: "FF0000", Space: 4}
+	p.Props.Borders[model.EdgeBottom] = &model.Border{} // explicitly none
+	cell := &model.TableCell{Blocks: []model.Block{&model.Paragraph{Runs: []model.Run{{Text: "c"}}}}}
+	cell.Borders[model.EdgeLeft] = &model.Border{Width: 2, Color: "0000FF"}
+	tbl := &model.Table{Columns: []float64{100}, Rows: []*model.TableRow{{Cells: []*model.TableCell{cell}}}}
+	doc := model.New("t")
+	doc.Body = []model.Block{p, tbl}
+	back, err := Read(write(t, doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bp := back.Body[0].(*model.Paragraph)
+	if top := bp.Props.Borders[model.EdgeTop]; top == nil || *top != *p.Props.Borders[model.EdgeTop] {
+		t.Errorf("top border = %+v", top)
+	}
+	if bot := bp.Props.Borders[model.EdgeBottom]; bot == nil || bot.Width != 0 {
+		t.Errorf("bottom border = %+v, want an explicit none", bot)
+	}
+	bc := back.Body[1].(*model.Table).Rows[0].Cells[0]
+	if left := bc.Borders[model.EdgeLeft]; left == nil || *left != *cell.Borders[model.EdgeLeft] {
+		t.Errorf("cell left border = %+v", left)
+	}
+}
+
+// TestSplitFieldRun checks that a whole complex field written in a single
+// <w:r> is split into one run per field part.
+func TestSplitFieldRun(t *testing.T) {
+	rn := parseFragment(`<w:r><w:rPr><w:b/></w:rPr><w:fldChar w:fldCharType="begin"/><w:instrText xml:space="preserve"> PAGE </w:instrText>` +
+		`<w:fldChar w:fldCharType="separate"/><w:t>7</w:t><w:fldChar w:fldCharType="end"/></w:r>`)[0]
+	parts := splitFieldRun(rn)
+	if len(parts) != 5 {
+		t.Fatalf("%d parts, want 5", len(parts))
+	}
+	for i, part := range parts {
+		if part.child("w:rPr") == nil {
+			t.Errorf("part %d lost the run properties", i)
+		}
+	}
+	if parts[1].child("w:instrText") == nil || parts[3].child("w:t") == nil {
+		t.Errorf("parts out of order")
+	}
+	plain := parseFragment(`<w:r><w:t>a</w:t><w:t>b</w:t></w:r>`)[0]
+	if got := splitFieldRun(plain); len(got) != 1 || got[0] != plain {
+		t.Errorf("a run without field parts was split")
+	}
+}

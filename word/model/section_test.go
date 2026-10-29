@@ -120,3 +120,34 @@ func TestUpdateTOC(t *testing.T) {
 		t.Errorf("undo: %q", texts(d))
 	}
 }
+
+// TestNoteUndoRenumbers checks that undoing and redoing a note's insertion
+// renumbers the notes after it, and that undo snapshots keep their own
+// copies of note text.
+func TestNoteUndoRenumbers(t *testing.T) {
+	d, e := newDoc("abcd")
+	marks := func() string {
+		var s string
+		for _, r := range NoteRefs(d.Body) {
+			s += r.Para.Runs[r.Run].Text
+		}
+		return s
+	}
+	e.SetCaret(Pos{0, 2}, false)
+	e.Enter() // "ab" / "cd": the notes sit in different paragraphs
+	e.SetCaret(Pos{1, 1}, false)
+	e.InsertNote(false)
+	e.SetCaret(Pos{0, 1}, false)
+	e.InsertNote(false) // now first: the other becomes 2
+	if got := marks(); got != "12" {
+		t.Fatalf("marks = %q, want 12", got)
+	}
+	e.Undo()
+	if got := marks(); got != "1" {
+		t.Errorf("after undo marks = %q, want 1", got)
+	}
+	e.Redo()
+	if got := marks(); got != "12" {
+		t.Errorf("after redo marks = %q, want 12", got)
+	}
+}

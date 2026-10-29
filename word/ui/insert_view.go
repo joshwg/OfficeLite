@@ -69,7 +69,7 @@ func (d *window) pressObject(e pointer.Event, clicks int) bool {
 	// A handle of the selected picture starts a resize.
 	if r := d.ed.SelectedPicture(); r != nil && clicks == 1 {
 		a, _ := d.ed.Sel.Ordered()
-		if pg, box, ok := d.eng.PictureRect(a); ok && pg == page {
+		if pg, box, ok := d.ceng().PictureRect(a); ok && pg == page {
 			for i, h := range wl.PictureHandles(box) {
 				grow := 3.0 / d.v.scale // easier to hit when zoomed out
 				if x >= h.X0-grow && x <= h.X1+grow && y >= h.Y0-grow && y <= h.Y1+grow {
@@ -86,7 +86,7 @@ func (d *window) pressObject(e pointer.Event, clicks int) bool {
 			return true
 		}
 	}
-	if pos, _, ok := d.eng.PictureAt(page, x, y); ok && !shift {
+	if pos, _, ok := d.ceng().PictureAt(page, x, y); ok && !shift {
 		d.ed.Select(pos, model.Pos{Para: pos.Para, Off: pos.Off + 1})
 		s.anchor = pos
 		return true
@@ -102,7 +102,7 @@ func (d *window) pressObject(e pointer.Event, clicks int) bool {
 // the margin beside it), for following links.
 func (d *window) overText(p f32.Point) bool {
 	pos := d.viewPos(p)
-	c, ok := d.eng.CaretAt(pos)
+	c, ok := d.ceng().CaretAt(pos)
 	if !ok {
 		return false
 	}
@@ -143,11 +143,22 @@ func (d *window) dragObject(e pointer.Event) bool {
 	}
 	if s.handle%2 == 0 && w0 > 0 && h0 > 0 {
 		// Corners keep the aspect ratio.
-		k := max(w/w0, h/h0)
+		// The axis dragged further from the original size sets the scale, so
+		// pulling one edge inward shrinks the picture.
+		k := w / w0
+		if math.Abs(h/h0-1) > math.Abs(k-1) {
+			k = h / h0
+		}
 		w, h = w0*k, h0*k
 	}
 	w, h = max(w, 4), max(h, 4)
-	r := wl.Rect{X0: b.X0, Y0: b.Y1 - h, X1: b.X0 + w, Y1: b.Y1}
+	// The edge opposite the handle stays: the bottom for the top handles,
+	// the top otherwise; the right edge for the left handles.
+	r := wl.Rect{X0: b.X0, Y0: b.Y0, X1: b.X0 + w, Y1: b.Y0 + h}
+	switch s.handle {
+	case 0, 1, 2:
+		r.Y0, r.Y1 = b.Y1-h, b.Y1
+	}
 	switch s.handle {
 	case 0, 6, 7:
 		r.X0, r.X1 = b.X1-w, b.X1

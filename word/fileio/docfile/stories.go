@@ -37,7 +37,7 @@ func (r *reader) storyStart(lw int) int {
 		if k == lw {
 			return cp
 		}
-		cp += int(r.fib.lw[k])
+		cp += max(int(r.fib.lw[k]), 0) // a damaged length counts as empty
 	}
 	return cp
 }
@@ -174,7 +174,7 @@ func (r *reader) story(plc []byte, i, base int, trim bool) (int, int, bool) {
 		return 0, 0, false
 	}
 	a, b := base+int(u32(plc[4*i:])), base+int(u32(plc[4*i+4:]))
-	if b <= a || b > len(r.text) {
+	if a < 0 || b <= a || b > len(r.text) {
 		return 0, 0, false
 	}
 	if trim && b-a > 1 && r.text[b-1] == 0x0D {

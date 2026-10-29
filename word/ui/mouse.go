@@ -122,7 +122,7 @@ func (d *window) marginAt(p f32.Point) (int, float64, bool) {
 		return 0, 0, false
 	}
 	pg := d.eng.Pages[page]
-	if x < 0 || x >= d.eng.TextLeft()-2 || y < pg.BodyTop || y > pg.BodyBottom {
+	if x < 0 || x >= d.eng.PageTextLeft(pg)-2 || y < pg.BodyTop || y > pg.BodyBottom {
 		return 0, 0, false
 	}
 	for i := range pg.Lines {
@@ -177,8 +177,9 @@ func (d *window) pressMargin(e pointer.Event, clicks int) bool {
 	}
 	m.margin = clicks
 	if e.Modifiers.Contain(key.ModShift) {
-		anchor := ed.Sel.Anchor
-		m.marginA, m.marginB = anchor, anchor
+		// Extend the selection as it is: its whole range stays, whichever
+		// side of it the line clicked is on.
+		m.marginA, m.marginB = ed.Sel.Ordered()
 		d.extendMargin(a, b)
 		return true
 	}
@@ -415,16 +416,14 @@ func (d *window) drawBorderGuide(gtx layout.Context, px int) {
 // selection the caret moves there first (a picture is selected).
 func (d *window) contextPress(e pointer.Event) {
 	ed := d.ed
-	if !d.hf.on {
-		page, x, y, ok := d.pointerPage(e.Position)
-		if pos, _, pic := d.eng.PictureAt(page, x, y); ok && pic {
-			ed.Select(pos, model.Pos{Para: pos.Para, Off: pos.Off + 1})
-		} else if ok {
-			pos := d.viewPos(e.Position)
-			s, t := ed.Sel.Ordered()
-			if ed.Sel.Empty() || pos.Less(s) || t.Less(pos) {
-				ed.SetCaret(pos, false)
-			}
+	page, x, y, ok := d.pointerPage(e.Position)
+	if pos, _, pic := d.ceng().PictureAt(page, x, y); ok && pic {
+		ed.Select(pos, model.Pos{Para: pos.Para, Off: pos.Off + 1})
+	} else if ok {
+		pos := d.viewPos(e.Position)
+		s, t := ed.Sel.Ordered()
+		if ed.Sel.Empty() || pos.Less(s) || t.Less(pos) {
+			ed.SetCaret(pos, false)
 		}
 	}
 	d.v.hasGoal = false

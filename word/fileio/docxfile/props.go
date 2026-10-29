@@ -617,6 +617,7 @@ func pPrXML(style string, p model.ParaProps, mark string, th *theme) string {
 		{[]string{"w:pageBreakBefore"}, p.PageBreakBefore == o.PageBreakBefore, triXML("pageBreakBefore", p.PageBreakBefore)},
 		{[]string{"w:widowControl"}, p.WidowControl == o.WidowControl, triXML("widowControl", p.WidowControl)},
 		{[]string{"w:numPr"}, eqList(p.List, o.List), num},
+		{[]string{"w:pBdr"}, eqBorders(p.Borders, o.Borders), bordersXML("w:pBdr", p.Borders)},
 		{[]string{"w:shd"}, p.Shading == o.Shading, shd},
 		{[]string{"w:tabs"}, eqTabs(p.Tabs, o.Tabs), tabs},
 		{[]string{"w:spacing"}, eqF(p.SpaceBefore, o.SpaceBefore) && eqF(p.SpaceAfter, o.SpaceAfter) &&
@@ -630,4 +631,41 @@ func pPrXML(style string, p model.ParaProps, mark string, th *theme) string {
 		groups = append(groups, propGroup{[]string{"w:rPr"}, false, "<w:rPr>" + mark + "</w:rPr>"})
 	}
 	return mergeProps(orig, groups, pPrOrder)
+}
+
+// bordersXML writes a w:pBdr or w:tcBorders element for the edges that are
+// set (top, left, bottom, right); "" when none is. A border of no width is
+// written as "nil": the edge is explicitly without one.
+func bordersXML(tag string, bs [4]*model.Border) string {
+	var b strings.Builder
+	for e, br := range bs {
+		if br == nil {
+			continue
+		}
+		name := [4]string{"w:top", "w:left", "w:bottom", "w:right"}[e]
+		if br.Width <= 0 {
+			b.WriteString("<" + name + ` w:val="nil"/>`)
+			continue
+		}
+		color := br.Color
+		if color == "" {
+			color = "auto"
+		}
+		b.WriteString("<" + name + ` w:val="single" w:sz="` + strconv.Itoa(max(int(math.Round(br.Width*8)), 2)) +
+			`" w:space="` + strconv.Itoa(int(math.Round(br.Space))) + `" w:color="` + escAttr(color) + `"/>`)
+	}
+	if b.Len() == 0 {
+		return ""
+	}
+	return "<" + tag + ">" + b.String() + "</" + tag + ">"
+}
+
+// eqBorders reports whether two sets of borders are the same.
+func eqBorders(a, b [4]*model.Border) bool {
+	for i := range a {
+		if (a[i] == nil) != (b[i] == nil) || a[i] != nil && *a[i] != *b[i] {
+			return false
+		}
+	}
+	return true
 }

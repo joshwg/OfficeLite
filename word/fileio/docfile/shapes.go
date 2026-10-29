@@ -51,7 +51,7 @@ func (r *reader) readShapes() {
 	r.txbx = map[uint32][2]int{}
 	var blips []*model.Picture
 	if dgg := r.fib.blob(r.table, fcDggInfo); len(dgg) > 8 {
-		recs := records(dgg[:8+int(u32(dgg[4:]))])
+		recs := records(dgg[:min(8+int(u32(dgg[4:])), len(dgg))])
 		if len(recs) > 0 && recs[0].typ == 0xF000 {
 			blips = r.bstore(recs[0].data)
 		}

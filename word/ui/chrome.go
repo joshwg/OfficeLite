@@ -227,6 +227,12 @@ func (d *window) globalKeys(gtx layout.Context) {
 			continue
 		}
 		switch e.Name {
+		case "O", "S", "P", key.NameF12:
+			if d.modalOpen() {
+				continue // the dialog has the keyboard
+			}
+		}
+		switch e.Name {
 		case "N":
 			d.cfg.Launch(doctype.Document, "")
 		case "O":
@@ -267,6 +273,7 @@ func (d *window) globalKeys(gtx layout.Context) {
 				d.menu.Close()
 			case d.back.Visible:
 				d.back.Hide()
+				d.closeAfterSave = false // as the Back arrow does
 			case d.handleEscape():
 			}
 			d.v.focusPending = true

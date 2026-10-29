@@ -248,8 +248,8 @@ func (e *Engine) bandFmt(hf *model.HeaderFooter, page, n int, format string) *ba
 			b.height = max(b.height, r.Y1)
 		}
 		if len(pg.Lines) > 0 {
-			l := pg.Lines[len(pg.Lines)-1]
-			y0 = l.Y + l.Line.Height
+			l := pg.Lines[len(pg.Lines)-1] // pg.Lines keeps the page-local Y
+			y0 += l.Y + l.Line.Height
 		}
 	}
 	s.bands[key] = b
@@ -361,8 +361,11 @@ func (e *Engine) InHFArea(i int, y float64) (footer, ok bool) {
 // Vertical, LineBounds and SelectionRects then work in page-view
 // coordinates like e's. Call it again after every edit.
 func (e *Engine) EditView(i int, footer bool, doc *model.Document) *Engine {
-	if i >= 0 && i < len(e.Pages) {
+	if n := len(e.Pages); n > 0 {
+		i = min(max(i, 0), n-1) // the lines must land on a page of the view
 		e.setup = e.pageSetup(e.Pages[i])
+	} else {
+		i = 0
 	}
 	doc.Page = bandSetup(e.setup)
 	ed := New(doc, e.m.shaper)
@@ -380,14 +383,18 @@ func (e *Engine) EditView(i int, footer bool, doc *model.Document) *Engine {
 			lines = append(lines, pl)
 			h = max(h, pl.Y+pl.Line.Height)
 		}
-		fills = append(fills, pg.Fills...)
+		for _, f := range pg.Fills {
+			f.R.Y0, f.R.Y1 = f.R.Y0+y0, f.R.Y1+y0
+			fills = append(fills, f)
+		}
 		for _, r := range pg.Rules {
+			r.Y0, r.Y1 = r.Y0+y0, r.Y1+y0
 			rules = append(rules, r)
 			h = max(h, r.Y1)
 		}
 		if len(pg.Lines) > 0 {
-			l := pg.Lines[len(pg.Lines)-1]
-			y0 = l.Y + l.Line.Height
+			l := pg.Lines[len(pg.Lines)-1] // pg.Lines keeps the page-local Y
+			y0 += l.Y + l.Line.Height
 		}
 	}
 	off := e.bandOffset(footer, h)
@@ -402,14 +409,16 @@ func (e *Engine) EditView(i int, footer bool, doc *model.Document) *Engine {
 		rules[k].Y0 += off
 		rules[k].Y1 += off
 	}
-	pages := make([]*Page, len(e.Pages))
-	for k, pg := range e.Pages {
-		pages[k] = &Page{Index: k, Width: pg.Width, Height: pg.Height, Top: pg.Top, X: pg.X, BodyTop: pg.BodyTop, BodyBottom: pg.BodyBottom,
-			Section: pg.Section, First: pg.First, Number: pg.Number}
+	pages := make([]*Page, max(len(e.Pages), 1))
+	for k := range pages {
+		pages[k] = &Page{Index: k}
+		if k < len(e.Pages) {
+			pg := e.Pages[k]
+			*pages[k] = Page{Index: k, Width: pg.Width, Height: pg.Height, Top: pg.Top, X: pg.X, BodyTop: pg.BodyTop, BodyBottom: pg.BodyBottom,
+				Section: pg.Section, First: pg.First, Number: pg.Number}
+		}
 	}
-	if i >= 0 && i < len(pages) {
-		pages[i].Lines, pages[i].Fills, pages[i].Rules = lines, fills, rules
-	}
+	pages[i].Lines, pages[i].Fills, pages[i].Rules = lines, fills, rules
 	for p := range ed.paraLines {
 		for k, ref := range ed.paraLines[p] {
 			ed.paraLines[p][k] = remap[ref]

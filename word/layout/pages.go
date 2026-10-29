@@ -3,6 +3,7 @@ package layout
 import (
 	"image/color"
 	"math"
+	"slices"
 	"time"
 
 	"gioui.org/text"
@@ -280,10 +281,15 @@ func (e *Engine) startSection(k int) {
 		pg = model.LetterPage()
 	}
 	sameSize := math.Abs(pg.Width-e.page.Width) < 0.5 && math.Abs(pg.Height-e.page.Height) < 0.5
-	if (s.Break == model.BreakContinuous || s.Break == model.BreakNextColumn) && sameSize {
-		if s.Break == model.BreakNextColumn && e.cols.i+1 < len(e.cols.x) {
-			e.sec = k
+	// A next-column break in the last column starts a new page instead.
+	nextCol := s.Break == model.BreakNextColumn && e.cols.i+1 < len(e.cols.x)
+	if (s.Break == model.BreakContinuous || nextCol) && sameSize {
+		if nextCol {
 			e.nextColumn()
+			col := e.cols.i
+			e.sec = k
+			e.useSection() // the new section's margins and columns, from this column on
+			e.cols.i = min(col, len(e.cols.x)-1)
 			return
 		}
 		y := max(e.y, e.cols.maxY)
@@ -969,19 +975,26 @@ func (e *Engine) placeRows(t *model.Table, rows []*rowBox, r0, r1 int, x0 float6
 		// Place what lies in [s, cut), moved to e.y.
 		dy := e.y - s
 		pg := e.page
+		// The first band also keeps what hangs above the table: the upper
+		// half of a thick top border is centered on y = 0.
+		top := s
+		if s == 0 {
+			top = math.Inf(-1)
+		}
 		for _, f := range fills {
-			if r, ok := clipY(f.R, s, cut); ok {
+			if r, ok := clipY(f.R, top, cut); ok {
 				pg.Fills = append(pg.Fills, Fill{shiftY(r, dy), f.C})
 			}
 		}
 		for _, rr := range rules {
-			if r, ok := clipY(rr, s, cut); ok {
+			if r, ok := clipY(rr, top, cut); ok {
 				pg.Rules = append(pg.Rules, shiftY(r, dy))
 			}
 		}
 		for _, b := range boxes {
 			if r, ok := clipY(Rect{0, b.Y0, 0, b.Y1}, s, cut); ok {
 				b.Y0, b.Y1 = r.Y0+dy, r.Y1+dy
+				b.Edges = slices.Clone(b.Edges) // a later column moves boxes' edges, not these
 				pg.TableRows = append(pg.TableRows, b)
 			}
 		}
@@ -1027,8 +1040,13 @@ func cutBefore(lines []Placed, s, limit float64) float64 {
 
 // clipY clips r to the band [y0, y1); ok is false when nothing is left.
 func clipY(r Rect, y0, y1 float64) (Rect, bool) {
+	if r.Y0 == r.Y1 {
+		// A line (a horizontal border) belongs to the band it lies in.
+		return r, r.Y0 >= y0 && r.Y0 < y1
+	}
+	// A rectangle that only touches the band (ending at y0) has nothing in it.
 	r.Y0, r.Y1 = max(r.Y0, y0), min(r.Y1, y1)
-	return r, r.Y1 > r.Y0 || r.Y0 == r.Y1 && r.Y0 >= y0 && r.Y0 < y1
+	return r, r.Y1 > r.Y0
 }
 
 func shiftY(r Rect, dy float64) Rect {

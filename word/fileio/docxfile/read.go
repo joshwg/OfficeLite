@@ -375,7 +375,9 @@ func (r *reader) inline(kids []*node, span *model.Span) []token {
 	for _, k := range kids {
 		switch k.name {
 		case "w:r":
-			out = append(out, r.runToken(k, span))
+			for _, part := range splitFieldRun(k) {
+				out = append(out, r.runToken(part, span))
+			}
 		case "w:hyperlink":
 			kids, ls := r.wrapper(k, span)
 			if kids == nil {
@@ -456,6 +458,58 @@ func runText(ir model.Run) string {
 		return "\f"
 	}
 	return ir.Text
+}
+
+// splitFieldRun splits a <w:r> that holds field characters or instruction
+// text together with anything else (some producers write a whole field in
+// one run) into runs that each hold one field part, or content without
+// any, so a field token is never more than one thing. Other runs come
+// back as they are.
+func splitFieldRun(rn *node) []*node {
+	var items []*node
+	hasField := false
+	for _, k := range rn.kids {
+		if k.name == "w:rPr" {
+			continue
+		}
+		items = append(items, k)
+		if k.name == "w:fldChar" || k.name == "w:instrText" || k.name == "w:delInstrText" {
+			hasField = true
+		}
+	}
+	if !hasField || len(items) <= 1 {
+		return []*node{rn}
+	}
+	var rpr []byte
+	if p := rn.child("w:rPr"); p != nil {
+		rpr = p.raw()
+	}
+	isField := func(k *node) bool {
+		return k.name == "w:fldChar" || k.name == "w:instrText" || k.name == "w:delInstrText"
+	}
+	var out []*node
+	for i := 0; i < len(items); {
+		j := i + 1
+		if !isField(items[i]) {
+			for j < len(items) && !isField(items[j]) {
+				j++
+			}
+		}
+		var b []byte
+		b = append(b, "<w:r>"...)
+		b = append(b, rpr...)
+		for _, k := range items[i:j] {
+			b = append(b, k.raw()...)
+		}
+		b = append(b, "</w:r>"...)
+		nodes := parseFragment(string(b))
+		if len(nodes) != 1 {
+			return []*node{rn}
+		}
+		out = append(out, nodes[0])
+		i = j
+	}
+	return out
 }
 
 // runToken reads a <w:r>.
@@ -782,10 +836,14 @@ func fieldUnit(toks []token) model.Run {
 			stack = append(stack, false)
 			continue
 		case fldSeparate:
-			stack[len(stack)-1] = true
+			if len(stack) > 0 {
+				stack[len(stack)-1] = true
+			}
 			continue
 		case fldEnd:
-			stack = stack[:len(stack)-1]
+			if len(stack) > 0 {
+				stack = stack[:len(stack)-1]
+			}
 			continue
 		case fldInstr:
 			if len(stack) == 1 {

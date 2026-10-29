@@ -228,12 +228,35 @@ func CopyBlocks(bs []Block) []Block {
 func copyPara(p *Paragraph) *Paragraph {
 	q := *p
 	q.Runs = slices.Clone(p.Runs)
+	for i := range q.Runs {
+		q.Runs[i].Opaque = copyOpaque(q.Runs[i].Opaque)
+	}
 	q.Props = copyParaProps(p.Props)
 	if p.Sect != nil {
-		s := *p.Sect // edits replace its parts, never change them
-		q.Sect = &s
+		q.Sect = p.Sect.Clone() // headers and footers included: they get edited in place
 	}
 	return &q
+}
+
+// copyOpaque copies what edits and renumbering change in place: a note's
+// text and a floating object's text box. Everything else is shared, as it
+// is never modified.
+func copyOpaque(o *Opaque) *Opaque {
+	if o == nil || o.Note == nil && o.Float == nil {
+		return o
+	}
+	c := *o
+	if o.Note != nil {
+		n := *o.Note
+		n.Blocks = CopyBlocks(n.Blocks)
+		c.Note = &n
+	}
+	if o.Float != nil {
+		f := *o.Float
+		f.Blocks = CopyBlocks(f.Blocks)
+		c.Float = &f
+	}
+	return &c
 }
 
 func copyParaProps(pp ParaProps) ParaProps {
@@ -519,6 +542,10 @@ func (e *Editor) swap(from, to *[]*step) bool {
 		sect := e.Doc.Section
 		e.Doc.Section, *s.sect = *s.sect, sect
 		e.all = true
+	}
+	// Undoing or redoing a note's insertion or deletion renumbers the rest.
+	for _, q := range e.Doc.NumberNotes() {
+		e.dirty[q] = true
 	}
 	sel := e.Sel
 	e.Sel, s.sel = s.sel, sel

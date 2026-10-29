@@ -37,10 +37,17 @@ func (r *reader) readFields() {
 	r.skip = make([]bool, len(r.text))
 	r.unitEnd = map[int]int{}
 	r.fldAt = map[int][2]byte{}
-	if plc := r.fib.blob(r.table, fcPlcfFldMom); len(plc) >= 4 {
+	// The field descriptors of the main text and of the header, footnote and
+	// endnote stories (whose CPs count from the story's start).
+	for _, f := range []struct{ fc, lw int }{{fcPlcfFldMom, lwCcpText}, {fcPlcfFldHdr, lwCcpHdd}, {fcPlcfFldFtn, lwCcpFtn}, {fcPlcfFldEdn, lwCcpEdn}} {
+		plc := r.fib.blob(r.table, f.fc)
+		if len(plc) < 4 {
+			continue
+		}
+		base := r.storyStart(f.lw)
 		n := (len(plc) - 4) / 6
 		for i := 0; i < n; i++ {
-			cp := int(u32(plc[4*i:]))
+			cp := base + int(u32(plc[4*i:]))
 			d := plc[4*(n+1)+2*i:]
 			r.fldAt[cp] = [2]byte{d[0], d[1]}
 		}
@@ -370,6 +377,14 @@ func (r *reader) runs(start, end int, paraStyle string) []model.Run {
 		}
 		props, cs := r.runProps(chp, paraStyle)
 		run := model.Run{Props: props, Style: cs}
+		if note := r.noteAt[cp]; note != nil && c != 0x02 {
+			// A custom mark (an asterisk...) is the reference's own text,
+			// with no special character in front of it.
+			o := r.simpleOpaque(run, "note", note.Mark, cp)
+			o.Opaque.Note = note
+			add(o)
+			continue
+		}
 		switch {
 		case c == 0x09:
 			run.Kind = model.RunTab
@@ -657,6 +672,9 @@ func (r *reader) fieldInstr(b, e int) string {
 }
 
 // finishTable applies each row's TAP and computes the grid.
+// noEdge marks a cell whose right boundary the row doesn't give.
+const noEdge = -1 << 31
+
 func (r *reader) finishTable(ts *tableState) {
 	t := ts.table
 	type rowGeom struct {
@@ -762,7 +780,7 @@ func (r *reader) finishTable(ts *tableState) {
 			if i < len(tcs) {
 				tc = tcs[i]
 			}
-			right := -1
+			right := noEdge
 			if i+1 < len(centers) {
 				right = centers[i+1]
 				c.Width = twips(centers[i+1] - centers[i])
@@ -799,7 +817,12 @@ func (r *reader) finishTable(ts *tableState) {
 		row.Cells = cells
 		g := rowGeom{}
 		if len(centers) > 0 {
-			g.centers = append([]int{centers[0]}, merged...)
+			g.centers = []int{centers[0]}
+			for _, m := range merged {
+				if m != noEdge { // a cell beyond the row's boundaries has no right edge
+					g.centers = append(g.centers, m)
+				}
+			}
 		}
 		geoms = append(geoms, g)
 		t.Rows = append(t.Rows, row)

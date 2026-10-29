@@ -18,6 +18,9 @@ func (e *Engine) listLabels(locs []model.ParaLoc) map[*model.Paragraph]string {
 	restarted := map[[2]int]bool{} // NumID and level already restarted
 	for _, loc := range locs {
 		p := loc.P
+		if loc.Hidden {
+			continue // a merged-away cell's paragraphs aren't shown or numbered
+		}
 		if p.Props.List == nil && !e.styleHasList(p) {
 			continue
 		}

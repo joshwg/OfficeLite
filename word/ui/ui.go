@@ -211,7 +211,7 @@ func (d *window) newBlank() {
 	d.setDoc(doc, d.th.Shaper, nil)
 	d.loading.Store(true)
 	go func() {
-		fams := docFonts(doc)
+		fams := DocFonts(doc)
 		sh := d.cfg.Fonts.Shaper(fams...)
 		d.calls.Post(func() {
 			d.loading.Store(false)
@@ -230,8 +230,9 @@ func (d *window) invalidate() {
 	}
 }
 
-// docFonts lists the font families a document uses, for loading.
-func docFonts(doc *model.Document) []string {
+// DocFonts lists the font families a document uses, for loading (the window
+// and wordshot both load these).
+func DocFonts(doc *model.Document) []string {
 	fams := []string{"Calibri", "Calibri Light", "Aptos", "Times New Roman", "Arial", "Symbol"}
 	add := func(f string) {
 		if f != "" && !slices.Contains(fams, f) {
@@ -337,7 +338,7 @@ func (d *window) finishLoadLock(path string, doc *model.Document, err error, st 
 // finishLoadResult hands a loaded document to the UI goroutine.
 func (d *window) finishLoadResult(res loadResult) {
 	if doc := res.doc; doc != nil {
-		res.fams = docFonts(doc)
+		res.fams = DocFonts(doc)
 		res.shaper = d.cfg.Fonts.Shaper(res.fams...)
 	}
 	d.results <- res

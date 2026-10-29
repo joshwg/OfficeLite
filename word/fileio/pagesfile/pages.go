@@ -152,9 +152,7 @@ func (r *reader) defaults() {
 			if n := ss.Find("Normal"); n != nil {
 				n.Para, n.Run = paraProps(st.Para), runProps(st.Text)
 			}
-			if strings.EqualFold(st.Name, "Body") {
-				r.styleIDs[id] = "Normal"
-			}
+			r.styleIDs[id] = "Normal" // paragraphs in the default style, whatever it is called
 		}
 	}
 }
@@ -453,6 +451,9 @@ func diffPara(base, v model.ParaProps) model.ParaProps {
 	}
 	if v.KeepNext != base.KeepNext {
 		d.KeepNext = v.KeepNext
+	}
+	if v.KeepLines != base.KeepLines {
+		d.KeepLines = v.KeepLines
 	}
 	if v.PageBreakBefore != base.PageBreakBefore {
 		d.PageBreakBefore = v.PageBreakBefore

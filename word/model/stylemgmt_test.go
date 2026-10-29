@@ -62,7 +62,8 @@ func TestCharStyleUpdateDelete(t *testing.T) {
 	if err := e.DeleteStyle(id); err != nil {
 		t.Fatal(err)
 	}
-	if d.Styles.Find(id) != nil || p.Runs[1].Style != "" {
+	// The run that lost the style looks like its neighbours, so they merge.
+	if d.Styles.Find(id) != nil || len(p.Runs) != 1 || p.Runs[0].Style != "" {
 		t.Errorf("delete: %+v", p.Runs)
 	}
 	if err := e.DeleteStyle("Normal"); err != ErrStyleBuiltIn {

@@ -460,6 +460,29 @@ func SeriesKinds(c *model.Chart) (kinds []ChartKind, secondary []bool) {
 // the secondary axis.
 func SetChartKind(wb *model.Workbook, c *model.Chart, home string, kind ChartKind) {
 	n := len(c.AllSeries())
+	if n == 0 {
+		// With no series there'd be no group to carry the kind: lay the chart
+		// out with placeholder series (two for a combo), then drop them.
+		if len(c.Plots) == 0 {
+			c.Plots = []model.ChartPlot{newPlot(ColumnClustered)}
+		}
+		holders := 1
+		if kind == ComboColumnLine {
+			holders = 2
+		}
+		for pi := range c.Plots {
+			if c.Plots[pi].Type != model.ChartOther {
+				c.Plots[pi].Series = make([]model.ChartSeries, holders)
+				break
+			}
+		}
+		defer func() {
+			for pi := range c.Plots {
+				c.Plots[pi].Series = nil
+			}
+		}()
+		n = holders
+	}
 	kinds, sec := make([]ChartKind, n), make([]bool, n)
 	for i := range kinds {
 		kinds[i] = kind
@@ -486,6 +509,9 @@ func SetComboKinds(wb *model.Workbook, c *model.Chart, home string, kinds []Char
 			continue
 		}
 		all = append(all, c.Plots[pi].Series...)
+	}
+	if len(all) == 0 {
+		return // no series to group: the chart keeps its plots (SetChartKind handles that)
 	}
 	var oldLabels *model.DataLabels
 	for pi := range c.Plots {

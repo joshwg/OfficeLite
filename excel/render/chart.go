@@ -307,20 +307,22 @@ func (l *chartLayout) text(s string, f chartFont, x, y float32, ha, va int8, rot
 	if s == "" || f.Color.A == 0 {
 		return
 	}
-	// The text's bounds, for picking it out with the pointer.
+	// The text's bounds, for picking it out with the pointer: the rectangle
+	// paintChartText draws (aligned on x, y by ha, va), turned by rot about
+	// (x, y).
 	w, h := l.measure(f, s)
-	bh, bv := ha, va
-	if rot == 90 || rot == -90 {
-		w, h = h, w
-		bh, bv = va, ha
-	} else if rot != 0 {
-		w, h = max(w, h), max(w, h)
-		bh, bv = 0, 0
+	dx, dy := -w*float32(ha+1)/2, -h*float32(va+1)/2
+	sin, cos := math.Sincos(float64(rot) * math.Pi / 180)
+	sn, cs := float32(sin), float32(cos)
+	x0, y0 := float32(math.Inf(1)), float32(math.Inf(1))
+	x1, y1 := float32(math.Inf(-1)), float32(math.Inf(-1))
+	for _, c := range [4][2]float32{{dx, dy}, {dx + w, dy}, {dx, dy + h}, {dx + w, dy + h}} {
+		px, py := x+c[0]*cs-c[1]*sn, y+c[0]*sn+c[1]*cs
+		x0, y0 = min(x0, px), min(y0, py)
+		x1, y1 = max(x1, px), max(y1, py)
 	}
-	x0 := x - w*float32(bh+1)/2
-	y0 := y - h*float32(bv+1)/2
 	l.out = append(l.out, prim{kind: primText, text: s, font: f, x: x, y: y, ha: ha, va: va, rot: rot, elem: l.elem,
-		box: rect32{x0, y0, x0 + w, y0 + h}})
+		box: rect32{x0, y0, x1, y1}})
 }
 
 func (l *chartLayout) measure(f chartFont, s string) (float32, float32) {

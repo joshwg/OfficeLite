@@ -263,7 +263,7 @@ func (r *reader) addTable(t *iwork.Table, name string) {
 				r.formulas++
 			}
 		}
-		if mc.Kind == model.KindEmpty && mc.Style == 0 {
+		if mc.Kind == model.KindEmpty && mc.Style == 0 && mc.Formula == "" {
 			return
 		}
 		if !sh.Set(row, col, mc) {

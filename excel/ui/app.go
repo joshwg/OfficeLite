@@ -398,7 +398,7 @@ func (a *App) setWorkbook(wb *model.Workbook) {
 	a.book = edit.New(wb)
 	a.ed.active = false
 	a.rename.active = false
-	a.clip = nil
+	a.clip, a.ch.clip = nil, nil
 	a.cm.grid.Close()
 	a.cm.tabs.Close()
 	a.grid.move, a.grid.pointing = nil, false

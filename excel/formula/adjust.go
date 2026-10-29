@@ -53,17 +53,41 @@ func AdjustCols(f, home, target string, at, n int) string {
 // target) by dRow, dCol, as Excel does when cells are cut and pasted.
 // Absolute and relative parts both move.
 func MoveRefs(f, home, target string, src model.Range, dRow, dCol int) string {
+	return MoveRefsTo(f, home, home, target, target, src, dRow, dCol)
+}
+
+// MoveRefsTo is MoveRefs for a block cut from sheet target and pasted onto
+// sheet dest. f is a formula that lives on sheet home and will live on
+// newHome (they differ for a formula inside the moved block, which changes
+// sheets): references into src follow the block to dest, and an unqualified
+// reference that stays behind is qualified with home so it keeps pointing
+// at the same cell.
+func MoveRefsTo(f, home, newHome, target, dest string, src model.Range, dRow, dCol int) string {
 	return rewriteRefs(f, func(t *refTok) string {
 		r := t.r
-		if t.name != "" || !t.on(home, target) || r.kind != refCell {
+		if t.name != "" || r.kind != refCell {
 			return t.text
 		}
-		if !src.Contains(r.r1, r.c1) || !src.Contains(r.r2, r.c2) {
+		inside := t.on(home, target) && src.Contains(r.r1, r.c1) && src.Contains(r.r2, r.c2)
+		if !inside {
+			if t.sheet == "" && !strings.EqualFold(home, newHome) {
+				return QuoteSheet(home) + "!" + r.String() // left behind: keep pointing home
+			}
 			return t.text
 		}
 		r.r1, r.r2, r.c1, r.c2 = r.r1+dRow, r.r2+dRow, r.c1+dCol, r.c2+dCol
-		ok := min(r.r1, r.r2, r.c1, r.c2) >= 0 && max(r.r1, r.r2) < excelRows && max(r.c1, r.c2) < excelCols
-		return t.result(r, ok)
+		if min(r.r1, r.r2, r.c1, r.c2) < 0 || max(r.r1, r.r2) >= excelRows || max(r.c1, r.c2) >= excelCols {
+			return string(ErrRef)
+		}
+		prefix := t.prefix
+		switch {
+		case strings.EqualFold(dest, target):
+		case strings.EqualFold(newHome, dest) && t.sheet == "":
+			prefix = ""
+		default:
+			prefix = QuoteSheet(dest) + "!"
+		}
+		return prefix + r.String()
 	})
 }
 

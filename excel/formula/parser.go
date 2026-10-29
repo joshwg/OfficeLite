@@ -12,6 +12,10 @@ import (
 // Node is a parsed formula expression.
 type Node interface{ node() }
 
+// valueNode wraps an already evaluated value so a lazy function can take it
+// as an argument expression (an eta-reduced IF called by MAP or REDUCE).
+type valueNode struct{ v Value }
+
 type (
 	numNode   struct{ v float64 }
 	strNode   struct{ v string }
@@ -56,6 +60,7 @@ func (strNode) node()    {}
 func (boolNode) node()   {}
 func (errNode) node()    {}
 func (missNode) node()   {}
+func (valueNode) node()  {}
 func (arrayNode) node()  {}
 func (refNode) node()    {}
 func (nameNode) node()   {}
@@ -185,24 +190,40 @@ func (p *parser) postfix() (Node, error) {
 
 // rangeExpr handles the ':' range operator between references.
 func (p *parser) rangeExpr() (Node, error) {
+	x, err := p.spillOperand()
+	if err != nil {
+		return nil, err
+	}
+	sheet := ""
+	if a, ok := x.(refNode); ok {
+		sheet = a.sheet
+	}
+	for p.peek().kind == tOp && p.peek().text == ":" {
+		p.next()
+		y, err := p.spillOperand()
+		if err != nil {
+			return nil, err
+		}
+		// Sheet1!A1:B2:C3 — the first end's sheet applies to every end.
+		if b, ok := y.(refNode); ok && b.sheet == "" {
+			b.sheet = sheet
+			y = b
+		}
+		x = binaryNode{op: ":", l: x, r: y}
+	}
+	return x, nil
+}
+
+// spillOperand parses a primary with any spill operators, which bind
+// tighter than ':' (A1#:B2 is (A1#):B2, A1:B2# is A1:(B2#)).
+func (p *parser) spillOperand() (Node, error) {
 	x, err := p.primary()
 	if err != nil {
 		return nil, err
 	}
-	for p.peek().kind == tOp && p.peek().text == ":" {
+	for p.peek().kind == tHash {
 		p.next()
-		y, err := p.primary()
-		if err != nil {
-			return nil, err
-		}
-		// Sheet1!A1:B2 — the sheet applies to both ends.
-		if a, ok := x.(refNode); ok {
-			if b, ok := y.(refNode); ok && b.sheet == "" {
-				b.sheet = a.sheet
-				y = b
-			}
-		}
-		x = binaryNode{op: ":", l: x, r: y}
+		x = spillNode{x: x}
 	}
 	return x, nil
 }

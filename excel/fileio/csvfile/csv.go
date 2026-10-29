@@ -111,12 +111,18 @@ func parseDecoratedNumber(t string) (float64, bool) {
 	pct := strings.HasSuffix(t, "%")
 	t = strings.TrimSuffix(t, "%")
 	if strings.HasPrefix(t, "-") {
-		neg, t = !neg, t[1:]
+		if neg {
+			return 0, false // (-100): negative twice
+		}
+		neg, t = true, t[1:]
 	}
 	t = strings.TrimPrefix(t, "$")
 	if strings.Contains(t, ",") {
 		// Thousands separators must be in groups of three.
-		intPart, _, _ := strings.Cut(t, ".")
+		intPart, frac, _ := strings.Cut(t, ".")
+		if strings.Contains(frac, ",") {
+			return 0, false // 123.4,5
+		}
 		groups := strings.Split(intPart, ",")
 		for i, g := range groups {
 			if (i == 0 && (len(g) == 0 || len(g) > 3)) || (i > 0 && len(g) != 3) {

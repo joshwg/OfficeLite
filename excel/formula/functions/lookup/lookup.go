@@ -121,8 +121,8 @@ func xlookup(e *f.Env, a []f.Value) f.Value {
 			return err
 		}
 	}
-	lr, lc := shape(a[1])
-	rr, rc := shape(a[2])
+	lr, lc := shapeWith(e, a[1], a[2])
+	rr, rc := shapeWith(e, a[2], a[1])
 	if lr > 1 && lc > 1 {
 		return f.ErrValue
 	}

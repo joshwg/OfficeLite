@@ -667,7 +667,7 @@ func (x *writer) formula(b, head []byte, cell *model.Cell, rgce, extra []byte) [
 	if str {
 		s := cell.Text
 		if strLen(s) > maxText {
-			s = string([]rune(s)[:maxText/2])
+			s = truncUTF16(s, maxText)
 		}
 		b = stringRecords(b, recString, nil, []string{s}, nil)
 	}
@@ -869,11 +869,14 @@ func (x *writer) fontRecord(f model.Font) []byte {
 }
 
 func truncUTF16(s string, n int) string {
-	r := []rune(s)
-	for strLen(string(r)) > n {
-		r = r[:len(r)-1]
+	units := 0
+	for i, r := range s {
+		units += utf16.RuneLen(r)
+		if units > n {
+			return s[:i]
+		}
 	}
-	return string(r)
+	return s
 }
 
 // xfRecord encodes a cell XF.

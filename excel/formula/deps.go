@@ -3,7 +3,12 @@
 
 package formula
 
-import "officelite/excel/model"
+import (
+	"slices"
+	"strings"
+
+	"officelite/excel/model"
+)
 
 // DepRef is a rectangle of cells a formula reads. Sheet is "" for the
 // formula's own sheet.
@@ -99,4 +104,30 @@ func depRef(n refNode) DepRef {
 		r.C1, r.C2 = r.C2, r.C1
 	}
 	return r
+}
+
+// CallsFunc reports whether the formula text (with or without the leading
+// '=') calls any of the named functions (upper-case): a real call, not the
+// name inside a string literal or part of a longer name like MYSUBTOTAL.
+func CallsFunc(src string, names ...string) bool {
+	up := strings.ToUpper(src)
+	found := false
+	for _, n := range names {
+		if strings.Contains(up, n) {
+			found = true
+		}
+	}
+	if !found {
+		return false // cheap test first; most formulas don't mention them
+	}
+	node, err := Parse(src)
+	if err != nil {
+		return false
+	}
+	for _, fn := range Dependencies(node).Funcs {
+		if slices.Contains(names, fn) {
+			return true
+		}
+	}
+	return false
 }

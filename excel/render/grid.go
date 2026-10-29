@@ -862,6 +862,12 @@ func (v *View) headerLabel(gtx layout.Context, s string, st *model.Style, rc ima
 	v.placeText(gtx, call, dims, st, pt, rc, false)
 }
 
+// HdrW and HdrH are where the cells start on screen: the width of the row
+// headers (and outline gutter) and the height of the column headers, from
+// the last Draw. A point left of or above them is not on a cell.
+func (v *View) HdrW() int { return v.hdrW }
+func (v *View) HdrH() int { return v.hdrH }
+
 // HitTest maps a point in the grid's coordinates (from the last Draw) to a
 // cell or header.
 func (v *View) HitTest(x, y float32) Hit {

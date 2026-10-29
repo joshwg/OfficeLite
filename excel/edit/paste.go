@@ -19,6 +19,9 @@ const (
 // PasteSpecial pastes part of clip into sel on sheet, tiled as Paste
 // does. Only PasteAll moves cut cells; the other modes copy them.
 func (b *Book) PasteSpecial(clip *Clip, sheet int, sel model.Range, mode PasteMode) (model.Range, calc.Result, error) {
+	if clip == nil || len(clip.Cells) == 0 || len(clip.Cells[0]) == 0 {
+		return sel, calc.Result{}, ErrEmptyClip
+	}
 	defer b.Op("Paste Special")()
 	if mode == PasteAll {
 		return b.Paste(clip, sheet, sel)

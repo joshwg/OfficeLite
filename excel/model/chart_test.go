@@ -19,7 +19,7 @@ func TestParseRefList(t *testing.T) {
 		{"'My Sheet'!$A$1", []SheetRange{{"My Sheet", Range{}}}},
 		{"'It''s'!A1:B2", []SheetRange{{"It's", Range{R2: 1, C2: 1}}}},
 		{"(Data!$A$1,Data!$A$3:$A$4)", []SheetRange{{"Data", Range{}}, {"Data", Range{R1: 2, R2: 3}}}},
-		{"[Book1.xlsx]Data!$C$5", []SheetRange{{"Data", Range{R1: 4, C1: 2, R2: 4, C2: 2}}}},
+		{"[0]Data!$C$5", []SheetRange{{"Data", Range{R1: 4, C1: 2, R2: 4, C2: 2}}}},
 		{"B3:B1", []SheetRange{{"Home", Range{R1: 0, C1: 1, R2: 2, C2: 1}}}}, // unqualified: home
 		{"Data!$C:$C", []SheetRange{{"Data", Range{C1: 2, R2: MaxRows - 1, C2: 2}}}},
 	} {
@@ -34,7 +34,7 @@ func TestParseRefList(t *testing.T) {
 			}
 		}
 	}
-	for _, bad := range []string{"#REF!", "Data!#REF!", "SUM(A1)", "Name"} {
+	for _, bad := range []string{"#REF!", "Data!#REF!", "SUM(A1)", "Name", "[Book1.xlsx]Data!$C$5", "[1]Data!A1"} {
 		if _, ok := ParseRefList(bad, "Home"); ok {
 			t.Errorf("%s: parsed", bad)
 		}

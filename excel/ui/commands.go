@@ -109,7 +109,7 @@ func (a *App) copy(gtx layout.Context, cut bool) {
 	if cut && a.pivotProtected(st.view.Sel.Range) {
 		return
 	}
-	a.clip = a.book.Copy(a.active, st.view.Sel.Range, cut)
+	a.clip, a.ch.clip = a.book.Copy(a.active, st.view.Sel.Range, cut), nil
 	a.clipText = edit.CopyText(st.view.Sheet, st.view.Sel.Range)
 	a.notice = ""
 	gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(a.clipText))})

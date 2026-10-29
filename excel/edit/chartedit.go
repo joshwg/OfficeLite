@@ -171,6 +171,11 @@ func (b *Book) ChartToObject(sheet, idx, to int, a model.Anchor) (int, int, erro
 	if c.Name == "" || idx < 0 {
 		c.Name = NextChartName(b.WB)
 	}
+	if idx < 0 {
+		if err := b.canDeleteSheet(sheet); err != nil {
+			return 0, 0, err // checked first: nothing is added if the sheet must stay
+		}
+	}
 	b.BeginGroup()
 	defer b.EndGroup()
 	i, _ := b.AddChart(to, c)
@@ -595,7 +600,11 @@ func SetChartSeries(wb *model.Workbook, c *model.Chart, home string, ser []model
 		return
 	}
 	for len(kinds) < len(ser) {
-		kinds = append(kinds, kinds[0])
+		k := ColumnClustered // a combo with no series yet has no kind to copy
+		if len(kinds) > 0 {
+			k = kinds[0]
+		}
+		kinds = append(kinds, k)
 		sec = append(sec, false)
 	}
 	SetComboKinds(wb, c, home, kinds[:len(ser)], sec[:len(ser)])

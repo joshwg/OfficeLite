@@ -90,3 +90,17 @@ func TestLimits(t *testing.T) {
 		t.Errorf("warnings = %v", wb.Warnings)
 	}
 }
+
+// TestDecoratedNumbers checks which decorated text reads as a number.
+func TestDecoratedNumbers(t *testing.T) {
+	for in, want := range map[string]float64{"(100)": -100, "-$1,234.5": -1234.5, "12%": 0.12, "1,000": 1000} {
+		if got, ok := parseDecoratedNumber(in); !ok || got != want {
+			t.Errorf("parseDecoratedNumber(%q) = %v, %v; want %v", in, got, ok, want)
+		}
+	}
+	for _, in := range []string{"(-100)", "123.4,5", "1,23", ",5", "abc"} {
+		if v, ok := parseDecoratedNumber(in); ok {
+			t.Errorf("parseDecoratedNumber(%q) = %v, want text", in, v)
+		}
+	}
+}

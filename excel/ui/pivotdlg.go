@@ -20,6 +20,7 @@ import (
 	"officelite/common/gui"
 	"officelite/excel/calc"
 	"officelite/excel/edit"
+	"officelite/excel/formula"
 	"officelite/excel/model"
 	"officelite/excel/pivot"
 )
@@ -317,14 +318,21 @@ func (a *App) newSheetPivot(src string) {
 		return
 	}
 	at := a.active
+	// The source is read on the sheet it was chosen on, before the blank
+	// sheet goes in front of it; a bare range is pinned to that sheet.
+	pt, err := a.book.NewPivot(at, src, 2, 0)
+	if err != nil {
+		a.showError(err)
+		return
+	}
+	if sheet, _, ok := pivot.SplitSource(src); ok && sheet == "" {
+		pt.Source = formula.QuoteSheet(a.wb.Sheets[at].Name) + "!" + strings.TrimPrefix(strings.TrimSpace(src), "=")
+	}
 	a.book.BeginGroup()
-	_, err := a.book.InsertSheet(at)
+	_, err = a.book.InsertSheet(at)
 	var res calc.Result
 	if err == nil {
-		var pt *model.PivotTable
-		if pt, err = a.book.NewPivot(at, src, 2, 0); err == nil {
-			res, err = a.book.SetPivot(at, -1, pt, true)
-		}
+		res, err = a.book.SetPivot(at, -1, pt, true)
 	}
 	a.book.EndGroup()
 	if err != nil {

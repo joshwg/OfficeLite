@@ -53,7 +53,8 @@ type annotReader struct {
 
 	txo      bool // reading the CONTINUE records of a TXO
 	txoObj   int
-	txoCch   int
+	txoCch   int // the text's length in UTF-16 code units
+	txoGot   int // the code units read so far (a rune beyond the BMP is two)
 	txoText  []rune
 	notes    []noteRec
 	links    []linkRec
@@ -76,9 +77,12 @@ func (a *annotReader) record(r record) bool {
 	b := r.body
 	if a.txo {
 		if r.id == recContinue {
-			if len(a.txoText) < a.txoCch && len(b) > 0 {
-				s, _ := chars(b, 1, a.txoCch-len(a.txoText), b[0]&1 != 0)
-				a.txoText = append(a.txoText, []rune(s)...)
+			if a.txoGot < a.txoCch && len(b) > 0 {
+				s, _ := chars(b, 1, a.txoCch-a.txoGot, b[0]&1 != 0)
+				for _, r := range s {
+					a.txoText = append(a.txoText, r)
+					a.txoGot += utf16.RuneLen(r)
+				}
 			}
 			return true // the text, then its formatting runs
 		}
@@ -99,7 +103,7 @@ func (a *annotReader) record(r record) bool {
 		return true
 	case recTxo:
 		if len(b) >= 12 && a.lastObj >= 0 {
-			a.txo, a.txoObj, a.txoCch, a.txoText = true, a.lastObj, u16(b, 10), nil
+			a.txo, a.txoObj, a.txoCch, a.txoGot, a.txoText = true, a.lastObj, u16(b, 10), 0, nil
 		}
 		return true
 	case recNote:
@@ -530,10 +534,7 @@ func (x *writer) notes(b []byte, si int, sh *model.Sheet) []byte {
 		b = rec(b, recObj, obj)
 		b = rec(b, recMsoDrawing, officeArt(nil, 0, 0xF00D, 0))
 
-		text := []rune(strings.ReplaceAll(sh.Notes[key].Text, "\r\n", "\n"))
-		if len(text) > maxText {
-			text = text[:maxText]
-		}
+		text := []rune(truncUTF16(strings.ReplaceAll(sh.Notes[key].Text, "\r\n", "\n"), maxText))
 		units := utf16.Encode(text)
 		b = rec(b, recTxo, le(0x0012, 0, 0, 0, 0, len(units), 16, 0, 0))
 		if len(units) == 0 {

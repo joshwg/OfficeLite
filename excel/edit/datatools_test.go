@@ -159,3 +159,33 @@ func TestRemoveDuplicates(t *testing.T) {
 		t.Errorf("no duplicates: %d", removed)
 	}
 }
+
+// TestRemoveDuplicatesAnnotations checks that notes, links and one-row
+// merges follow their rows, and that undo restores them.
+func TestRemoveDuplicatesAnnotations(t *testing.T) {
+	b := newBook()
+	for r, v := range []string{"a", "a", "b", "c"} {
+		b.enter(t, 0, model.CellName(r, 0), v)
+	}
+	sh := b.WB.Sheets[0]
+	b.SetNote(0, 1, 0, &model.Note{Text: "dup"})                           // on a removed row
+	b.SetNote(0, 2, 0, &model.Note{Text: "bee"})                           // row of "b"
+	b.SetHyperlink(0, 3, 0, "", model.Hyperlink{Target: "http://c.test/"}) // row of "c"
+	b.RemoveDuplicates(0, rng("A1", "A4"), []int{0}, false)
+	if _, ok := sh.NoteAt(1, 0); !ok || sh.Notes[[2]int{1, 0}].Text != "bee" {
+		t.Errorf("note did not follow b to A2: %v", sh.Notes)
+	}
+	if _, ok := sh.NoteAt(2, 0); ok {
+		t.Error("stale note left on A3")
+	}
+	if _, ok := sh.LinkAt(2, 0); !ok {
+		t.Error("link did not follow c to A3")
+	}
+	if _, ok := sh.LinkAt(3, 0); ok {
+		t.Error("stale link left on A4")
+	}
+	b.Undo()
+	if sh.Notes[[2]int{1, 0}].Text != "dup" || sh.Notes[[2]int{2, 0}].Text != "bee" {
+		t.Errorf("undo did not restore notes: %v", sh.Notes)
+	}
+}

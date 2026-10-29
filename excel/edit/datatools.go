@@ -310,13 +310,37 @@ func (b *Book) RemoveDuplicates(sheet int, r model.Range, cols []int, header boo
 	if removed == 0 {
 		return 0, len(keep), calc.Result{}
 	}
+	// Merges: one-row merges inside the columns move with their row (or go
+	// with a removed one); anything else can't follow, so nothing changes.
+	rowAt := map[int]int{} // old row -> new row, for kept rows
+	for j, row := range keep {
+		rowAt[row] = first + j
+	}
+	props := propsOf(sh)
+	var merges []model.Range
+	for _, m := range sh.Merges {
+		if m.R2 < first || m.R1 > r.R2 || m.C2 < r.C1 || m.C1 > r.C2 {
+			merges = append(merges, m)
+			continue
+		}
+		if m.R1 != m.R2 || m.C1 < r.C1 || m.C2 > r.C2 || m.R1 < first {
+			return 0, len(keep), calc.Result{}
+		}
+		if to, ok := rowAt[m.R1]; ok {
+			m.R1, m.R2 = to, to
+			merges = append(merges, m)
+		}
+	}
 	child := spillChildren(sh)
 	var cells []cellChange
+	var annots []annotChange
 	for i := first; i <= r.R2; i++ {
 		for c := r.C1; c <= r.C2; c++ {
 			before := snapshot(sh, child, i, c)
 			var after model.Cell
+			src := -1 // the row whose notes and link land here
 			if j := i - first; j < len(keep) {
+				src = keep[j]
 				after = snapshot(sh, child, keep[j], c)
 				if after.Formula != "" {
 					after.Formula = formula.Shift(after.Formula, i-keep[j], 0)
@@ -325,9 +349,32 @@ func (b *Book) RemoveDuplicates(sheet int, r model.Range, cols []int, header boo
 			if before != after {
 				cells = append(cells, cellChange{sheet, i, c, before, after})
 			}
+			if src == i {
+				continue
+			}
+			var nn *model.Note
+			var nl *model.Hyperlink
+			if src >= 0 {
+				nn, nl = notePtr(sh, src, c), linkPtr(sh, src, c)
+			}
+			if on := notePtr(sh, i, c); on != nil || nn != nil {
+				annots = append(annots, annotChange{sheet: sheet, row: i, col: c, beforeNote: on, afterNote: nn})
+			}
+			if ol := linkPtr(sh, i, c); ol != nil || nl != nil {
+				annots = append(annots, annotChange{sheet: sheet, row: i, col: c, link: true, beforeLink: ol, afterLink: nl})
+			}
 		}
 	}
-	return removed, len(keep), b.apply(Where{sheet, r}, cells)
+	if len(cells) == 0 && len(annots) == 0 {
+		return removed, len(keep), calc.Result{}
+	}
+	sc := &sheetChange{sheet: sheet, before: props, after: props}
+	sc.after.merges = merges
+	b.setAnnots(annots, true)
+	sc.set(b.WB, true)
+	res = b.setCells(cells, true)
+	b.record(&change{where: Where{sheet, r}, cells: cells, annots: annots, sheet: sc})
+	return removed, len(keep), res
 }
 
 // dupKey is a cell's value for comparing rows.

@@ -53,7 +53,7 @@ func splitTopLevel(s string) []string {
 }
 
 // parseSheetRange parses one reference (Sheet1!$A$1:$B$2, 'My Sheet'!A:A,
-// 1:1, [Book]Sheet!A1), on home when unqualified; whole rows and columns
+// 1:1, [0]Sheet!A1; other workbooks' refs fail), on home when unqualified; whole rows and columns
 // span the sheet's limits.
 func parseSheetRange(s, home string) (SheetRange, bool) {
 	sheet, ref := home, s
@@ -63,7 +63,10 @@ func parseSheetRange(s, home string) (SheetRange, bool) {
 			sheet = strings.ReplaceAll(sheet[1:len(sheet)-1], "''", "'")
 		}
 		if j := strings.LastIndexByte(sheet, ']'); j >= 0 {
-			sheet = sheet[j+1:] // [Book1.xlsx]Sheet1: this workbook
+			if sheet[:j+1] != "[0]" {
+				return SheetRange{}, false // another workbook: use the cached values
+			}
+			sheet = sheet[j+1:] // [0]Sheet1: this workbook
 		}
 	}
 	ref = strings.ReplaceAll(ref, "$", "")
@@ -150,6 +153,9 @@ func (wb *Workbook) resolveRef(ref, home string) ([]SheetRange, bool) {
 			if pass == 1 && local {
 				continue
 			}
+			if local {
+				home = wb.Sheets[dn.Sheet].Name // unqualified cells are on the name's own sheet
+			}
 			return ParseRefList(dn.Formula, home)
 		}
 	}
@@ -190,11 +196,10 @@ func (wb *Workbook) ChartValues(ref, home string, visibleOnly bool) (vals []Char
 			}
 			hidden := false
 			if visibleOnly {
-				if down {
-					hidden = sh.RowHeightPx(r) == 0
-				} else if w, ok := sh.ColWidth[c]; ok && w == 0 {
-					hidden = true
-				}
+				// A hidden row or a hidden column hides the cell, whichever
+				// way the series runs.
+				w, ok := sh.ColWidth[c]
+				hidden = sh.RowHeightPx(r) == 0 || ok && w == 0
 			}
 			return sh.Get(r, c), hidden
 		}

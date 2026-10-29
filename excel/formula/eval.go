@@ -100,6 +100,10 @@ func (e *Env) Num(v Value) (float64, Value) {
 		if d, ok := ParseDateTime(string(s), true); ok {
 			return d, nil
 		}
+		// Date text before 1904 has no serial in this system.
+		if _, ok := ParseDateTime(string(s), false); ok {
+			return 0, ErrValue
+		}
 	}
 	return Num(v)
 }
@@ -113,7 +117,16 @@ type Result struct {
 // Evaluate calculates a parsed formula for the environment's cell. The
 // result is dereferenced; a Lambda result is #CALC!.
 func (e *Env) Evaluate(n Node) Result {
+	res, _ := e.EvaluateRef(n)
+	return res
+}
+
+// EvaluateRef is Evaluate that also returns the range the formula refers to
+// when its (single) evaluation yields a reference, so callers needing both
+// don't evaluate the tree twice (which would advance RAND and repeat work).
+func (e *Env) EvaluateRef(n Node) (Result, *Ref) {
 	var res Result
+	var ref *Ref
 	if c, ok := n.(callNode); ok {
 		if s := e.Funcs.Lookup(c.name); s != nil {
 			res.Format = s.Format
@@ -126,25 +139,32 @@ func (e *Env) Evaluate(n Node) Result {
 		// rounding noise to 0: =1-0.9-0.1 is 0, not -2.8E-17.
 		v = e.binary(b.op, e.operand(b.l), e.operand(b.r), true)
 	} else {
-		v = e.operand(n)
+		raw := e.Eval(n)
+		if r, ok := raw.(Ref); ok {
+			ref = &r
+			if !r.Single() && e.implicit() {
+				raw = e.intersect(r)
+			}
+		}
+		v = e.Deref(raw)
 	}
 	switch x := v.(type) {
 	case *Lambda:
 		v = ErrCalc
 	case *Array:
-		if x.Single() {
-			v = x.V[0]
-		}
 		for i, el := range x.V {
 			if _, ok := el.(*Lambda); ok {
 				x.V[i] = ErrCalc
 			}
 		}
+		if x.Single() {
+			v = x.V[0]
+		}
 	case Missing:
 		v = Number(0)
 	}
 	res.Value = v
-	return res
+	return res, ref
 }
 
 // EvalString parses and evaluates src (for tests and one-off use).
@@ -170,6 +190,8 @@ func (e *Env) Eval(n Node) Value {
 		return n.v
 	case missNode:
 		return Missing{}
+	case valueNode:
+		return n.v
 	case arrayNode:
 		a := &Array{Rows: len(n.rows), Cols: len(n.rows[0])}
 		for _, row := range n.rows {
@@ -286,7 +308,7 @@ func (e *Env) name(n nameNode) Value {
 	if !ok {
 		// A worksheet function named without its parentheses is a function
 		// value (an eta-reduced lambda), as in BYROW(A1:B3,SUM).
-		if s := e.Funcs.Lookup(n.name); s != nil && s.Lazy == nil && n.sheet == "" {
+		if s := e.Funcs.Lookup(n.name); s != nil && n.sheet == "" {
 			return &Lambda{Func: s}
 		}
 		return ErrName
@@ -299,6 +321,10 @@ func (e *Env) name(n nameNode) Value {
 		}
 		node, _ = parsedNames.LoadOrStore(src, p)
 	}
+	// A defined name's formula can't see the caller's LET/LAMBDA variables.
+	saved := e.scope
+	e.scope = nil
+	defer func() { e.scope = saved }()
 	return e.nested(func() Value { return e.Eval(node.(Node)) })
 }
 
@@ -340,7 +366,8 @@ func (e *Env) Deref(v Value) Value {
 // those sheets, so they still combine element by element:
 // =SUMPRODUCT((Sheet2!A:A>1)*B:B).
 func (e *Env) trim(r Ref) Ref {
-	wholeCols, wholeRows := r.R2 >= model.MaxRows-1, r.C2 >= model.MaxCols-1
+	wholeCols := r.R1 == 0 && r.R2 >= model.MaxRows-1
+	wholeRows := r.C1 == 0 && r.C2 >= model.MaxCols-1
 	if !wholeCols && !wholeRows {
 		return r
 	}
@@ -671,6 +698,13 @@ func (e *Env) CallLambda(fn Value, args ...Value) Value {
 		if l.Func.Volatile {
 			e.Volatile = true
 		}
+		if l.Func.Lazy != nil {
+			nodes := make([]Node, len(args))
+			for i, a := range args {
+				nodes[i] = valueNode{a}
+			}
+			return e.nested(func() Value { return l.Func.Lazy(e, nodes) })
+		}
 		return e.nested(func() Value { return e.Apply(l.Func, append([]Value(nil), args...)) })
 	}
 	saved := e.scope
@@ -700,13 +734,13 @@ func (e *Env) unary(n unaryNode) Value {
 		case "+":
 			return x
 		case "-":
-			f, err := Num(x)
+			f, err := e.Num(x)
 			if err != nil {
 				return err
 			}
 			return Number(-f)
 		case "%":
-			f, err := Num(x)
+			f, err := e.Num(x)
 			if err != nil {
 				return err
 			}
@@ -764,9 +798,9 @@ func (e *Env) binary(op string, l, r Value, snap bool) Value {
 	}
 	if !lok && !rok {
 		if snap {
-			return snapZero(l, r, scalarOp(op, l, r))
+			return e.snapZero(l, r, e.scalarOp(op, l, r))
 		}
-		return scalarOp(op, l, r)
+		return e.scalarOp(op, l, r)
 	}
 	rows, cols := 1, 1
 	if lok {
@@ -785,9 +819,9 @@ func (e *Env) binary(op string, l, r Value, snap bool) Value {
 			if rok {
 				y = ra.Broadcast(i, j)
 			}
-			v := scalarOp(op, x, y)
+			v := e.scalarOp(op, x, y)
 			if snap {
-				v = snapZero(x, y, v)
+				v = e.snapZero(x, y, v)
 			}
 			out.V = append(out.V, v)
 		}
@@ -799,13 +833,13 @@ func (e *Env) binary(op string, l, r Value, snap bool) Value {
 // is only floating-point noise: under 2^-48 of the operands' magnitude,
 // which Excel (and LibreOffice, rtl::math::approxSub) does for a formula's
 // final addition or subtraction (Microsoft KB 78113).
-func snapZero(l, r, v Value) Value {
+func (e *Env) snapZero(l, r, v Value) Value {
 	n, ok := v.(Number)
 	if !ok || n == 0 {
 		return v
 	}
-	a, err1 := Num(l)
-	b, err2 := Num(r)
+	a, err1 := e.Num(l)
+	b, err2 := e.Num(r)
 	if err1 != nil || err2 != nil {
 		return v
 	}
@@ -818,7 +852,7 @@ func snapZero(l, r, v Value) Value {
 // scalarOp applies a binary operator to two scalars: & concatenates,
 // comparisons give a Bool, and arithmetic propagates errors and gives #NUM!
 // for non-finite results.
-func scalarOp(op string, l, r Value) Value {
+func (e *Env) scalarOp(op string, l, r Value) Value {
 	switch op {
 	case "&":
 		a, err := Str(l)
@@ -855,11 +889,11 @@ func scalarOp(op string, l, r Value) Value {
 	if e, ok := r.(Error); ok {
 		return e
 	}
-	a, err := Num(l)
+	a, err := e.Num(l)
 	if err != nil {
 		return err
 	}
-	b, err := Num(r)
+	b, err := e.Num(r)
 	if err != nil {
 		return err
 	}

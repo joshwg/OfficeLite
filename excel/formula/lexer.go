@@ -257,19 +257,24 @@ func scanNumber(s string) int {
 	return i
 }
 
-// matchCol returns the length of a column part ($ and up to three letters)
-// at the start of s, or 0.
+// maxLexCol is Excel's last column (XFD): longer letter runs are names.
+const maxLexCol = 16384
+
+// matchCol returns the length of a column part ($ and up to XFD) at the
+// start of s, or 0.
 func matchCol(s string) int {
 	i := 0
 	if i < len(s) && s[i] == '$' {
 		i++
 	}
 	j := i
+	col := 0
 	for j < len(s) && j-i < 3 && (s[j] >= 'A' && s[j] <= 'Z' || s[j] >= 'a' && s[j] <= 'z') {
+		col = col*26 + int(s[j]&^0x20-'A') + 1
 		j++
 	}
-	if j == i {
-		return 0
+	if j == i || col > maxLexCol {
+		return 0 // not a column: none, or past XFD (xml1, yes1 are names)
 	}
 	return j
 }
@@ -339,6 +344,18 @@ func matchRowRange(s string) int {
 // lexRefOrName lexes a reference, function name, boolean or defined name at
 // the start of s. sheet is a sheet prefix already consumed.
 func lexRefOrName(s, sheet string) (token, int, error) {
+	if sheet == "" {
+		// An unquoted sheet name may look like a cell or column (S1, Day1,
+		// XFE1), so test for the '!' before trying references.
+		n := 0
+		for n < len(s) && isIdentChar(s[n]) {
+			n++
+		}
+		if n > 0 && n < len(s) && s[n] == '!' {
+			t, m, err := lexRefOrName(s[n+1:], s[:n])
+			return t, n + 1 + m, err
+		}
+	}
 	if n := matchColRange(s); n > 0 {
 		return token{kind: tRef, text: s[:n], sheet: sheet}, n, nil
 	}

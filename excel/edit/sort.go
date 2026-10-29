@@ -77,13 +77,15 @@ func (b *Book) applySort(op *structural) (calc.Result, error) {
 		}
 		return 0
 	})
+	child := spillChildren(old)
 	for i, from := range perm {
 		to := data.R1 + i
 		if from == to {
 			continue
 		}
 		for c := data.C1; c <= data.C2; c++ {
-			cell := *old.Get(from, c)
+			// A spilled value is recalculated, not moved as a constant.
+			cell := snapshot(old, child, from, c)
 			if cell.Formula != "" {
 				cell.Formula = formula.Shift(cell.Formula, to-from, 0)
 			}

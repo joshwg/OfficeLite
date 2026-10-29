@@ -5,6 +5,7 @@ package edit
 
 import (
 	"errors"
+	"slices"
 	"strings"
 
 	"officelite/excel/calc"
@@ -34,6 +35,9 @@ func (c *Clip) srcRow(i int) int {
 
 // ErrPasteSize is returned when a paste would go past the sheet's edge.
 var ErrPasteSize = errors.New("The paste area doesn't fit on the sheet")
+
+// ErrEmptyClip is returned when there is nothing to paste.
+var ErrEmptyClip = errors.New("There is nothing to paste")
 
 // Copy takes a copy of the cells of r for pasting. Values spilled from a
 // formula that is copied too are left out (the pasted formula spills
@@ -112,6 +116,9 @@ func pasteTarget(sh *model.Sheet, sel model.Range, h, w int) (model.Range, error
 // instead, and formulas pointing at them follow. It returns the pasted
 // range.
 func (b *Book) Paste(clip *Clip, sheet int, sel model.Range) (model.Range, calc.Result, error) {
+	if clip == nil || len(clip.Cells) == 0 || len(clip.Cells[0]) == 0 {
+		return sel, calc.Result{}, ErrEmptyClip
+	}
 	defer b.Op("Paste")()
 	h, w := len(clip.Cells), len(clip.Cells[0])
 	if clip.Cut {
@@ -160,34 +167,45 @@ func (b *Book) Paste(clip *Clip, sheet int, sel model.Range) (model.Range, calc.
 	if clip.Cut {
 		// Formulas anywhere that point into the moved block follow it.
 		target := b.WB.Sheets[clip.Sheet].Name
+		fix := func(si, r, c int) {
+			s := b.WB.Sheets[si]
+			k := [3]int{si, r, c}
+			var f string
+			if ch, ok := cells[k]; ok {
+				f = ch.after.Formula
+			} else {
+				f = s.Get(r, c).Formula
+			}
+			if f == "" {
+				return
+			}
+			home := s.Name
+			if si == sheet && clip.Sheet != sheet && dest.Contains(r, c) {
+				home = target // a moved formula was written on the sheet it left
+			}
+			g := formula.MoveRefsTo(f, home, s.Name, target, b.WB.Sheets[sheet].Name, clip.Src, dr, dc)
+			if g == f {
+				return
+			}
+			if ch, ok := cells[k]; ok {
+				ch.after.Formula = g
+			} else {
+				nv := *s.Get(r, c)
+				nv.Formula = g
+				set(si, r, c, nv)
+			}
+		}
 		for si, s := range b.WB.Sheets {
 			for r := 0; r < s.UsedRows(); r++ {
 				for c := 0; c < s.RowLen(r); c++ {
-					k := [3]int{si, r, c}
-					var f string
-					if ch, ok := cells[k]; ok {
-						f = ch.after.Formula
-					} else {
-						f = s.Get(r, c).Formula
-					}
-					if f == "" {
-						continue
-					}
-					if si == sheet && clip.Sheet != sheet && dest.Contains(r, c) {
-						continue // moved to another sheet: refs keep pointing home
-					}
-					g := formula.MoveRefs(f, s.Name, target, clip.Src, dr, dc)
-					if g == f {
-						continue
-					}
-					if ch, ok := cells[k]; ok {
-						ch.after.Formula = g
-					} else {
-						nv := *s.Get(r, c)
-						nv.Formula = g
-						set(si, r, c, nv)
-					}
+					fix(si, r, c)
 				}
+			}
+		}
+		// Destination cells past the sheet's stored cells aren't in the scan.
+		for _, k := range slices.Clone(order) {
+			if s := b.WB.Sheets[k[0]]; k[1] >= s.UsedRows() || k[2] >= s.RowLen(k[1]) {
+				fix(k[0], k[1], k[2])
 			}
 		}
 	}

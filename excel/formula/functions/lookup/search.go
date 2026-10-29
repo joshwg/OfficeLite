@@ -240,6 +240,19 @@ func shape(v f.Value) (rows, cols int) {
 	return 1, 1
 }
 
+// shapeWith is shape, except that a whole-column or whole-row reference is
+// measured trimmed to the used area when it is combined with a calculated
+// array (which Deref already trimmed): XLOOKUP(1,(B:B="x"),A:A).
+func shapeWith(e *f.Env, v, other f.Value) (rows, cols int) {
+	if r, ok := v.(f.Ref); ok {
+		if _, arr := other.(*f.Array); arr {
+			r = e.Trim(r)
+			return r.Rows(), r.Cols()
+		}
+	}
+	return shape(v)
+}
+
 // sub returns rows r0..r1 and columns c0..c1 (inclusive, zero-based) of a
 // reference (as a reference) or array (as an array, or its element when
 // 1×1).

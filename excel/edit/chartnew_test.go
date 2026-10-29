@@ -366,3 +366,24 @@ func TestChartDataSourceSelectData(t *testing.T) {
 		t.Error("a hand-made series still gives one range")
 	}
 }
+
+// TestChartNoSeries checks that kind changes and series replacement work
+// on a chart with no series, including a combo chart.
+func TestChartNoSeries(t *testing.T) {
+	b := salesBook(t)
+	c := &model.Chart{Plots: []model.ChartPlot{newPlot(ColumnClustered), newPlot(LinePlain)}}
+	SetChartSeries(b.WB, c, "Data", nil) // used to index an empty kinds list
+	SetChartSeries(b.WB, c, "Data", []model.ChartSeries{{}, {}})
+	if len(c.AllSeries()) != 2 {
+		t.Errorf("series = %d, want 2", len(c.AllSeries()))
+	}
+	empty := &model.Chart{}
+	SetChartKind(b.WB, empty, "Data", LineMarkers)
+	if len(empty.Plots) != 1 || empty.Plots[0].Type != model.ChartLine || KindOf(empty) != LineMarkers {
+		t.Errorf("empty chart lost its kind: %+v", empty.Plots)
+	}
+	SetChartKind(b.WB, empty, "Data", ComboColumnLine)
+	if KindOf(empty) != ComboColumnLine || len(empty.AllSeries()) != 0 {
+		t.Errorf("empty combo: kind %v, %d series", KindOf(empty), len(empty.AllSeries()))
+	}
+}

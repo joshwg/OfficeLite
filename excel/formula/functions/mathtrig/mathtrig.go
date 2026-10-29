@@ -6,7 +6,6 @@ package mathtrig
 
 import (
 	"math"
-	"strings"
 
 	f "officelite/excel/formula"
 	"officelite/excel/model"
@@ -157,8 +156,7 @@ func nestedTotal(formula string) bool {
 	if formula == "" {
 		return false
 	}
-	u := strings.ToUpper(formula)
-	return strings.Contains(u, "SUBTOTAL(") || strings.Contains(u, "AGGREGATE(")
+	return f.CallsFunc(formula, "SUBTOTAL", "AGGREGATE")
 }
 
 // each visits the scalars of an argument like e.Each, optionally skipping

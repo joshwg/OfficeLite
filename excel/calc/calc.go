@@ -179,6 +179,10 @@ func (e *engine) store(k key, res formula.Result) {
 		e.setValue(sh, k.row, k.col, res.Value, res.Format)
 		return
 	}
+	if len(arr.V) == 0 || arr.Rows < 1 || arr.Cols < 1 {
+		e.setValue(sh, k.row, k.col, formula.ErrCalc, "") // an empty array is #CALC!
+		return
+	}
 	if !cell.Dynamic {
 		// A legacy (non-array) formula shows only the first element (its
 		// ranges were implicitly intersected; this is an array constant
@@ -505,8 +509,6 @@ func Evaluate(wb *model.Workbook, funcs *formula.Registry, src string, sheet, ro
 	e := newEngine(wb, funcs, now)
 	defer e.nf.Close()
 	env := formula.NewEnv(overrideCtx{e, o}, funcs, sheet, row, col)
-	if r, ok := env.Eval(n).(formula.Ref); ok {
-		ref = &r
-	}
-	return env.Evaluate(n).Value, ref
+	res, ref := env.EvaluateRef(n)
+	return res.Value, ref
 }

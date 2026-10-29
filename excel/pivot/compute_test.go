@@ -267,3 +267,18 @@ func TestNoAxisAndEmpty(t *testing.T) {
 		"\tSum of Sales\tSum of Qty\tSum of Sales\tSum of Qty\n"+
 		"\t45\t5\t28\t7\t73\t12\n")
 }
+
+// TestComputeUnsyncedFields checks that a report whose source gained
+// columns computes instead of panicking.
+func TestComputeUnsyncedFields(t *testing.T) {
+	src := source(t, [][]string{{"a", "b", "c"}, {"x", "1", "p"}, {"y", "2", "q"}})
+	pt := newPT(src)
+	pt.Fields = pt.Fields[:1]
+	pt.Rows = []int{2} // a column the report has no field for
+	if Compute(pt, src, nil) == nil {
+		t.Error("Compute returned nil")
+	}
+	if len(pt.Fields) != 1 {
+		t.Errorf("Compute changed the report's fields: %d", len(pt.Fields))
+	}
+}

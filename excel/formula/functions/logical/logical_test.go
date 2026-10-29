@@ -61,7 +61,9 @@ func TestLogical(t *testing.T) {
 		{"=REDUCE(FALSE,{FALSE,TRUE},OR)", true},
 		{"=SCAN(FALSE,{TRUE,TRUE},XOR)", ftest.Arr{{true, false}}},
 		{"=MAP({1,2},NOT,NOT)", ftest.Arr{{f.ErrValue, f.ErrValue}}}, // NOT takes one argument
-		{"=MAP({1,2},IF)", f.ErrName},                                // IF is not a function value
+		{"=MAP({1,2},IF)", ftest.Arr{{true, true}}},                  // IF is a lazy function value
+		{"=MAP({1,0},{\"a\",\"a\"},{\"b\",\"b\"},IF)", ftest.Arr{{"a", "b"}}},
+		{"=MAP({1,2},{\"a\",\"b\"},IFERROR)", ftest.Arr{{1.0, 2.0}}},
 		{"=AND", f.ErrCalc},
 	})
 }

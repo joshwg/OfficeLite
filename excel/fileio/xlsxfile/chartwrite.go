@@ -318,8 +318,16 @@ func (x *writer) rawChart(c *model.Chart, home string) ([]byte, bool) {
 		if !ok {
 			return nil, false
 		}
-		b.Write(raw.XML[last:sp.start])
-		b.WriteString(xmlEscape(formula0(ref)))
+		if sp.selfClosed {
+			// <c:f/> becomes <c:f>text</c:f>, keeping any attributes.
+			open := bytes.TrimRight(raw.XML[sp.tagStart:sp.start-2], " ")
+			b.Write(raw.XML[last:sp.tagStart])
+			b.Write(open)
+			b.WriteString(">" + xmlEscape(formula0(ref)) + "</" + elemPrefix(raw.XML[sp.tagStart:]) + "f>")
+		} else {
+			b.Write(raw.XML[last:sp.start])
+			b.WriteString(xmlEscape(formula0(ref)))
+		}
 		last = sp.end
 		if sp.cacheEnd > sp.cacheStart && sp.cacheStart >= sp.end {
 			if d := c.DataAt(at); d != nil && at.Plot != -3 && c.PivotSource == "" {
@@ -449,6 +457,9 @@ func (x *writer) chartXML(c *model.Chart, home string) string {
 			continue
 		}
 		b.WriteString(x.plotXML(p, th, home, c.PlotVisOnly))
+		if p.Type == model.ChartPie || p.Type == model.ChartDoughnut {
+			continue // plotXML gives these no axis IDs
+		}
 		for _, id := range p.AxisIDs {
 			written[id] = true
 		}

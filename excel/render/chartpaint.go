@@ -118,8 +118,9 @@ func (v *View) drawCharts(gtx layout.Context, p *pane) {
 	}
 	for _, c := range v.Sheet.Charts {
 		if c == v.SelChart {
-			v.drawChartFrame(gtx, v.chartScreenRect(p, c))
-			v.drawElemSelection(gtx, c)
+			rc := v.chartScreenRect(p, c)
+			v.drawChartFrame(gtx, rc)
+			v.drawElemSelection(gtx, c, rc)
 		}
 	}
 }
@@ -302,7 +303,7 @@ func (v *View) drawChartSheet(gtx layout.Context) layout.Dimensions {
 	v.paintChart(gtx, c, rc)
 	if v.SelChart == c {
 		v.drawChartFrame(gtx, rc)
-		v.drawElemSelection(gtx, c)
+		v.drawElemSelection(gtx, c, rc)
 	}
 	return layout.Dimensions{Size: v.size}
 }
@@ -477,11 +478,17 @@ func (v *View) ChartElementAt(c *model.Chart, x, y float32) ChartElem {
 // coordinates, from the last Draw), with the points of a series (the
 // middles of its bars or slices, its line's vertices) for its handles.
 func (v *View) ChartElementRect(c *model.Chart, e ChartElem) (image.Rectangle, []image.Point, bool) {
+	rc, _ := v.chartScreen(c, image.Pt(-1, -1))
+	return v.elementRect(c, e, rc)
+}
+
+// elementRect is ChartElementRect for the chart drawn at rc (the pane
+// being drawn, when panes are frozen).
+func (v *View) elementRect(c *model.Chart, e ChartElem, rc image.Rectangle) (image.Rectangle, []image.Point, bool) {
 	prims, ok := v.chartCache[c]
 	if !ok || v.scale == 0 {
 		return image.Rectangle{}, nil, false
 	}
-	rc, _ := v.chartScreen(c, image.Pt(-1, -1))
 	s := float32(v.scale)
 	to := func(x, y float32) image.Point {
 		return image.Pt(rc.Min.X+int(math.Round(float64(x*s))), rc.Min.Y+int(math.Round(float64(y*s))))
@@ -563,14 +570,14 @@ func segDist(a, b chartPt, x, y float32) float32 {
 	return float32(math.Sqrt(float64(ex*ex + ey*ey)))
 }
 
-// drawElemSelection marks the selected element of a chart drawn at rc:
+// drawElemSelection marks the selected element of chart c drawn at rc:
 // a frame with corner handles, or a series' points.
-func (v *View) drawElemSelection(gtx layout.Context, c *model.Chart) {
+func (v *View) drawElemSelection(gtx layout.Context, c *model.Chart, rc image.Rectangle) {
 	e := v.SelElem
 	if e.Kind <= ElemChartArea {
 		return
 	}
-	r, pts, ok := v.ChartElementRect(c, e)
+	r, pts, ok := v.elementRect(c, e, rc)
 	if !ok {
 		return
 	}

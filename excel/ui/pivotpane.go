@@ -292,6 +292,9 @@ func (a *App) paneEvents(gtx layout.Context, pt *model.PivotTable) {
 // coordinates).
 func (a *App) openChipMenu(pt *model.PivotTable, area, idx int, pos image.Point) {
 	n := len(areaEntries(pt, area))
+	if idx < 0 || idx >= n {
+		return // the area changed since the chip was drawn
+	}
 	move := func(dest, to int) func() {
 		return func() {
 			pt, _ := a.curPivot()
@@ -401,11 +404,13 @@ func (a *App) layoutPane(gtx layout.Context) layout.Dimensions {
 	})
 	// The chip being dragged follows the pointer.
 	if pr := pn.press; pr != nil && pr.moved {
-		label := entryLabel(pt, pr.area, areaEntries(pt, pr.area)[min(pr.idx, len(areaEntries(pt, pr.area))-1)])
-		o := op.Offset(pn.at.Round().Add(image.Pt(-gtx.Dp(20), -gtx.Dp(12)))).Push(gtx.Ops)
-		a.drawChip(gtx, label, true)
-		o.Pop()
-		pointer.CursorGrab.Add(gtx.Ops)
+		if es := areaEntries(pt, pr.area); len(es) > 0 { // the area may have emptied during the drag
+			label := entryLabel(pt, pr.area, es[min(max(pr.idx, 0), len(es)-1)])
+			o := op.Offset(pn.at.Round().Add(image.Pt(-gtx.Dp(20), -gtx.Dp(12)))).Push(gtx.Ops)
+			a.drawChip(gtx, label, true)
+			o.Pop()
+			pointer.CursorGrab.Add(gtx.Ops)
+		}
 	}
 	area.Pop()
 	if i := pn.menu.Layout(gtx, th); i >= 0 && i < len(pn.menuActs) && pn.menuActs[i] != nil {
@@ -420,6 +425,9 @@ func (a *App) paneFieldList(gtx layout.Context, pt *model.PivotTable, h int) lay
 	w := gtx.Constraints.Max.X
 	gui.FillRect(gtx.Ops, image.Rect(0, 0, w, h), chromeLine)
 	gui.FillRect(gtx.Ops, image.Rect(1, 1, w-1, h-1), colors.White)
+	if len(pn.checks) != len(pt.Fields) {
+		pn.checks = make([]widget.Clickable, len(pt.Fields)) // a click above may have synced the fields
+	}
 	q := strings.ToLower(strings.TrimSpace(pn.search.Text()))
 	var shown []int
 	for f := range pt.Fields {

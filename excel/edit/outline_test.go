@@ -316,3 +316,23 @@ func TestSubtotalAbove(t *testing.T) {
 		t.Error("no data: no error")
 	}
 }
+
+// TestSubtotalReplaceFailureRollsBack checks that a Subtotal that fails
+// after removing the old subtotal rows leaves the sheet and undo list alone.
+func TestSubtotalReplaceFailureRollsBack(t *testing.T) {
+	b := newBook()
+	b.enter(t, 0, "A1", "Region")
+	b.enter(t, 0, "A2", "East Total")
+	b.enter(t, 0, "C2", "=SUBTOTAL(9,C1:C1)")
+	undo := len(b.UndoLabels())
+	_, _, err := b.Subtotal(0, SubtotalSpec{Range: rng("A1", "C2"), GroupBy: 0, Func: 0, Cols: []int{2}, Replace: true})
+	if err != ErrSubtotalRange {
+		t.Fatalf("err = %v, want ErrSubtotalRange", err)
+	}
+	if got := b.cell(0, "A2").Text; got != "East Total" {
+		t.Errorf("A2 = %q after the failed Subtotal", got)
+	}
+	if n := len(b.UndoLabels()); n != undo {
+		t.Errorf("undo list grew from %d to %d", undo, n)
+	}
+}

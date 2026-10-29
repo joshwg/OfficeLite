@@ -235,7 +235,7 @@ func (x *writer) cacheXML(pt *model.PivotTable, src *pivot.Source, sheet int, rn
 	fmt.Fprintf(&b, `<pivotCacheDefinition xmlns="%s" xmlns:r="%s" r:id="rId1" refreshOnLoad="1" createdVersion="6" refreshedVersion="6" minRefreshableVersion="3" recordCount="%d">`, nsMain, nsRel, src.N)
 	b.WriteString(`<cacheSource type="worksheet"><worksheetSource`)
 	if _, _, ok := pivot.SplitSource(pt.Source); ok {
-		fmt.Fprintf(&b, ` ref="%s" sheet="%s"`, model.CellName(rng.R1, rng.C1)+":"+model.CellName(rng.R2, rng.C2), xmlEscape(x.wb.Sheets[sheet].Name))
+		fmt.Fprintf(&b, ` ref="%s" sheet="%s"`, model.CellName(rng.R1, rng.C1)+":"+model.CellName(rng.R2, rng.C2), xmlEscape(x.sheetName(sheet)))
 	} else {
 		fmt.Fprintf(&b, ` name="%s"`, xmlEscape(strings.TrimPrefix(pt.Source, "=")))
 	}
@@ -567,4 +567,13 @@ func (x *writer) tableXML(pt *model.PivotTable, src *pivot.Source, n int, fmtIDs
 	b.WriteString(`<extLst><ext uri="{962EF5D1-5CA2-4c93-8EF4-DBF5C05439D2}" xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main"><x14:pivotTableDefinition hideValuesRow="1" xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main"/></ext></extLst>`)
 	b.WriteString(`</pivotTableDefinition>`)
 	return b.String()
+}
+
+// sheetName is sheet's name as written to the file (sanitized, at most 31
+// characters), which pivot sources and chart references must match.
+func (x *writer) sheetName(sheet int) string {
+	if sheet >= 0 && sheet < len(x.names) {
+		return x.names[sheet]
+	}
+	return x.wb.Sheets[sheet].Name
 }

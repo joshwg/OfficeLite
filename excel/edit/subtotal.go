@@ -67,7 +67,7 @@ func SubtotalRange(sh *model.Sheet, sel model.Range) model.Range {
 // columns c1..c2: a row Subtotal added.
 func isSubtotalRow(sh *model.Sheet, r, c1, c2 int) bool {
 	for c := c1; c <= min(c2, sh.RowLen(r)-1); c++ {
-		if f := sh.Get(r, c).Formula; f != "" && strings.Contains(strings.ToUpper(f), "SUBTOTAL(") {
+		if f := sh.Get(r, c).Formula; f != "" && formula.CallsFunc(f, "SUBTOTAL") {
 			return true
 		}
 	}
@@ -188,10 +188,20 @@ func (b *Book) Subtotal(sheet int, spec SubtotalSpec) (model.Range, calc.Result,
 	b.BeginGroup()
 	defer b.EndGroup()
 	var res calc.Result
+	at, redo := len(b.undo), b.redo
+	// fail takes back what Replace already did, so an error changes nothing.
+	fail := func(err error) (model.Range, calc.Result, error) {
+		if n := len(b.undo) - at; n > 0 {
+			_, ur, _ := b.UndoN(n)
+			res = joinResults(res, ur)
+		}
+		b.redo = redo
+		return spec.Range, res, err
+	}
 	if spec.Replace {
 		var err error
 		if r, res, err = b.removeSubtotals(sheet, r); err != nil {
-			return r, res, err
+			return fail(err)
 		}
 	}
 	sh := b.WB.Sheets[sheet]
@@ -214,7 +224,7 @@ func (b *Book) Subtotal(sheet int, spec SubtotalSpec) (model.Range, calc.Result,
 		groups = append(groups, group{row, row})
 	}
 	if len(groups) == 0 {
-		return r, res, ErrSubtotalRange
+		return fail(ErrSubtotalRange)
 	}
 
 	// Where rows go in (before the row numbered so now), in order: a
@@ -244,7 +254,7 @@ func (b *Book) Subtotal(sheet int, spec SubtotalSpec) (model.Range, calc.Result,
 	}
 	sres, err := b.rowSet(sheet, ats, true)
 	if err != nil {
-		return r, res, err
+		return fail(err)
 	}
 	res = joinResults(res, sres)
 	// final is where an old row is now; ins[k] is at ins[k].at+k.

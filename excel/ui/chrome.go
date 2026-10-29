@@ -392,6 +392,22 @@ func (a *App) globalKeys(gtx layout.Context) {
 			case a.ch.dlg.kind != cdNone:
 				a.closeChartDialog() // chartdlg.go
 				continue
+			case a.fmtDlg.open:
+				a.fmtDlg.key = -1 // formatdialog.go closes it on the next layout
+				continue
+			case a.askDlg.open:
+				a.askDlg.key = -1
+				continue
+			case a.pv.dlg.open:
+				a.closePivotDialog() // pivotdlg.go
+				continue
+			case a.pv.menu.open:
+				a.closePivotMenu() // pivotmenu.go
+				continue
+			case a.pv.ctx.IsOpen() || a.pv.pane.menu.IsOpen():
+				a.pv.ctx.Close() // pivot menus (pivot.go, pivotpane.go)
+				a.pv.pane.menu.Close()
+				continue
 			case a.back.Visible:
 				a.back.Hide()
 				a.closing = false
@@ -401,10 +417,13 @@ func (a *App) globalKeys(gtx layout.Context) {
 				a.finishTitleEdit(false) // chart.go
 			case a.ed.active:
 				a.cancelEdit()
+			case a.home.painterClip != nil:
+				a.stopPainter() // Format Painter (format.go)
+				continue
 			case a.state().view.SelElem.Kind > render.ElemChartArea && a.state().view.SelChart != nil:
 				a.state().view.SelElem = render.ChartElem{Kind: render.ElemChartArea} // a chart's part, then the chart
 			default:
-				a.clip = nil
+				a.clip, a.ch.clip = nil, nil
 				a.state().view.SelChart, a.state().view.SelElem = nil, render.ChartElem{}
 			}
 			a.grid.focusPending = true

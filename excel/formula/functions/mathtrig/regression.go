@@ -391,8 +391,13 @@ func (d *linData) solve(withConst bool) (*fit, f.Value) {
 	if withConst {
 		ft.df--
 	}
-	ft.r2 = ft.ssreg / (ft.ssreg + ft.ssresid)
-	ft.sey = math.Sqrt(ft.ssresid / ft.df)
+	ft.r2 = 1 // a constant y is fitted exactly
+	if sst := ft.ssreg + ft.ssresid; sst > 0 {
+		ft.r2 = ft.ssreg / sst
+	}
+	if ft.df > 0 {
+		ft.sey = math.Sqrt(ft.ssresid / ft.df)
+	} // else an exact fit with no spare degrees of freedom: sey stays 0
 	ft.fstat = (ft.ssreg / float64(p)) / (ft.ssresid / ft.df)
 	for c, j := range keep {
 		ft.se[j] = ft.sey * math.Sqrt(cov(c, c))

@@ -89,7 +89,13 @@ func (c Criteria) Match(v Value) bool {
 	case c.err != "":
 		e, ok := v.(Error)
 		eq := ok && e == c.err
-		return eq == (c.op == "=") || (c.op == "<>" && !eq)
+		switch c.op {
+		case "=":
+			return eq
+		case "<>":
+			return !eq
+		}
+		return false // errors have no order: ">#N/A" matches nothing
 	case c.empty:
 		blank := false
 		switch x := v.(type) {

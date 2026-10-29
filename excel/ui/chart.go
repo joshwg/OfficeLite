@@ -507,7 +507,8 @@ func (a *App) copyChart(gtx layout.Context, cut bool) bool {
 		return false
 	}
 	v := &a.state().view
-	a.ch.clip = c.Clone()
+	clip := c.Clone()
+	a.ch.clip = clip
 	if idx < 0 {
 		a.ch.clipW, a.ch.clipH = newChartW, newChartH
 		a.ch.clip.Anchor = model.Anchor{}
@@ -524,6 +525,7 @@ func (a *App) copyChart(gtx layout.Context, cut bool) bool {
 	if cut && idx >= 0 {
 		v.SelElem = render.ChartElem{}
 		a.deleteSelectedChart()
+		a.ch.clip = clip // the deletion was a change, which ends copy mode
 	}
 	return true
 }
@@ -556,7 +558,9 @@ func (a *App) pasteChart(text string) bool {
 	}
 	c.Anchor = render.ChartAnchor(base, v.Geo, x0, y0, x0+a.ch.clipW, y0+a.ch.clipH)
 	i, res := a.book.AddChart(a.active, c)
+	clip := a.ch.clip
 	a.changed(res)
+	a.ch.clip = clip // paste keeps the copy
 	a.selectChart(i, render.ChartElem{Kind: render.ElemChartArea})
 	return true
 }

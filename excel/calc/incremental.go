@@ -359,7 +359,7 @@ func (c *Calculator) Update(changed []Area, now time.Time) Result {
 				anchor := [2]int{k.row, k.col}
 				for r := rng.R1; r <= rng.R2; r++ {
 					for col := rng.C1; col <= rng.C2; col++ {
-						if [2]int{r, col} == anchor || (round == 0 && edited(k.sheet, r, col)) {
+						if [2]int{r, col} == anchor || edited(k.sheet, r, col) {
 							continue
 						}
 						if cell := sh.Get(r, col); cell.Formula == "" && cell.Kind != model.KindEmpty {

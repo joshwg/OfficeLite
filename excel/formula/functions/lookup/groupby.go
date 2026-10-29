@@ -28,7 +28,11 @@ func aggFns(v f.Value) ([]aggFn, f.Value) {
 	}
 	_, labelled := arr.At(arr.Rows-1, 0).(*f.Lambda)
 	labelled = !labelled && arr.Rows == 2
-	if arr.Cols == 1 && !labelled || arr.Cols == 2 && arr.Rows > 2 {
+	_, topRight := arr.At(0, arr.Cols-1).(*f.Lambda)
+	// A 2×2 {fn, label; fn, label} is two functions with labels in a column
+	// layout; {fn, fn; label, label} is the row layout.
+	pairs := arr.Rows == 2 && arr.Cols == 2 && !labelled && !topRight
+	if arr.Cols == 1 && !labelled || arr.Cols == 2 && arr.Rows > 2 || pairs {
 		arr = transposed(arr) // a column of functions, laid out as a row
 	}
 	if arr.Rows > 2 {

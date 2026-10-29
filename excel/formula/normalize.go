@@ -36,7 +36,7 @@ func Normalize(f string) (string, error) {
 		if t.name != "" {
 			return t.text
 		}
-		return t.prefix + strings.ToUpper(t.text[len(t.prefix):])
+		return t.prefix + upperRefBody(t.text[len(t.prefix):])
 	})
 	var b strings.Builder
 	b.Grow(len(f))
@@ -64,4 +64,23 @@ func Normalize(f string) (string, error) {
 		}
 	}
 	return b.String(), nil
+}
+
+// upperRefBody upper-cases the cell part of a reference after its sheet
+// prefix, leaving the sheet name of a second qualified end alone
+// ('my sheet'!a1:'my sheet'!b2).
+func upperRefBody(s string) string {
+	a, b, ok := strings.Cut(s, ":")
+	if !ok {
+		return strings.ToUpper(s)
+	}
+	pre := ""
+	if len(b) > 0 && b[0] == '\'' {
+		if j := skipQuoted(b, 0); j < len(b) && b[j] == '!' {
+			pre, b = b[:j+1], b[j+1:]
+		}
+	} else if j := strings.IndexByte(b, '!'); j >= 0 {
+		pre, b = b[:j+1], b[j+1:]
+	}
+	return strings.ToUpper(a) + ":" + pre + strings.ToUpper(b)
 }

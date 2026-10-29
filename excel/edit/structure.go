@@ -100,18 +100,23 @@ func (b *Book) InsertSheet(at int) (string, error) {
 // DeleteSheet deletes a sheet. References to it become #REF!.
 func (b *Book) DeleteSheet(sheet int) (calc.Result, error) {
 	defer b.Op("Delete Sheet")()
-	visible := 0
-	for i, sh := range b.WB.Sheets {
-		if !sh.Hidden && i != sheet {
-			visible++
-		}
-	}
-	if visible == 0 {
-		return calc.Result{}, errors.New("A workbook must contain at least one visible worksheet")
+	if err := b.canDeleteSheet(sheet); err != nil {
+		return calc.Result{}, err
 	}
 	// Undo selects the sheet put back; redo the one now at its place (the
 	// next sheet, or the last), as deleting does (the caller clamps).
 	return b.structural(&structural{kind: deleteSheet, sheet: sheet}, Where{Sheet: sheet})
+}
+
+// canDeleteSheet is nil when sheet can be deleted: a workbook keeps at
+// least one visible sheet.
+func (b *Book) canDeleteSheet(sheet int) error {
+	for i, sh := range b.WB.Sheets {
+		if !sh.Hidden && i != sheet {
+			return nil
+		}
+	}
+	return errors.New("A workbook must contain at least one visible worksheet")
 }
 
 // RenameSheet renames a sheet and the references to it.

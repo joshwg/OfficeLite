@@ -222,6 +222,16 @@ type computer struct {
 // Compute lays out report pt over source src. Number cells get their
 // text from nf.
 func Compute(pt *model.PivotTable, src *Source, nf *numfmt.Formatter) *Result {
+	if len(pt.Fields) < len(src.Fields) {
+		// The source gained columns since the report was synced: compute on
+		// a copy with a blank field for each new column.
+		cp := *pt
+		cp.Fields = slices.Clone(pt.Fields)
+		for _, f := range src.Fields[len(pt.Fields):] {
+			cp.Fields = append(cp.Fields, model.PivotField{Name: f.Name})
+		}
+		pt = &cp
+	}
 	c := &computer{pt: pt, src: src, nf: nf, order: map[int][]int{}}
 	c.rowAxis, c.colAxis = pt.Rows, pt.Cols
 	c.filter()

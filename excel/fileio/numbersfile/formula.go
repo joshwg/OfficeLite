@@ -111,7 +111,7 @@ func (tr *translator) translate(f iwork.Message, t *iwork.Table, row, col int) (
 		return o, nil
 	}
 	popn := func(n int) ([]string, error) {
-		if n > len(stack) {
+		if n < 0 || n > len(stack) {
 			return nil, errUntranslatable
 		}
 		args := make([]string, n)
@@ -267,8 +267,13 @@ func (tr *translator) reference(n iwork.Message, t *iwork.Table, row, col int) (
 		}
 		r1, r2, okR := span(sticky.Bool(1), tract.Msgs(4), tract.Msgs(2), row)
 		c1, c2, okC := span(sticky.Bool(2), tract.Msgs(3), tract.Msgs(1), col)
-		if !okR || !okC || r1 < 0 || c1 < 0 || r2 >= 0x7fff || c2 >= 0x7fff {
-			return operand{}, errUntranslatable // whole rows or columns
+		if !okR || !okC || min(r1, c1, r2, c2) < 0 || max(r1, c1, r2, c2) >= 0x7fff {
+			return operand{}, errUntranslatable // whole rows or columns, or out of range
+		}
+		if sticky.Bool(1) != sticky.Bool(3) || sticky.Bool(2) != sticky.Bool(4) {
+			// A$1:A5: the two ends mix absolute and relative coordinates, and
+			// span reads the lists by the start's kind only.
+			return operand{}, errUntranslatable
 		}
 		ref := cell(r1, c1, sticky.Bool(1), sticky.Bool(2))
 		if r2 != r1 || c2 != c1 {

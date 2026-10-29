@@ -34,6 +34,7 @@ type Book struct {
 	// BeginGroup.
 	grouping bool
 	groupAt  int
+	depth    int // nested BeginGroup calls open
 	// label names the changes recorded now in the Undo list; see Op.
 	label string
 }
@@ -130,6 +131,7 @@ func (b *Book) UndoN(n int) (Where, calc.Result, bool) {
 		b.redo = append(b.redo, ch)
 		where, res, ok = ch.where, joinResults(res, b.revert(ch)), true
 	}
+	where.Sheet = min(where.Sheet, len(b.WB.Sheets)-1)
 	return where, res, ok
 }
 
@@ -146,6 +148,7 @@ func (b *Book) RedoN(n int) (Where, calc.Result, bool) {
 		b.undo = append(b.undo, ch)
 		where, res, ok = ch.where, joinResults(res, b.reapply(ch)), true
 	}
+	where.Sheet = min(where.Sheet, len(b.WB.Sheets)-1) // the last sheet may be gone
 	return where, res, ok
 }
 
@@ -277,15 +280,22 @@ func joinResults(a, b calc.Result) calc.Result {
 
 // BeginGroup starts collecting the changes made until EndGroup into one
 // undo step (a command applied to each range of a multiple selection).
+// Groups nest: only the outermost EndGroup closes the step.
 func (b *Book) BeginGroup() {
-	b.grouping, b.groupAt = true, len(b.undo)
+	if b.depth == 0 {
+		b.grouping, b.groupAt = true, len(b.undo)
+	}
+	b.depth++
 }
 
 // EndGroup ends a group: its changes undo and redo together, and Undo
 // selects where the last of them was.
 func (b *Book) EndGroup() {
-	if !b.grouping {
+	if b.depth == 0 {
 		return
+	}
+	if b.depth--; b.depth > 0 {
+		return // an outer group is still collecting
 	}
 	b.grouping = false
 	if n := len(b.undo) - b.groupAt; n > 1 {

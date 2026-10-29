@@ -110,7 +110,7 @@ func TestParseErrors(t *testing.T) {
 		}
 	}
 	for _, src := range []string{"=_xlfn.XLOOKUP(1,A:A,B:B)", "=SUM(Sheet1!$A$1:$B$2)", "=LOG10(100)",
-		"=A1#", "=IF(A1,,)", "='It''s'!A1", "=LAMBDA(_xlpm.x,_xlpm.x+1)(2)", "={1,-2;\"a\",TRUE}", "=$A:$A", "=1:3"} {
+		"=A1#", "=A1#:B2", "=A1:B2#", "=SUM(A1#:C1#)", "=IF(A1,,)", "='It''s'!A1", "=LAMBDA(_xlpm.x,_xlpm.x+1)(2)", "={1,-2;\"a\",TRUE}", "=$A:$A", "=1:3"} {
 		if _, err := Parse(src); err != nil {
 			t.Errorf("Parse(%q): %v", src, err)
 		}
@@ -245,5 +245,98 @@ func TestLiftedResultsAreScalars(t *testing.T) {
 	a, ok = ctx.Eval("=SEQ({2,3})").(*Array)
 	if !ok || !sameValue(a.At(0, 0), Number(1)) || !sameValue(a.At(0, 1), Number(1)) {
 		t.Errorf("lifted nested arrays = %#v", a)
+	}
+}
+
+// TestSpillRangeShape checks that # binds tighter than ':'.
+func TestSpillRangeShape(t *testing.T) {
+	a, _ := Parse("A1#:B2")
+	if b, ok := a.(binaryNode); !ok || b.op != ":" {
+		t.Errorf("A1#:B2 parsed as %#v", a)
+	} else if _, ok := b.l.(spillNode); !ok {
+		t.Errorf("A1#:B2 left is %#v", b.l)
+	}
+	a, _ = Parse("A1:B2#")
+	if b, ok := a.(binaryNode); !ok || b.op != ":" {
+		t.Errorf("A1:B2# parsed as %#v", a)
+	} else if _, ok := b.r.(spillNode); !ok {
+		t.Errorf("A1:B2# right is %#v", b.r)
+	}
+}
+
+// TestLexSheetAndColumnLimits checks sheet names that look like cells,
+// names past XFD, and the sheet of chained ranges.
+func TestLexSheetAndColumnLimits(t *testing.T) {
+	for _, src := range []string{"=S1!A1", "=Day1!A1:B2", "=XFE1!A1", "=FY26!A:A"} {
+		if _, err := Parse(src); err != nil {
+			t.Errorf("Parse(%q): %v", src, err)
+		}
+	}
+	for _, name := range []string{"S1", "XFE1", "Day1"} {
+		if _, err := Parse("=" + QuoteSheet(name) + "!A1"); err != nil {
+			t.Errorf("QuoteSheet(%q) does not round-trip: %v", name, err)
+		}
+	}
+	if _, ok := mustParse(t, "=LET(xml1,2,xml1+1)").(callNode); !ok {
+		t.Errorf("LET with a name past XFD did not parse as a call")
+	}
+	n := mustParse(t, "=Sheet1!A1:B2:C3")
+	b, ok := n.(binaryNode)
+	if r, rok := b.r.(refNode); !ok || !rok || r.sheet != "Sheet1" {
+		t.Errorf("chained range lost its sheet: %#v", n)
+	}
+}
+
+func mustParse(t *testing.T, src string) Node {
+	n, err := Parse(src)
+	if err != nil {
+		t.Fatalf("Parse(%q): %v", src, err)
+	}
+	return n
+}
+
+// TestNameScopeIsolation checks that a defined name can't see the LET
+// variables of the formula that uses it.
+func TestNameScopeIsolation(t *testing.T) {
+	ctx := NewTestContext(NewRegistry())
+	ctx.Names["NM"] = "x+1"
+	if v := EvalString("LET(x,5,NM)", ctx, NewRegistry(), 0, 0, 0); v != ErrName {
+		t.Errorf("LET(x,5,NM) = %v, want #NAME?", v)
+	}
+}
+
+// TestNormalizeSecondSheet checks that a second qualified end keeps its
+// sheet name's case.
+func TestNormalizeSecondSheet(t *testing.T) {
+	got, err := Normalize("='my sheet'!a1:'my sheet'!b2")
+	if err != nil || got != "='my sheet'!A1:'my sheet'!B2" {
+		t.Errorf("Normalize = %q, %v", got, err)
+	}
+}
+
+// TestNum1904 checks text arithmetic in the 1904 date system.
+func TestNum1904(t *testing.T) {
+	ctx := NewTestContext(NewRegistry())
+	ctx.Use1904 = true
+	if v := EvalString(`"1902-05-01"+1`, ctx, NewRegistry(), 0, 0, 0); v != ErrValue {
+		t.Errorf("1902 date text + 1 = %v, want #VALUE!", v)
+	}
+	if v := EvalString(`"5"+1`, ctx, NewRegistry(), 0, 0, 0); v != Number(6) {
+		t.Errorf(`"5"+1 = %v, want 6`, v)
+	}
+	if v := EvalString(`"1904-01-02"+0`, ctx, NewRegistry(), 0, 0, 0); v != Number(1) {
+		t.Errorf("1904-01-02 = %v, want 1", v)
+	}
+}
+
+// TestCallsFunc checks that function detection looks at calls, not text.
+func TestCallsFunc(t *testing.T) {
+	for src, want := range map[string]bool{
+		"SUBTOTAL(9,A1:A3)": true, "=SUBTOTAL(9,A1:A3)": true, "1+subtotal(9,A1)": true,
+		`"SUBTOTAL("&A1`: false, "MYSUBTOTAL(1)": false, "SUM(A1)": false,
+	} {
+		if got := CallsFunc(src, "SUBTOTAL", "AGGREGATE"); got != want {
+			t.Errorf("CallsFunc(%q) = %v, want %v", src, got, want)
+		}
 	}
 }

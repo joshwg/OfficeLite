@@ -872,8 +872,10 @@ func (it *xPlotItem) AxID0() int {
 // cache that follows it is (cacheEnd 0 when none), and what it is.
 type refSpan struct {
 	at                   model.RawRef
-	start, end           int // the f element's text
-	cacheStart, cacheEnd int // the numCache/strCache element after it
+	start, end           int  // the f element's text
+	tagStart             int  // where the f element starts, when selfClosed
+	selfClosed           bool // <c:f/>: no text to replace, the tag must be opened
+	cacheStart, cacheEnd int  // the numCache/strCache element after it
 	cacheNum             bool
 }
 
@@ -915,7 +917,9 @@ func chartRefSpans(data []byte) ([]refSpan, bool) {
 				case n == "ser" && strings.HasSuffix(parent, "Chart"):
 					ser++
 				case n == "f":
-					out = append(out, refSpan{at: refContext(stack, plot, ser, axis), start: int(d.InputOffset())})
+					at := int(d.InputOffset())
+					out = append(out, refSpan{at: refContext(stack, plot, ser, axis), start: at, tagStart: before,
+						selfClosed: at >= 2 && string(data[at-2:at]) == "/>"})
 					cur, inF = len(out)-1, true
 				case (n == "numCache" || n == "strCache") && cur >= 0 && !inF && (parent == "numRef" || parent == "strRef"):
 					out[cur].cacheStart, out[cur].cacheNum = before, n == "numCache"

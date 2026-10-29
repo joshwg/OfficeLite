@@ -391,13 +391,14 @@ func (a *App) changed(res calc.Result) {
 	a.bs.info = infoCache{}
 	a.errMsg = ""
 	a.notice = ""
-	// As in Excel, any change ends cut or copy mode (paste keeps a copy).
-	a.clip = nil
+	// As in Excel, any change ends cut or copy mode (paste keeps a copy);
+	// a copied chart goes the same way.
+	a.clip, a.ch.clip = nil, nil
 	if w := circularWarning(res); w != nil {
 		a.notice = w[0]
 	}
 	if a.win != nil {
-		a.win.Option(windowTitle(a.wb.Name))
+		a.win.Option(windowTitle(a.docName()))
 	}
 	a.refreshCircles() // validation.go
 }

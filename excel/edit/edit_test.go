@@ -381,3 +381,46 @@ func TestSheets(t *testing.T) {
 		t.Error("deleted the last sheet")
 	}
 }
+
+// TestCutPasteCrossSheet checks that a block cut to another sheet keeps
+// its intra-block references, still reads the cells left behind, and that
+// formulas elsewhere follow the block; and that pasting past the used area
+// shifts formulas too.
+func TestCutPasteCrossSheet(t *testing.T) {
+	b := newBook()
+	b.enter(t, 0, "A1", "1")
+	b.enter(t, 0, "A2", "=A1*2") // inside the block: A1 moves with it
+	b.enter(t, 0, "A3", "=D4+1") // D4 stays behind
+	b.enter(t, 0, "D4", "5")
+	b.enter(t, 0, "F1", "=A1") // outside, points at the block
+	b.Paste(b.Copy(0, rng("A1", "A3"), true), 1, rng("B2", "B2"))
+	for ref, want := range map[string]string{"B3": "B2*2", "B4": "Sheet1!D4+1"} {
+		if got := b.cell(1, ref).Formula; got != want {
+			t.Errorf("Data!%s = %q, want %q", ref, got, want)
+		}
+	}
+	if got := b.cell(0, "F1").Formula; got != "Data!B2" {
+		t.Errorf("F1 = %q, want Data!B2", got)
+	}
+	// Past the used rows and columns of the sheet.
+	b2 := newBook()
+	b2.enter(t, 0, "A1", "1")
+	b2.enter(t, 0, "A2", "=A1+1")
+	b2.Paste(b2.Copy(0, rng("A1", "A2"), true), 0, rng("J20", "J20"))
+	if got := b2.cell(0, "J21").Formula; got != "J20+1" {
+		t.Errorf("J21 = %q, want J20+1", got)
+	}
+}
+
+// TestPasteEmptyClip checks that an empty or missing clip is an error.
+func TestPasteEmptyClip(t *testing.T) {
+	b := newBook()
+	for _, clip := range []*Clip{nil, {}, {Cells: [][]model.Cell{{}}}} {
+		if _, _, err := b.Paste(clip, 0, rng("A1", "A1")); err != ErrEmptyClip {
+			t.Errorf("Paste(%v) err = %v", clip, err)
+		}
+		if _, _, err := b.PasteSpecial(clip, 0, rng("A1", "A1"), PasteValues); err != ErrEmptyClip {
+			t.Errorf("PasteSpecial(%v) err = %v", clip, err)
+		}
+	}
+}

@@ -67,6 +67,7 @@ type writer struct {
 	// sheets' placeholder worksheets).
 	dropParts   []string
 	activeSheet int
+	names       []string // the sheets' names as written (sheetNames)
 }
 
 // sheetPatch is what the second pass changes in one worksheet: the <cols>
@@ -114,6 +115,7 @@ func (x *writer) build() error {
 	// Workbook-level settings first: SetSheetVisible reads every worksheet,
 	// which no longer works once a StreamWriter has flushed one.
 	names := sheetNames(sheets)
+	x.names = names
 	if err := f.SetSheetName("Sheet1", names[0]); err != nil {
 		return err
 	}

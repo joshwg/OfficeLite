@@ -253,6 +253,9 @@ func (a *App) pointDrag(st *sheetState, pos f32.Point) {
 		return
 	}
 	v := &st.view
+	// Over a header, corner or outline gutter the hit has no row or column
+	// of its own (it reads 0): keep the pointer on the cells.
+	pos.X, pos.Y = max(pos.X, float32(v.HdrW())), max(pos.Y, float32(v.HdrH()))
 	hit := v.HitTest(pos.X, pos.Y)
 	a.putRef(a.caretEditor(), p.start, p.end, hit)
 	v.EnsureVisible(min(max(hit.Row, 0), model.MaxRows-1), min(max(hit.Col, 0), model.MaxCols-1))

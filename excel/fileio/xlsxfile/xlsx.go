@@ -485,13 +485,13 @@ func (r *reader) readSheet(name string, sh *model.Sheet) error {
 					sh.FreezeRows = int(parseFloat(attr(t, "ySplit")))
 				}
 			case "row":
-				if n, err := strconv.Atoi(attr(t, "r")); err == nil {
+				if n, err := strconv.Atoi(attr(t, "r")); err == nil && n >= 1 {
 					row = n - 1
 				} else {
 					row++
 				}
 				col = -1
-				if row < model.MaxRows {
+				if row >= 0 && row < model.MaxRows {
 					ht := attr(t, "ht")
 					if xmlBool(attr(t, "hidden")) {
 						sh.RowHeight[row] = 0
@@ -581,17 +581,26 @@ func (r *reader) readSheet(name string, sh *model.Sheet) error {
 				if c.IsBlank() && c.Style == 0 {
 					continue
 				}
+				var spill *model.Range
 				if fArray != "" && f != "" {
 					if rng, ok := parseRange(fArray); ok {
-						c.Dynamic = true
-						sh.Spills[[2]int{row, col}] = rng
+						spill = &rng
 					} else if rr, cc, ok := parseCellRef(fArray); ok {
+						spill = &model.Range{R1: rr, C1: cc, R2: rr, C2: cc}
+					}
+					if spill != nil && (spill.R2 >= model.MaxRows || spill.C2 >= model.MaxCols) {
+						spill = nil // past what the model holds
+					}
+					if spill != nil {
 						c.Dynamic = true
-						sh.Spills[[2]int{row, col}] = model.Range{R1: rr, C1: cc, R2: rr, C2: cc}
 					}
 				}
-				if !sh.Set(row, col, c) && c.Kind != model.KindEmpty {
-					dropped++
+				if !sh.Set(row, col, c) {
+					if c.Kind != model.KindEmpty {
+						dropped++
+					}
+				} else if spill != nil {
+					sh.Spills[[2]int{row, col}] = *spill
 				}
 			}
 		}

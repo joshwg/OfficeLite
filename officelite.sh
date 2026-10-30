@@ -3,6 +3,7 @@
 #
 #   ./officelite.sh [--excel|--word] [file ...]    build (if needed) and open
 #   ./officelite.sh --linux [...]                  native Linux build instead
+#   ./officelite.sh --apple                        build for Apple Silicon
 #   ./officelite.sh --build                        build only
 #
 # Under WSL the default is the native Windows .exe (no extra packages needed;
@@ -25,10 +26,20 @@ fi
 case "${1:-}" in
 --linux) target=linux; shift ;;
 --windows) target=windows; shift ;;
+--apple) target=apple; shift ;;
 --build) build_only=true; shift ;;
 esac
 
-if [[ $target == windows ]]; then
+if [[ $target == apple ]]; then
+    if [[ $(go env GOOS) != darwin ]]; then
+        echo "--apple requires macOS and its Apple SDK to build for Apple Silicon." >&2
+        exit 1
+    fi
+    exe="$ROOT/bin/OfficeLite-Apple-Silicon"
+    GOOS=darwin GOARCH=arm64 go build -o "$exe" ./cmd/officelite
+    echo "built $exe"
+    exit 0
+elif [[ $target == windows ]]; then
     exe="$ROOT/bin/OfficeLite.exe"
     GOOS=windows GOARCH=amd64 go build -ldflags "-H windowsgui" -o "$exe" ./cmd/officelite
     $build_only && { echo "built $exe"; exit 0; }

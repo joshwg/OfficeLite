@@ -69,6 +69,7 @@ and font cache.
 ./officelite.sh --word                     # blank document
 ./officelite.sh --excel notes.txt          # force spreadsheet (or --word)
 ./officelite.sh --linux file.csv           # native Linux build (needs GUI headers)
+./officelite.sh --apple                    # build for Apple Silicon
 ./officelite.sh --build                    # build only
 ```
 
@@ -81,7 +82,10 @@ and a text box, and Complex-Layout.docx is WordLite's `.docx` save of it).
 Under WSL the default is a native Windows executable (`bin/OfficeLite.exe`),
 which needs nothing beyond Go. The Linux build uses CGO and the X11/Wayland
 headers; `officelite.sh --linux` prints the `apt install` line if they are
-missing.
+missing. On macOS, `officelite.sh --apple` builds a macOS arm64 executable at
+`bin/OfficeLite-Apple-Silicon` and exits without launching it. The build
+requires the Apple SDK; its output is separate from the Windows and Linux
+binaries.
 
 ### Menu bar, Home ribbon and File page
 

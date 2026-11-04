@@ -557,7 +557,6 @@ func (e *Engine) placePara(pl *Para, sp paraSpacing, nextFirst float64) {
 		}
 		if need > 0 && e.y+need > bottom && need <= bottom-e.textTop() {
 			e.nextColumn()
-			bottom = e.textBottom()
 			before = 0
 		}
 	}
@@ -566,7 +565,6 @@ func (e *Engine) placePara(pl *Para, sp paraSpacing, nextFirst float64) {
 	if b := sp.top; b != nil {
 		if !e.empty && e.y+topB+lines[0].Height > bottom+0.01 {
 			e.nextColumn()
-			bottom = e.textBottom()
 		}
 		e.page.Fills = append(e.page.Fills, borderFill(pl, b, e.textLeft(), e.textWidth(), e.y))
 		e.y += topB

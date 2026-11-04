@@ -278,7 +278,7 @@ func find(a []f.Value, search bool) f.Value {
 		}
 		return f.Number(start)
 	}
-	if start < 1 || start > len(t) && !(len(t) == 0 && start == 1) {
+	if start < 1 || start > len(t) && (len(t) != 0 || start != 1) {
 		return f.ErrValue // (an empty string still lets "*" match at 1)
 	}
 	if search {

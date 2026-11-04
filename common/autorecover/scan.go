@@ -4,6 +4,7 @@
 package autorecover
 
 import (
+	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -67,7 +68,9 @@ func Orphans(dir string) []Entry {
 		known[strings.TrimSuffix(name, ".json")] = true
 		if err != nil {
 			if old(e.Sidecar, strayAge) {
-				os.Remove(e.Sidecar) // damaged
+				if err := os.Remove(e.Sidecar); err != nil && !os.IsNotExist(err) {
+					log.Printf("remove damaged AutoRecover sidecar %s: %v", e.Sidecar, err)
+				}
 			}
 			continue
 		}
@@ -87,7 +90,9 @@ func Orphans(dir string) []Entry {
 		ext := filepath.Ext(name)
 		stray := ext == ".tmp" || ((ext == ".xlsx" || ext == ".docx") && !known[strings.TrimSuffix(name, ext)])
 		if p := filepath.Join(dir, name); stray && !de.IsDir() && old(p, strayAge) {
-			os.Remove(p)
+			if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+				log.Printf("remove stale AutoRecover file %s: %v", p, err)
+			}
 		}
 	}
 	slices.SortFunc(out, func(a, b Entry) int { return b.Saved.Compare(a.Saved) })
@@ -133,6 +138,9 @@ func Release(e Entry) error {
 
 // Discard deletes a recovery copy and its sidecar.
 func Discard(e Entry) {
-	os.Remove(e.Copy)
-	os.Remove(e.Sidecar)
+	for _, path := range []string{e.Copy, e.Sidecar} {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			log.Printf("remove AutoRecover file %s: %v", path, err)
+		}
+	}
 }

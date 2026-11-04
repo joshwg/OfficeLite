@@ -60,7 +60,7 @@ func Preview(gtx layout.Context, fonts *gui.FontLibrary, list *recent.List, doc 
 	case "context", "colresize", "dragtext":
 		// These need the page view laid out once to place themselves.
 		d.layout(gtx)
-		gtx.Ops.Reset()
+		gtx.Reset()
 		d.previewMouse(dialog)
 	}
 	d.layout(gtx)

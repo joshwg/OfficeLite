@@ -204,9 +204,10 @@ func (r *reader) readPivot(part string, sh *model.Sheet) (*model.PivotTable, err
 			if f.Compact == "0" {
 				compact = false
 			}
-			if f.Outline == "0" {
+			switch f.Outline {
+			case "0":
 				outline = false
-			} else if f.Outline == "1" {
+			case "1":
 				outline = true
 			}
 			if f.SubtotalTop == "0" {

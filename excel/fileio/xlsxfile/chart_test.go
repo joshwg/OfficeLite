@@ -39,9 +39,18 @@ func parts(t *testing.T, data []byte) map[string]string {
 	}
 	out := map[string]string{}
 	for _, f := range zr.File {
-		rc, _ := f.Open()
-		b, _ := io.ReadAll(rc)
-		rc.Close()
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, readErr := io.ReadAll(rc)
+		closeErr := rc.Close()
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if closeErr != nil {
+			t.Fatal(closeErr)
+		}
 		out[f.Name] = string(b)
 	}
 	return out

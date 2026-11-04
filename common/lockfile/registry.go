@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"log"
 	"net"
 	"os"
 	"path/filepath"
@@ -125,7 +126,7 @@ func (d *Doc) unregister() {
 	}
 	reg.Unlock()
 	if d.entry != "" {
-		os.Remove(d.entry)
+		_ = os.Remove(d.entry)
 	}
 	d.entry, d.key = "", ""
 }
@@ -234,7 +235,9 @@ func others(k string) []entry {
 			continue
 		}
 		if !pidAlive(e.PID) {
-			os.Remove(name)
+			if err := os.Remove(name); err != nil && !os.IsNotExist(err) {
+				log.Printf("remove stale open-document entry %s: %v", name, err)
+			}
 			continue
 		}
 		out = append(out, e)
@@ -276,8 +279,10 @@ func serve(ln net.Listener, token string) {
 			return
 		}
 		go func() {
-			defer c.Close()
-			c.SetDeadline(time.Now().Add(handOffTimeout))
+			defer func() { _ = c.Close() }()
+			if err := c.SetDeadline(time.Now().Add(handOffTimeout)); err != nil {
+				return
+			}
 			r := bufio.NewReader(&limitedConn{c, 8 << 10})
 			tok, err1 := r.ReadString('\n')
 			path, err2 := r.ReadString('\n')
@@ -287,11 +292,15 @@ func serve(ln net.Listener, token string) {
 			k := key(strings.TrimSuffix(path, "\n"))
 			d := inProcess(k)
 			if d == nil {
-				c.Write([]byte("no\n"))
+				if _, err := c.Write([]byte("no\n")); err != nil {
+					return
+				}
 				return
 			}
 			d.raise()
-			c.Write([]byte("ok\n"))
+			if _, err := c.Write([]byte("ok\n")); err != nil {
+				return
+			}
 		}()
 	}
 }
@@ -327,11 +336,13 @@ func handOff(e entry, path string) bool {
 	if err != nil {
 		return false
 	}
-	defer c.Close()
-	c.SetDeadline(time.Now().Add(handOffTimeout))
+	defer func() { _ = c.Close() }()
+	if err := c.SetDeadline(time.Now().Add(handOffTimeout)); err != nil {
+		return false
+	}
 	if _, err := c.Write([]byte(e.Token + "\n" + path + "\n")); err != nil {
 		return false
 	}
-	reply, _ := bufio.NewReader(c).ReadString('\n')
-	return reply == "ok\n"
+	reply, err := bufio.NewReader(c).ReadString('\n')
+	return err == nil && reply == "ok\n"
 }

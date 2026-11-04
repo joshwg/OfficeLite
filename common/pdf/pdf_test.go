@@ -181,8 +181,12 @@ func samplePDF(t *testing.T, d *Document) []byte {
 		img.Pix[i] = byte(i * 7)
 	}
 	var pngBuf, jpgBuf bytes.Buffer
-	png.Encode(&pngBuf, img)
-	jpeg.Encode(&jpgBuf, image.NewGray(image.Rect(0, 0, 8, 8)), nil)
+	if err := png.Encode(&pngBuf, img); err != nil {
+		t.Fatal(err)
+	}
+	if err := jpeg.Encode(&jpgBuf, image.NewGray(image.Rect(0, 0, 8, 8)), nil); err != nil {
+		t.Fatal(err)
+	}
 	pi, err := d.AddImageData(pngBuf.Bytes())
 	if err != nil {
 		t.Fatal(err)
@@ -223,7 +227,9 @@ func TestStructure(t *testing.T) {
 	}
 	checkFonts(t, p, "Hello")
 	if dump := os.Getenv("PDF_DUMP"); dump != "" {
-		os.WriteFile(filepath.Join(dump, "pdftest.pdf"), out, 0o644)
+		if err := os.WriteFile(filepath.Join(dump, "pdftest.pdf"), out, 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
@@ -330,7 +336,9 @@ func TestRestrictedFontFallsBack(t *testing.T) {
 	b[i+8], b[i+9] = 0, 2
 	dir := t.TempDir()
 	path := filepath.Join(dir, "restricted.ttf")
-	os.WriteFile(path, b, 0o644)
+	if err := os.WriteFile(path, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	d := New()
 	d.Fonts = dirSource{"go": {path}}
 	f := d.Font(FontSpec{Family: "Go"})
@@ -425,6 +433,8 @@ func TestEmbedFontFiles(t *testing.T) {
 	}
 	parsePDF(t, out.Bytes())
 	if dump := os.Getenv("PDF_DUMP"); dump != "" {
-		os.WriteFile(filepath.Join(dump, "fonts.pdf"), out.Bytes(), 0o644)
+		if err := os.WriteFile(filepath.Join(dump, "fonts.pdf"), out.Bytes(), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

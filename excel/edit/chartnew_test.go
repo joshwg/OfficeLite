@@ -170,7 +170,9 @@ func TestSwitchRowColumn(t *testing.T) {
 	if c.Plots[0].Type != model.ChartBar || len(c.Plots) != 1 {
 		t.Errorf("kind lost: %+v", c.Plots)
 	}
-	SwitchRowColumn(b.WB, c, "Data")
+	if err := SwitchRowColumn(b.WB, c, "Data"); err != nil {
+		t.Fatal(err)
+	}
 	if got := seriesRefs(c); len(got) != 2 || got[1][2] != "Data!$C$2:$C$5" {
 		t.Errorf("back: %v", got)
 	}

@@ -22,7 +22,7 @@ func filter(e *f.Env, a []f.Value) f.Value {
 		return err
 	}
 	byRow := inc.Cols == 1 && inc.Rows == arr.Rows
-	if !byRow && !(inc.Rows == 1 && inc.Cols == arr.Cols) {
+	if !byRow && (inc.Rows != 1 || inc.Cols != arr.Cols) {
 		return f.ErrValue
 	}
 	var keep []int
@@ -293,7 +293,7 @@ func sortBy(e *f.Env, a []f.Value) f.Value {
 			return err
 		}
 		rowWise := by.Cols == 1 && by.Rows == arr.Rows
-		if !rowWise && !(by.Rows == 1 && by.Cols == arr.Cols) || i > 1 && rowWise != byRow {
+		if !rowWise && (by.Rows != 1 || by.Cols != arr.Cols) || i > 1 && rowWise != byRow {
 			return f.ErrValue
 		}
 		byRow = rowWise

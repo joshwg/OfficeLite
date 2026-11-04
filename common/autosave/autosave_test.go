@@ -312,14 +312,18 @@ func TestDefault(t *testing.T) {
 	if Default() {
 		t.Error("on by default")
 	}
-	os.WriteFile(path, []byte(`{"autoRecoverMinutes": 2}`), 0o644)
+	if err := os.WriteFile(path, []byte(`{"autoRecoverMinutes": 2}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := SetDefault(true); err != nil {
 		t.Fatal(err)
 	}
 	reset()
 	var s map[string]any
 	b, _ := os.ReadFile(path)
-	json.Unmarshal(b, &s)
+	if err := json.Unmarshal(b, &s); err != nil {
+		t.Fatal(err)
+	}
 	if !Default() || s["autoRecoverMinutes"] != 2.0 {
 		t.Errorf("saved %s", b)
 	}

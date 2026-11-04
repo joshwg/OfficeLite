@@ -446,9 +446,15 @@ func (a *App) gridKeys(gtx layout.Context, st *sheetState) {
 				continue
 			}
 			if r := e.Open(); r != nil {
-				data, _ := io.ReadAll(io.LimitReader(r, 64<<20))
-				r.Close()
-				a.paste(string(data))
+				data, err := io.ReadAll(io.LimitReader(r, 64<<20))
+				if closeErr := r.Close(); err == nil {
+					err = closeErr
+				}
+				if err != nil {
+					a.errMsg = "Paste failed: " + err.Error()
+				} else {
+					a.paste(string(data))
+				}
 			}
 			continue
 		}

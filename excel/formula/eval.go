@@ -591,7 +591,7 @@ func (e *Env) Apply(s *Spec, args []Value) Value {
 			args[i] = r
 			continue
 		}
-		if r, ok := v.(Ref); ok && !r.Single() && e.implicit() && !(s.Arrays != nil && s.Arrays(i)) {
+		if r, ok := v.(Ref); ok && !r.Single() && e.implicit() && (s.Arrays == nil || !s.Arrays(i)) {
 			v = e.intersect(r)
 		}
 		v = e.Deref(v)
@@ -615,7 +615,7 @@ func (e *Env) Apply(s *Spec, args []Value) Value {
 	for r := 0; r < rows; r++ {
 		for c := 0; c < cols; c++ {
 			for i, v := range args {
-				if a, ok := v.(*Array); ok && !(s.Arrays != nil && s.Arrays(i)) {
+				if a, ok := v.(*Array); ok && (s.Arrays == nil || !s.Arrays(i)) {
 					v = a.Broadcast(r, c)
 				}
 				el[i] = v

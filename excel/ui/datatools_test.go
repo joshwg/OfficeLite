@@ -44,7 +44,9 @@ func TestTextToColumnsUI(t *testing.T) {
 	a := h.a
 	sh := a.wb.Sheets[0]
 	for i, s := range []string{"Name,Qty,Code", `"Smith, J",12,007`, "Lee,3,042"} {
-		a.book.Enter(0, i, 0, s)
+		if _, err := a.book.Enter(0, i, 0, s); err != nil {
+			t.Fatal(err)
+		}
 	}
 	a.selectRange(0, model.Range{R1: 0, C1: 0, R2: 2, C2: 1})
 	h.dataTab()
@@ -107,7 +109,9 @@ func TestTextToColumnsUI(t *testing.T) {
 	h.expect("to E1", map[string]string{"E1": "Name", "F1": "Qty", "G3": "42", "A1": "Name,Qty,Code"})
 
 	// Fixed width: a click in the preview sets a break.
-	a.book.Enter(0, 5, 0, "AB  12")
+	if _, err := a.book.Enter(0, 5, 0, "AB  12"); err != nil {
+		t.Fatal(err)
+	}
 	a.selectRange(0, model.Range{R1: 5, C1: 0, R2: 5, C2: 0})
 	a.textToColumnsDialog()
 	d.kind.Value = "fixed"
@@ -291,7 +295,9 @@ func TestValidationUI(t *testing.T) {
 	if got := a.state().circles; len(got) != 2 {
 		t.Fatalf("circles %v", got)
 	}
-	a.book.Enter(0, 1, 1, "5")
+	if _, err := a.book.Enter(0, 1, 1, "5"); err != nil {
+		t.Fatal(err)
+	}
 	a.changed(calc.Result{})
 	if got := a.state().circles; len(got) != 1 || got[0] != [2]int{2, 1} {
 		t.Errorf("after fixing B2: %v", got)

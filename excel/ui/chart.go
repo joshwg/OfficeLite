@@ -163,7 +163,7 @@ func elemExists(c *model.Chart, e render.ChartElem) bool {
 
 // errChartKind refuses to change a chart ExcelLite can't save from the
 // model.
-var errChartKind = errors.New("This chart has a kind of chart ExcelLite doesn't draw: it can be moved, sized, copied or deleted, but not changed")
+var errChartKind = errors.New("this chart has a kind of chart ExcelLite doesn't draw: it can be moved, sized, copied or deleted, but not changed")
 
 // chartEditable reports whether the chart commands can change c: not a
 // chart with groups of a kind ExcelLite doesn't draw (radar, stock ...),

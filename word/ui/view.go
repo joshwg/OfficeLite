@@ -261,10 +261,10 @@ func (d *window) docPointer(gtx layout.Context) {
 				v.dragging, v.hasGoal = true, false
 				continue
 			}
-			switch {
-			case v.clicks == 2:
+			switch v.clicks {
+			case 2:
 				d.ed.SelectWord(pos)
-			case v.clicks == 3:
+			case 3:
 				d.ed.SelectParagraph(pos.Para)
 			default:
 				d.ed.SetCaret(pos, e.Modifiers.Contain(key.ModShift))
@@ -410,9 +410,13 @@ func (d *window) docKeys(gtx layout.Context) {
 		case transfer.DataEvent:
 			r := e.Open()
 			b, err := io.ReadAll(r)
-			r.Close()
+			if closeErr := r.Close(); err == nil {
+				err = closeErr
+			}
 			if err == nil {
 				d.pasteData(string(b))
+			} else {
+				d.errMsg = "Paste failed: " + err.Error()
 			}
 		case key.Event:
 			if e.State != key.Press || d.modalOpen() {

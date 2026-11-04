@@ -123,15 +123,21 @@ func TestPasteSpecial(t *testing.T) {
 	b.enter(t, 0, "A2", "=A1*3")
 	b.Format(0, rng("A1", "A2"), func(st *model.Style, _, _ int) { st.Font.Bold = true })
 	clip := b.Copy(0, rng("A1", "A2"), false)
-	b.PasteSpecial(clip, 0, rng("B1", "B1"), PasteValues)
+	if _, _, err := b.PasteSpecial(clip, 0, rng("B1", "B1"), PasteValues); err != nil {
+		t.Fatal(err)
+	}
 	if c := b.cell(0, "B2"); c.Formula != "" || c.Text != "6" || b.styleOf("B2").Font.Bold {
 		t.Errorf("paste values: %+v", c)
 	}
-	b.PasteSpecial(clip, 0, rng("C1", "C1"), PasteFormulas)
+	if _, _, err := b.PasteSpecial(clip, 0, rng("C1", "C1"), PasteFormulas); err != nil {
+		t.Fatal(err)
+	}
 	if c := b.cell(0, "C2"); c.Formula != "C1*3" || b.styleOf("C2").Font.Bold {
 		t.Errorf("paste formulas: %+v", c)
 	}
-	b.PasteSpecial(b.CopyFormats(0, rng("A1", "A1")), 0, rng("D1", "D3"), PasteFormats)
+	if _, _, err := b.PasteSpecial(b.CopyFormats(0, rng("A1", "A1")), 0, rng("D1", "D3"), PasteFormats); err != nil {
+		t.Fatal(err)
+	}
 	if !b.styleOf("D3").Font.Bold || b.cell(0, "D3").Kind != model.KindEmpty {
 		t.Errorf("paste formats: %+v", b.cell(0, "D3"))
 	}

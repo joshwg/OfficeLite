@@ -3,7 +3,6 @@ package docxfile
 import (
 	"archive/zip"
 	"bytes"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -45,9 +44,7 @@ func syntheticDocx(t *testing.T) []byte {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	for _, f := range zr.File {
-		rc, _ := f.Open()
-		b, _ := io.ReadAll(rc)
-		rc.Close()
+		b := readZipFile(t, f)
 		if f.Name == "word/document.xml" {
 			s := string(b)
 			i := strings.Index(s, "<w:body>") + len("<w:body>")
@@ -58,10 +55,11 @@ func syntheticDocx(t *testing.T) []byte {
 			}
 			b = []byte(s)
 		}
-		w, _ := zw.Create(f.Name)
-		w.Write(b)
+		writeZipFile(t, zw, f.Name, b)
 	}
-	zw.Close()
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
 	return buf.Bytes()
 }
 
@@ -154,8 +152,14 @@ func TestSyntheticConstructs(t *testing.T) {
 		t.Errorf("edit: %+v", r)
 	}
 	if dir := os.Getenv("DOCX_OUT"); dir != "" {
-		os.WriteFile(filepath.Join(dir, "synthetic.docx"), data, 0o644)
-		os.WriteFile(filepath.Join(dir, "resaved-synthetic.docx"), out, 0o644)
-		os.WriteFile(filepath.Join(dir, "edited-synthetic.docx"), out2, 0o644)
+		if err := os.WriteFile(filepath.Join(dir, "synthetic.docx"), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "resaved-synthetic.docx"), out, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "edited-synthetic.docx"), out2, 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

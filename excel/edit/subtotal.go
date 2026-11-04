@@ -50,7 +50,7 @@ type SubtotalSpec struct {
 }
 
 // ErrSubtotalRange is the refusal to subtotal a list without data rows.
-var ErrSubtotalRange = errors.New("Microsoft Excel cannot determine which row in your list or selection contains column labels, which are required for this command.")
+var ErrSubtotalRange = errors.New("microsoft Excel cannot determine which row in your list or selection contains column labels, which are required for this command")
 
 // SubtotalRange is the list Subtotal works on: the selection, or for a
 // single cell the data around it.

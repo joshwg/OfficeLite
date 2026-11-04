@@ -200,8 +200,11 @@ func (s *Saver) Remove() {
 	s.written = false
 	copyPath, side := s.paths()
 	s.enqueue(func() {
-		os.Remove(side)
-		os.Remove(copyPath)
+		for _, path := range []string{side, copyPath} {
+			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+				s.failed.Store(true)
+			}
+		}
 	})
 }
 
@@ -228,7 +231,9 @@ func (s *Saver) Adopt(e Entry, rev int) {
 	s.written, s.rev = true, rev
 	e.PID, e.Started = os.Getpid(), selfStart
 	side := e.Sidecar
-	s.enqueue(func() { writeEntry(side, e) })
+	s.enqueue(func() {
+		s.failed.Store(writeEntry(side, e) != nil)
+	})
 }
 
 // Wait waits for the saver's queued writes and deletions (tests).

@@ -199,7 +199,9 @@ func TestInsertPictureAndClick(t *testing.T) {
 	d := h.d
 	h.typeText("x")
 	var buf bytes.Buffer
-	png.Encode(&buf, image.NewGray(image.Rect(0, 0, 200, 100)))
+	if err := png.Encode(&buf, image.NewGray(image.Rect(0, 0, 200, 100))); err != nil {
+		t.Fatal(err)
+	}
 	d.insertPictureData("C:\\pics\\p.png", buf.Bytes(), nil)
 	h.frame()
 	r := d.ed.SelectedPicture()

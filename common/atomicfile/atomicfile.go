@@ -3,6 +3,7 @@
 package atomicfile
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -33,7 +34,9 @@ func WriteFile(path string, data []byte, perm os.FileMode) error {
 		err = rename(tmp, path)
 	}
 	if err != nil {
-		os.Remove(tmp)
+		if removeErr := os.Remove(tmp); removeErr != nil && !os.IsNotExist(removeErr) {
+			return fmt.Errorf("%w (removing temporary file: %v)", err, removeErr)
+		}
 	}
 	return err
 }

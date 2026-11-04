@@ -79,7 +79,7 @@ func niceScale(dmin, dmax float64, o scaleOpts) axisScale {
 		m.Min, m.Max = -m.Max, -m.Min
 		return m
 	}
-	lo, hi := dmin, dmax
+	var lo, hi float64
 	switch {
 	case o.HasMin:
 		lo = o.Min

@@ -53,7 +53,7 @@ var ErrNoFileDialog = errors.New("no native file dialog")
 // FileDialog shows the platform's Open dialog with a file-type list, which
 // gioui.org/x/explorer can't (it offers a single filter).
 type FileDialog struct {
-	owner atomic.Uintptr // native window handle, for a modal dialog
+	owner atomic.Uintptr //nolint:unused // read only by the Windows implementation
 }
 
 // ListenEvents records the window handle; call it with every window event.

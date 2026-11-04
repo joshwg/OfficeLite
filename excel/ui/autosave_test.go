@@ -206,7 +206,9 @@ func TestAutoSaveError(t *testing.T) {
 	a.setAutoSave(true)
 	h.typeText("42")
 	h.press(key.NameReturn, 0)
-	os.RemoveAll(dir) // the folder is gone (a USB stick pulled)
+	if err := os.RemoveAll(dir); err != nil { // the folder is gone (a USB stick pulled)
+		t.Fatal(err)
+	}
 	clock.Advance(autosave.Delay)
 	h.settle()
 	if a.as.saver.On() || !strings.HasPrefix(a.errMsg, "AutoSave turned off: Save failed") || !a.modified || h.cell("A1").Text != "42" {
@@ -220,14 +222,21 @@ func TestAutoSaveDefault(t *testing.T) {
 	settings := filepath.Join(t.TempDir(), "settings.json")
 	old := autorecover.SettingsPath
 	autorecover.SettingsPath = func() string { return settings }
-	t.Cleanup(func() { autosave.SetDefault(false); autorecover.SettingsPath = old })
+	t.Cleanup(func() {
+		if err := autosave.SetDefault(false); err != nil {
+			t.Errorf("reset AutoSave setting: %v", err)
+		}
+		autorecover.SettingsPath = old
+	})
 	h := newHarness(t)
 	a := h.a
 	h.startAutoSave("")
 	if autosave.Default() {
 		t.Fatal("on by default")
 	}
-	autosave.SetDefault(true)
+	if err := autosave.SetDefault(true); err != nil {
+		t.Fatal(err)
+	}
 	dir := t.TempDir()
 	a.saved(a.wb, fileio.XLS, filepath.Join(dir, "Book.xls"), false, nil)
 	if a.as.saver.On() {

@@ -189,7 +189,8 @@ func TestSnapToCells(t *testing.T) {
 	}
 }
 
-func testPNG(w, h int) []byte {
+func testPNG(t *testing.T, w, h int) []byte {
+	t.Helper()
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
 	for y := range h {
 		for x := range w {
@@ -197,14 +198,16 @@ func testPNG(w, h int) []byte {
 		}
 	}
 	var b bytes.Buffer
-	png.Encode(&b, img)
+	if err := png.Encode(&b, img); err != nil {
+		t.Fatal(err)
+	}
 	return b.Bytes()
 }
 
 func TestInsertPicture(t *testing.T) {
 	e := typed(t, "ab")
 	e.SetCaret(Pos{0, 1}, false)
-	pic, w, h, err := NewPicture(testPNG(1600, 800), "x.png")
+	pic, w, h, err := NewPicture(testPNG(t, 1600, 800), "x.png")
 	if err != nil || w != 1200 || h != 600 || pic.Ext != "png" {
 		t.Fatalf("NewPicture: %v %v %v %+v", err, w, h, pic)
 	}

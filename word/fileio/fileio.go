@@ -115,25 +115,32 @@ func Write(doc *model.Document, w io.Writer, f Format) error {
 
 // SaveFile writes doc to path through a temporary file renamed over the
 // target, so a failed save leaves the old file intact.
-func SaveFile(doc *model.Document, path string, f Format) error {
+func SaveFile(doc *model.Document, path string, f Format) (err error) {
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*.tmp")
 	if err != nil {
 		return err
 	}
-	defer os.Remove(tmp.Name())
+	defer func() {
+		if removeErr := os.Remove(tmp.Name()); err == nil && removeErr != nil && !os.IsNotExist(removeErr) {
+			err = fmt.Errorf("remove temporary file: %w", removeErr)
+		}
+	}()
 	bw := bufio.NewWriter(tmp)
-	if err := Write(doc, bw, f); err != nil {
-		tmp.Close()
+	closeWithError := func(err error) error {
+		if closeErr := tmp.Close(); closeErr != nil {
+			return fmt.Errorf("%w (closing temporary file: %v)", err, closeErr)
+		}
 		return err
+	}
+	if err := Write(doc, bw, f); err != nil {
+		return closeWithError(err)
 	}
 	if err := bw.Flush(); err != nil {
-		tmp.Close()
-		return err
+		return closeWithError(err)
 	}
 	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return err
+		return closeWithError(err)
 	}
 	if err := tmp.Close(); err != nil {
 		return err

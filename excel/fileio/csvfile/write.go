@@ -22,7 +22,9 @@ const utf8BOM = "\xEF\xBB\xBF"
 // first rows or columns are empty). Formulas are lost: only values are saved.
 func Write(sh *model.Sheet, w io.Writer, delim rune) error {
 	bw := bufio.NewWriterSize(w, 64<<10)
-	bw.WriteString(utf8BOM)
+	if _, err := bw.WriteString(utf8BOM); err != nil {
+		return err
+	}
 	var d [utf8.UTFMax]byte
 	sep := string(d[:utf8.EncodeRune(d[:], delim)])
 	special := sep + "\"\r\n"
@@ -31,16 +33,26 @@ func Write(sh *model.Sheet, w io.Writer, delim rune) error {
 	for r := 0; r < rows; r++ {
 		for c := 0; c < cols; c++ {
 			if c > 0 {
-				bw.WriteString(sep)
+				if _, err := bw.WriteString(sep); err != nil {
+					return err
+				}
 			}
 			text := sh.Get(r, c).Text
 			if !strings.ContainsAny(text, special) {
-				bw.WriteString(text)
+				if _, err := bw.WriteString(text); err != nil {
+					return err
+				}
 				continue
 			}
-			bw.WriteByte('"')
-			bw.WriteString(strings.ReplaceAll(text, `"`, `""`))
-			bw.WriteByte('"')
+			if err := bw.WriteByte('"'); err != nil {
+				return err
+			}
+			if _, err := bw.WriteString(strings.ReplaceAll(text, `"`, `""`)); err != nil {
+				return err
+			}
+			if err := bw.WriteByte('"'); err != nil {
+				return err
+			}
 		}
 		if _, err := bw.WriteString("\r\n"); err != nil {
 			return err

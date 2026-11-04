@@ -260,7 +260,7 @@ func textSplit(e *f.Env, a []f.Value) f.Value {
 			}
 			var cells []string
 			for _, c := range split(line, colDelims, ignoreCase) {
-				if !(ignoreEmpty && c == "") {
+				if !ignoreEmpty || c != "" {
 					cells = append(cells, c)
 				}
 			}

@@ -79,7 +79,7 @@ func (k ChartKind) String() string {
 }
 
 // ErrNoChartData is the refusal to make a chart from nothing.
-var ErrNoChartData = errors.New("Select a range with data for the chart first")
+var ErrNoChartData = errors.New("select a range with data for the chart first")
 
 // ChartSource is a block of cells a chart's series are read from, as
 // Excel lays it out: series in columns (ByCols) or rows; the first row

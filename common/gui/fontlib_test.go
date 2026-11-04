@@ -14,6 +14,7 @@ import (
 	"weak"
 
 	"gioui.org/font/gofont"
+	"gioui.org/text"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -88,11 +89,17 @@ func TestFacesFallsBackPastBadFile(t *testing.T) {
 		{"unreadable", nil, fallback},
 		{"good", good, damaged},
 	} {
-		os.Remove(damaged)
-		if c.first != nil {
-			os.WriteFile(damaged, c.first, 0o644)
+		if err := os.Remove(damaged); err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
 		}
-		os.WriteFile(fallback, good, 0o644)
+		if c.first != nil {
+			if err := os.WriteFile(damaged, c.first, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := os.WriteFile(fallback, good, 0o644); err != nil {
+			t.Fatal(err)
+		}
 		l := NewFontLibrary(first, second)
 		l.scanned = true
 		l.index["go"] = []string{damaged, fallback} // as the scan would list them
@@ -169,18 +176,13 @@ func TestPrepareFontHidesBitmaps(t *testing.T) {
 // TestShaperFacesWeak checks that registering a shaper's faces doesn't
 // keep the shaper alive.
 func TestShaperFacesWeak(t *testing.T) {
-	sh := NewFontLibrary().Shaper()
-	if len(faceFiles(sh)) == 0 {
-		t.Fatal("no faces registered for the shaper")
-	}
-	k := weak.Make(sh)
+	k := weakShaper(t)
 	held := func() bool {
 		shaperFacesMu.RLock()
 		defer shaperFacesMu.RUnlock()
 		_, ok := shaperFaces[k]
 		return ok
 	}
-	sh = nil
 	for deadline := time.Now().Add(5 * time.Second); held(); {
 		if time.Now().After(deadline) {
 			t.Fatal("shaper's faces kept after it was dropped")
@@ -188,4 +190,13 @@ func TestShaperFacesWeak(t *testing.T) {
 		runtime.GC()
 		time.Sleep(10 * time.Millisecond)
 	}
+}
+
+func weakShaper(t *testing.T) weak.Pointer[text.Shaper] {
+	t.Helper()
+	sh := NewFontLibrary().Shaper()
+	if len(faceFiles(sh)) == 0 {
+		t.Fatal("no faces registered for the shaper")
+	}
+	return weak.Make(sh)
 }

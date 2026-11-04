@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"officelite/common/ole"
@@ -23,7 +24,9 @@ func zipWith(t *testing.T, names ...string) []byte {
 		if err != nil {
 			t.Fatal(err)
 		}
-		w.Write([]byte("<x/>"))
+		if _, err := w.Write([]byte("<x/>")); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := zw.Close(); err != nil {
 		t.Fatal(err)
@@ -55,6 +58,26 @@ func TestDetect(t *testing.T) {
 	} {
 		if got := Detect(c.name, c.data); got != c.want {
 			t.Errorf("Detect(%s) = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+func TestDetectFile(t *testing.T) {
+	dir := t.TempDir()
+	for name, tc := range map[string]struct {
+		content string
+		want    Kind
+	}{
+		"data.csv":  {content: "a,b\n1,2\n", want: Spreadsheet},
+		"notes.txt": {content: "hello", want: Document},
+	} {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(tc.content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		got, err := DetectFile(path)
+		if err != nil || got != tc.want {
+			t.Errorf("DetectFile(%s) = %v, %v; want %v", name, got, err, tc.want)
 		}
 	}
 }

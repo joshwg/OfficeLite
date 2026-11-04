@@ -28,7 +28,9 @@ func TestUndoLabels(t *testing.T) {
 		defer b.Op("Italic")()
 		b.Format(0, rng("A1", "A1"), func(st *model.Style, _, _ int) { st.Font.Italic = true })
 	}()
-	b.InsertRows(0, 2, 1)
+	if _, err := b.InsertRows(0, 2, 1); err != nil {
+		t.Fatal(err)
+	}
 	b.FillDown(0, rng("A1", "A3"))
 	// A group takes its first change's name, or the caller's.
 	b.BeginGroup()
@@ -61,7 +63,9 @@ func TestUndoN(t *testing.T) {
 		b.enter(t, 0, "C1", "c")
 		b.enter(t, 0, "C2", "d")
 		b.EndGroup()
-		b.InsertRows(0, 0, 1)
+		if _, err := b.InsertRows(0, 0, 1); err != nil {
+			t.Fatal(err)
+		}
 		b.enter(t, 0, "A1", "top")
 		return b
 	}

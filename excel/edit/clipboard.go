@@ -34,10 +34,10 @@ func (c *Clip) srcRow(i int) int {
 }
 
 // ErrPasteSize is returned when a paste would go past the sheet's edge.
-var ErrPasteSize = errors.New("The paste area doesn't fit on the sheet")
+var ErrPasteSize = errors.New("the paste area doesn't fit on the sheet")
 
 // ErrEmptyClip is returned when there is nothing to paste.
-var ErrEmptyClip = errors.New("There is nothing to paste")
+var ErrEmptyClip = errors.New("there is nothing to paste")
 
 // Copy takes a copy of the cells of r for pasting. Values spilled from a
 // formula that is copied too are left out (the pasted formula spills

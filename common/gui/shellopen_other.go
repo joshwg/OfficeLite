@@ -6,6 +6,7 @@
 package gui
 
 import (
+	"log"
 	"os"
 	"os/exec"
 	"runtime"
@@ -38,7 +39,11 @@ func shellOpen(target string) error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	go cmd.Wait() // reap it, or it stays a zombie
+	go func() {
+		if err := cmd.Wait(); err != nil {
+			log.Printf("%s %q: %v", name, target, err)
+		}
+	}()
 	return nil
 }
 

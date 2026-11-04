@@ -31,7 +31,7 @@ type FileDrop struct {
 
 	mu    sync.Mutex
 	paths []string
-	hwnd  uintptr // the window accepting drops (Windows); 0 if none
+	hwnd  uintptr //nolint:unused // read by the Windows implementation and tests
 	msg   string  // the last drop's message, waiting for a load to finish
 }
 

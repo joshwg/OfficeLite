@@ -87,7 +87,7 @@ func parseFib(wd []byte) (*fib, error) {
 	f := &fib{nFib: binary.LittleEndian.Uint16(wd[2:]), flags: binary.LittleEndian.Uint16(wd[10:])}
 	if f.nFib < 0x00C0 {
 		if f.nFib >= 0x0065 && f.nFib <= 0x0069 {
-			return nil, errors.New("Word 6.0/95 documents are not supported; open the file in Word and save it as a Word 97-2003 or .docx document")
+			return nil, errors.New("word 6.0/95 documents are not supported; open the file in Word and save it as a Word 97-2003 or .docx document")
 		}
 		return nil, fmt.Errorf("doc: unsupported Word file version (nFib 0x%04X); only Word 97 and later are supported", f.nFib)
 	}

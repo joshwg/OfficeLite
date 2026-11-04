@@ -91,7 +91,7 @@ func Check(path string) Status {
 		name, ok := Decode(readOwner(op))
 		if !ownerLive(op) {
 			if ok && name == me {
-				os.Remove(op)
+				_ = os.Remove(op)
 			}
 			continue
 		}
@@ -121,13 +121,20 @@ func SaveError(path string, err error) string {
 
 // readOwner reads the head of an owner file; nil if it can't be read
 // (Office may share it for reading only, or not at all).
-func readOwner(path string) []byte {
+func readOwner(path string) (b []byte) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil
 	}
-	defer f.Close()
-	b, _ := io.ReadAll(io.LimitReader(f, 512))
+	defer func() {
+		if err := f.Close(); err != nil {
+			b = nil
+		}
+	}()
+	b, err = io.ReadAll(io.LimitReader(f, 512))
+	if err != nil {
+		return nil
+	}
 	return b
 }
 
@@ -205,8 +212,8 @@ func (o *owner) release() {
 		return
 	}
 	held.Delete(key(o.path))
-	o.f.Close()
-	os.Remove(o.path)
+	_ = o.f.Close()
+	_ = os.Remove(o.path)
 }
 
 // cloudFolder reports whether path is inside a OneDrive, Dropbox, Google

@@ -10,22 +10,36 @@ import (
 	"testing"
 )
 
+func testAdd(t *testing.T, l *List, path string, kind Kind) {
+	t.Helper()
+	if err := l.Add(path, kind); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func testRemove(t *testing.T, l *List, path string) {
+	t.Helper()
+	if err := l.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // TestRemoveRelative checks that Remove matches the absolute path Add
 // stored for a relative or uncleaned one, and that an empty path does
 // nothing.
 func TestRemoveRelative(t *testing.T) {
 	l := Open(filepath.Join(t.TempDir(), "recent.json"))
-	l.Add("docs/a.xlsx", Spreadsheet)
-	l.Add("b.docx", Document)
-	l.Remove("")
+	testAdd(t, l, "docs/a.xlsx", Spreadsheet)
+	testAdd(t, l, "b.docx", Document)
+	testRemove(t, l, "")
 	if len(l.Entries()) != 2 {
 		t.Fatalf("Remove of an empty path changed %+v", l.Entries())
 	}
-	l.Remove("docs/../docs/a.xlsx")
+	testRemove(t, l, "docs/../docs/a.xlsx")
 	if e := l.Entries(); len(e) != 1 || e[0].Name() != "b.docx" {
 		t.Fatalf("after removing an uncleaned path: %+v", e)
 	}
-	l.Remove("./b.docx")
+	testRemove(t, l, "./b.docx")
 	if e := l.Entries(); len(e) != 0 {
 		t.Errorf("after removing a relative path: %+v", e)
 	}
@@ -37,9 +51,9 @@ func TestRemoveRelative(t *testing.T) {
 func TestList(t *testing.T) {
 	store := filepath.Join(t.TempDir(), "sub", "recent.json")
 	l := Open(store)
-	l.Add("/a/one.xlsx", Spreadsheet)
-	l.Add("/a/two.docx", Document)
-	l.Add("/a/one.xlsx", Spreadsheet) // moves to the top, no duplicate
+	testAdd(t, l, "/a/one.xlsx", Spreadsheet)
+	testAdd(t, l, "/a/two.docx", Document)
+	testAdd(t, l, "/a/one.xlsx", Spreadsheet) // moves to the top, no duplicate
 	got := l.Entries()
 	if len(got) != 2 || got[0].Name() != "one.xlsx" || got[1].Kind != Document {
 		t.Fatalf("entries = %+v", got)
@@ -49,12 +63,12 @@ func TestList(t *testing.T) {
 	if e := reloaded.Entries(); len(e) != 2 || e[0].Path != got[0].Path {
 		t.Fatalf("reloaded = %+v", e)
 	}
-	reloaded.Remove("/a/one.xlsx")
+	testRemove(t, reloaded, "/a/one.xlsx")
 	if e := reloaded.Entries(); len(e) != 1 || e[0].Name() != "two.docx" {
 		t.Fatalf("after remove = %+v", e)
 	}
 	for i := 0; i < Max+5; i++ {
-		l.Add(filepath.Join("/f", string(rune('a'+i%26)), "x.csv"), Spreadsheet)
+		testAdd(t, l, filepath.Join("/f", string(rune('a'+i%26)), "x.csv"), Spreadsheet)
 	}
 	if n := len(l.Entries()); n > Max {
 		t.Errorf("len = %d, want <= %d", n, Max)

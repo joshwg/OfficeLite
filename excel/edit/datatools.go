@@ -48,7 +48,7 @@ type TextToColsSpec struct {
 }
 
 // ErrTextToColsShape is Excel's refusal to split more than one column.
-var ErrTextToColsShape = errors.New("Text to Columns can only convert one column at a time. The range can be many rows tall but no more than one column wide. Try again by selecting cells in one column only.")
+var ErrTextToColsShape = errors.New("text to columns can only convert one column at a time. The range can be many rows tall but no more than one column wide. Try again by selecting cells in one column only")
 
 // SplitFields splits one cell's text into fields.
 func SplitFields(s string, spec TextToColsSpec) []string {

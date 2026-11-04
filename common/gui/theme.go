@@ -43,7 +43,7 @@ func NewTheme(fonts *FontLibrary, accent, accentDark color.NRGBA) *Theme {
 	th := material.NewTheme()
 	th.Shaper = fonts.Shaper("Segoe UI", "Tahoma", "Calibri")
 	th.Face = UIFont.Typeface
-	th.Palette.ContrastBg = accent
+	th.ContrastBg = accent
 	return &Theme{Theme: th, Accent: accent, AccentDark: accentDark, AccentTint: colors.Mix(accent, colors.White, 0.85)}
 }
 

@@ -268,7 +268,6 @@ func NumberText(f float64) string {
 	}
 	s := strconv.FormatFloat(f, 'G', 15, 64)
 	if strings.ContainsAny(s, "Ee") {
-		s = strconv.FormatFloat(f, 'f', -1, 64)
 		// Round to 15 significant digits.
 		v, _ := strconv.ParseFloat(strconv.FormatFloat(f, 'G', 15, 64), 64)
 		s = strconv.FormatFloat(v, 'f', -1, 64)

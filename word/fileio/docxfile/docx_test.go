@@ -185,12 +185,37 @@ func zipParts(t *testing.T, data []byte) map[string][]byte {
 	}
 	out := map[string][]byte{}
 	for _, f := range zr.File {
-		rc, _ := f.Open()
-		b, _ := io.ReadAll(rc)
-		rc.Close()
-		out[f.Name] = b
+		out[f.Name] = readZipFile(t, f)
 	}
 	return out
+}
+
+func readZipFile(t *testing.T, f *zip.File) []byte {
+	t.Helper()
+	rc, err := f.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, readErr := io.ReadAll(rc)
+	closeErr := rc.Close()
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	return b
+}
+
+func writeZipFile(t *testing.T, zw *zip.Writer, name string, b []byte) {
+	t.Helper()
+	w, err := zw.Create(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Write(b); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestRoundTripFixtures(t *testing.T) {
@@ -211,10 +236,14 @@ func TestRoundTripFixtures(t *testing.T) {
 			}
 			equalDocs(t, name, a, b)
 			if dir := os.Getenv("DOCX_OUT"); dir != "" {
-				os.WriteFile(filepath.Join(dir, "resaved-"+name), out, 0o644)
+				if err := os.WriteFile(filepath.Join(dir, "resaved-"+name), out, 0o644); err != nil {
+					t.Fatal(err)
+				}
 				e := mustRead(t, orig)
 				editDoc(e)
-				os.WriteFile(filepath.Join(dir, "edited-"+name), write(t, e), 0o644)
+				if err := os.WriteFile(filepath.Join(dir, "edited-"+name), write(t, e), 0o644); err != nil {
+					t.Fatal(err)
+				}
 			}
 			// second save is stable
 			out2 := write(t, b)
@@ -288,7 +317,9 @@ func TestNewDocument(t *testing.T) {
 	}
 	out := write(t, doc)
 	if os.Getenv("DOCX_OUT") != "" {
-		os.WriteFile(filepath.Join(os.Getenv("DOCX_OUT"), "new.docx"), out, 0o644)
+		if err := os.WriteFile(filepath.Join(os.Getenv("DOCX_OUT"), "new.docx"), out, 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	b, err := Read(out)
 	if err != nil {
@@ -351,7 +382,9 @@ func TestEditAndSave(t *testing.T) {
 	h.Run.Size = 20
 	out := write(t, doc)
 	if os.Getenv("DOCX_OUT") != "" {
-		os.WriteFile(filepath.Join(os.Getenv("DOCX_OUT"), "edited.docx"), out, 0o644)
+		if err := os.WriteFile(filepath.Join(os.Getenv("DOCX_OUT"), "edited.docx"), out, 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	b := mustRead(t, out)
 	qs := paras(b)
@@ -384,9 +417,7 @@ func TestMacrosDropped(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	for _, f := range zr.File {
-		rc, _ := f.Open()
-		b, _ := io.ReadAll(rc)
-		rc.Close()
+		b := readZipFile(t, f)
 		switch f.Name {
 		case "[Content_Types].xml":
 			s := strings.Replace(string(b), ctMain, "application/vnd.ms-word.document.macroEnabled.main+xml", 1)
@@ -395,12 +426,12 @@ func TestMacrosDropped(t *testing.T) {
 		case "word/_rels/document.xml.rels":
 			b = []byte(strings.Replace(string(b), "</Relationships>", `<Relationship Id="rIdVba" Type="http://schemas.microsoft.com/office/2006/relationships/vbaProject" Target="vbaProject.bin"/></Relationships>`, 1))
 		}
-		w, _ := zw.Create(f.Name)
-		w.Write(b)
+		writeZipFile(t, zw, f.Name, b)
 	}
-	w, _ := zw.Create("word/vbaProject.bin")
-	w.Write([]byte("macro"))
-	zw.Close()
+	writeZipFile(t, zw, "word/vbaProject.bin", []byte("macro"))
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
 	doc, err := Read(buf.Bytes())
 	if err != nil {
 		t.Fatal(err)

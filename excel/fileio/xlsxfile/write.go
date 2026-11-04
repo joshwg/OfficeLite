@@ -33,9 +33,13 @@ import (
 // excelize's own <cols>, every cell written costs a scan of all columns
 // with a width) and the Normal style's font size (excelize only sets its
 // name). It copies untouched parts without recompressing them.
-func Write(wb *model.Workbook, w io.Writer) error {
+func Write(wb *model.Workbook, w io.Writer) (err error) {
 	f := excelize.NewFile()
-	defer f.Close()
+	defer func() {
+		if closeErr := f.Close(); err == nil {
+			err = closeErr
+		}
+	}()
 	x := &writer{f: f, wb: wb, styles: map[uint32]int{}, sheets: map[string]*sheetPatch{}}
 	if err := x.build(); err != nil {
 		return err
@@ -839,7 +843,9 @@ func (x *writer) patch(data []byte, w io.Writer) error {
 		}
 		out, err := zw.CreateHeader(&zip.FileHeader{Name: zf.Name, Method: zip.Deflate, Modified: zf.Modified})
 		if err != nil {
-			rc.Close()
+			if closeErr := rc.Close(); closeErr != nil {
+				return fmt.Errorf("%w (closing %s: %v)", err, zf.Name, closeErr)
+			}
 			return err
 		}
 		if isSheet {
@@ -857,7 +863,9 @@ func (x *writer) patch(data []byte, w io.Writer) error {
 				}
 			}
 		}
-		rc.Close()
+		if closeErr := rc.Close(); err == nil {
+			err = closeErr
+		}
 		if err != nil {
 			return fmt.Errorf("%s: %w", zf.Name, err)
 		}
@@ -988,15 +996,23 @@ func patchSheet(dst io.Writer, src io.Reader, p *sheetPatch) error {
 		if err := copyUntil(bw, br, "sheetFormatPr"); err != nil {
 			return fmt.Errorf("no sheetFormatPr")
 		}
-		bw.WriteString("<sheetFormatPr")
-		bw.WriteString(p.formatPr)
+		if _, err := bw.WriteString("<sheetFormatPr"); err != nil {
+			return err
+		}
+		if _, err := bw.WriteString(p.formatPr); err != nil {
+			return err
+		}
 	}
 	if p.cols != "" {
 		if err := copyUntil(bw, br, "sheetData>"); err != nil {
 			return fmt.Errorf("no sheetData")
 		}
-		bw.WriteString(p.cols)
-		bw.WriteString("<sheetData>")
+		if _, err := bw.WriteString(p.cols); err != nil {
+			return err
+		}
+		if _, err := bw.WriteString("<sheetData>"); err != nil {
+			return err
+		}
 	}
 	for _, rc := range p.cells {
 		if rc.row > 0 {
@@ -1004,7 +1020,9 @@ func patchSheet(dst io.Writer, src io.Reader, p *sheetPatch) error {
 			if err := copyUntil(bw, br, tag); err != nil {
 				return fmt.Errorf("row %d not found", rc.row)
 			}
-			bw.WriteString("<" + tag + rc.xml)
+			if _, err := bw.WriteString("<" + tag + rc.xml); err != nil {
+				return err
+			}
 			continue
 		}
 		if err := copyUntil(bw, br, `c r="`+rc.ref+`"`); err != nil {
@@ -1017,22 +1035,30 @@ func patchSheet(dst io.Writer, src io.Reader, p *sheetPatch) error {
 		if _, err := br.ReadSlice('>'); err != nil {
 			return err
 		}
-		bw.WriteString(rc.xml)
+		if _, err := bw.WriteString(rc.xml); err != nil {
+			return err
+		}
 	}
 	if p.autoFilter != "" {
 		// <autoFilter> follows <sheetData> (and comes before <mergeCells>).
 		if err := copyUntil(bw, br, "/sheetData>"); err != nil {
 			return fmt.Errorf("no sheetData end")
 		}
-		bw.WriteString("</sheetData>")
-		bw.WriteString(p.autoFilter)
+		if _, err := bw.WriteString("</sheetData>"); err != nil {
+			return err
+		}
+		if _, err := bw.WriteString(p.autoFilter); err != nil {
+			return err
+		}
 	}
 	if p.drawing != "" {
 		if p.autoFilter == "" {
 			if err := copyUntil(bw, br, "/sheetData>"); err != nil {
 				return fmt.Errorf("no sheetData end")
 			}
-			bw.WriteString("</sheetData>")
+			if _, err := bw.WriteString("</sheetData>"); err != nil {
+				return err
+			}
 		}
 		// <drawing> comes after the page setup and before the legacy
 		// drawing (notes), table parts and extLst: the tail after
@@ -1047,9 +1073,15 @@ func patchSheet(dst io.Writer, src io.Reader, p *sheetPatch) error {
 				at = i
 			}
 		}
-		bw.Write(tail[:at])
-		bw.WriteString(p.drawing)
-		bw.Write(tail[at:])
+		if _, err := bw.Write(tail[:at]); err != nil {
+			return err
+		}
+		if _, err := bw.WriteString(p.drawing); err != nil {
+			return err
+		}
+		if _, err := bw.Write(tail[at:]); err != nil {
+			return err
+		}
 		return bw.Flush()
 	}
 	if _, err := io.Copy(bw, br); err != nil {
@@ -1064,17 +1096,25 @@ func copyUntil(bw *bufio.Writer, br *bufio.Reader, tag string) error {
 	for {
 		chunk, err := br.ReadSlice('<')
 		if err == bufio.ErrBufferFull {
-			bw.Write(chunk)
+			if _, err := bw.Write(chunk); err != nil {
+				return err
+			}
 			continue
 		}
 		if err != nil {
 			return err
 		}
-		bw.Write(chunk[:len(chunk)-1])
+		if _, err := bw.Write(chunk[:len(chunk)-1]); err != nil {
+			return err
+		}
 		if p, _ := br.Peek(len(tag)); string(p) == tag {
-			br.Discard(len(tag))
+			if _, err := br.Discard(len(tag)); err != nil {
+				return err
+			}
 			return nil
 		}
-		bw.WriteByte('<')
+		if err := bw.WriteByte('<'); err != nil {
+			return err
+		}
 	}
 }

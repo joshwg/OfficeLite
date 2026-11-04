@@ -174,7 +174,7 @@ func TestChartBlanks(t *testing.T) {
 }
 
 func TestGeneralAxisLabels(t *testing.T) {
-	if s := strings.Join([]string{generalNum(0.30000000000000004), generalNum(-0.0), generalNum(1e12)}, " "); s != "0.3 0 1E+12" {
+	if s := strings.Join([]string{generalNum(0.30000000000000004), generalNum(math.Copysign(0, -1)), generalNum(1e12)}, " "); s != "0.3 0 1E+12" {
 		t.Errorf("general: %s", s)
 	}
 }

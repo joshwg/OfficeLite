@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -352,7 +353,11 @@ func readFamilies(path string) []string {
 	if err != nil {
 		return nil
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			log.Printf("close font file %s: %v", path, err)
+		}
+	}()
 	head := make([]byte, 12)
 	if _, err := f.ReadAt(head, 0); err != nil {
 		return nil

@@ -389,10 +389,10 @@ func (c *Calculator) Update(changed []Area, now time.Time) Result {
 			if had == has && was == now {
 				continue
 			}
-			if has && !(had && contains(was, now)) {
+			if has && (!had || !contains(was, now)) {
 				queue, from = append(queue, Area{k.sheet, now}), append(from, k)
 			}
-			if had && !(has && contains(now, was)) {
+			if had && (!has || !contains(now, was)) {
 				queue, from = append(queue, Area{k.sheet, was}), append(from, k)
 			}
 		}

@@ -125,7 +125,9 @@ func TestOutlineKeepsSizesAndMoves(t *testing.T) {
 	if got := levels(sh, true, 1, 7); !slices.Equal(got, []int{0, 1, 1, 1, 1, 1, 0}) {
 		t.Fatalf("insert inside: %v", got)
 	}
-	b.InsertRows(0, 0, 1)
+	if _, err := b.InsertRows(0, 0, 1); err != nil {
+		t.Fatal(err)
+	}
 	if got := levels(sh, true, 2, 8); !slices.Equal(got, []int{0, 1, 1, 1, 1, 1, 0}) {
 		t.Fatalf("insert above: %v", got)
 	}
@@ -133,7 +135,9 @@ func TestOutlineKeepsSizesAndMoves(t *testing.T) {
 	if !sh.IsCollapsed(true, 8) {
 		t.Fatal("summary row 9 not collapsed")
 	}
-	b.DeleteRows(0, 0, 2)
+	if _, err := b.DeleteRows(0, 0, 2); err != nil {
+		t.Fatal(err)
+	}
 	if got := levels(sh, true, 0, 6); !slices.Equal(got, []int{0, 1, 1, 1, 1, 1, 0}) || !sh.IsCollapsed(true, 6) {
 		t.Fatalf("delete above: %v, collapsed %v", got, sh.Outline.RowCollapsed)
 	}

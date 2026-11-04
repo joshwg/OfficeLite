@@ -5,6 +5,7 @@ package gui
 
 import (
 	"encoding/binary"
+	"log"
 	"os"
 	"sync"
 
@@ -55,7 +56,11 @@ func readWinMetrics(ff FaceFile) winMetrics {
 	if err != nil {
 		return winMetrics{}
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			log.Printf("close font file %s: %v", ff.Path, err)
+		}
+	}()
 	be := binary.BigEndian
 	read := func(off int64, n int) []byte {
 		b := make([]byte, n)

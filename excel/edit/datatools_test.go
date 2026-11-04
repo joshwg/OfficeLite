@@ -168,9 +168,11 @@ func TestRemoveDuplicatesAnnotations(t *testing.T) {
 		b.enter(t, 0, model.CellName(r, 0), v)
 	}
 	sh := b.WB.Sheets[0]
-	b.SetNote(0, 1, 0, &model.Note{Text: "dup"})                           // on a removed row
-	b.SetNote(0, 2, 0, &model.Note{Text: "bee"})                           // row of "b"
-	b.SetHyperlink(0, 3, 0, "", model.Hyperlink{Target: "http://c.test/"}) // row of "c"
+	b.SetNote(0, 1, 0, &model.Note{Text: "dup"}) // on a removed row
+	b.SetNote(0, 2, 0, &model.Note{Text: "bee"}) // row of "b"
+	if _, err := b.SetHyperlink(0, 3, 0, "", model.Hyperlink{Target: "http://c.test/"}); err != nil {
+		t.Fatal(err)
+	}
 	b.RemoveDuplicates(0, rng("A1", "A4"), []int{0}, false)
 	if _, ok := sh.NoteAt(1, 0); !ok || sh.Notes[[2]int{1, 0}].Text != "bee" {
 		t.Errorf("note did not follow b to A2: %v", sh.Notes)

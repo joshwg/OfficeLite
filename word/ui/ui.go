@@ -7,6 +7,7 @@ package ui
 import (
 	"errors"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -306,8 +307,11 @@ func (d *window) openDialog() {
 			d.finishLoad("", nil, err)
 			return
 		}
-		defer rc.Close()
 		if f, ok := rc.(*os.File); ok && filepath.IsAbs(f.Name()) {
+			if err := rc.Close(); err != nil {
+				d.finishLoad("", nil, err)
+				return
+			}
 			path := f.Name()
 			d.calls.Post(func() { d.openFile(path) })
 			return
@@ -315,6 +319,9 @@ func (d *window) openDialog() {
 		d.loading.Store(true)
 		d.invalidate()
 		data, err := io.ReadAll(rc)
+		if closeErr := rc.Close(); err == nil {
+			err = closeErr
+		}
 		if err != nil {
 			d.finishLoad("", nil, err)
 			return
@@ -370,7 +377,9 @@ func (d *window) applyLoad(r loadResult, readOnly bool) {
 	d.lk.readOnly, d.lk.closeOnCancel = readOnly, false
 	if r.path != "" {
 		d.fileInfo, _ = os.Stat(r.path)
-		d.cfg.Recent.Add(r.path, recent.Document)
+		if err := d.cfg.Recent.Add(r.path, recent.Document); err != nil {
+			log.Printf("add %s to recent documents: %v", r.path, err)
+		}
 	}
 	d.setDoc(r.doc, r.shaper, r.fams)
 	if r.rec != nil {
@@ -426,7 +435,9 @@ func (d *window) pristine() bool {
 func (d *window) openFile(path string) {
 	d.back.Hide()
 	if _, err := os.Stat(path); err != nil {
-		d.cfg.Recent.Remove(path)
+		if removeErr := d.cfg.Recent.Remove(path); removeErr != nil {
+			log.Printf("remove %s from recent documents: %v", path, removeErr)
+		}
 		d.errMsg = "Can't open " + filepath.Base(path) + ": " + err.Error()
 		return
 	}

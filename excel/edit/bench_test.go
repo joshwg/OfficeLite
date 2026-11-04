@@ -40,12 +40,32 @@ func TestEditTiming(t *testing.T) {
 		f()
 		t.Logf("%-32s %v", what, time.Since(start).Round(time.Millisecond))
 	}
-	timeIt("first edit (builds dependencies)", func() { b.Enter(0, 49000, 0, "5") })
-	timeIt("edit near the end", func() { b.Enter(0, 49001, 0, "6") })
-	timeIt("edit A1 (every total changes)", func() { b.Enter(0, 0, 0, "7") })
+	timeIt("first edit (builds dependencies)", func() {
+		if _, err := b.Enter(0, 49000, 0, "5"); err != nil {
+			t.Fatal(err)
+		}
+	})
+	timeIt("edit near the end", func() {
+		if _, err := b.Enter(0, 49001, 0, "6"); err != nil {
+			t.Fatal(err)
+		}
+	})
+	timeIt("edit A1 (every total changes)", func() {
+		if _, err := b.Enter(0, 0, 0, "7"); err != nil {
+			t.Fatal(err)
+		}
+	})
 	timeIt("undo", func() { b.Undo() })
-	timeIt("insert row 10", func() { b.InsertRows(0, 9, 1) })
-	timeIt("delete row 10", func() { b.DeleteRows(0, 9, 1) })
+	timeIt("insert row 10", func() {
+		if _, err := b.InsertRows(0, 9, 1); err != nil {
+			t.Fatal(err)
+		}
+	})
+	timeIt("delete row 10", func() {
+		if _, err := b.DeleteRows(0, 9, 1); err != nil {
+			t.Fatal(err)
+		}
+	})
 	timeIt("undo delete", func() { b.Undo() })
 	timeIt("F9", func() { b.Recalculate() })
 }

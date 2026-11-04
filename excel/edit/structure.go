@@ -52,7 +52,7 @@ type structural struct {
 }
 
 // ErrShiftOffSheet is Excel's refusal to push data past the sheet's end.
-var ErrShiftOffSheet = errors.New("To prevent possible loss of data, nonblank cells can't be shifted off the worksheet")
+var ErrShiftOffSheet = errors.New("to prevent possible loss of data, nonblank cells can't be shifted off the worksheet")
 
 // InsertRows inserts n rows before row at on sheet.
 func (b *Book) InsertRows(sheet, at, n int) (calc.Result, error) {
@@ -116,7 +116,7 @@ func (b *Book) canDeleteSheet(sheet int) error {
 			return nil
 		}
 	}
-	return errors.New("A workbook must contain at least one visible worksheet")
+	return errors.New("a workbook must contain at least one visible worksheet")
 }
 
 // RenameSheet renames a sheet and the references to it.
@@ -126,7 +126,7 @@ func (b *Book) RenameSheet(sheet int, name string) (calc.Result, error) {
 		return calc.Result{}, err
 	}
 	if i := b.sheetIndex(name); i >= 0 && i != sheet {
-		return calc.Result{}, fmt.Errorf("That name is already taken. Try a different one.")
+		return calc.Result{}, fmt.Errorf("that name is already taken. Try a different one")
 	}
 	if b.WB.Sheets[sheet].Name == name {
 		return calc.Result{}, nil
@@ -138,15 +138,15 @@ func (b *Book) RenameSheet(sheet int, name string) (calc.Result, error) {
 func ValidSheetName(name string) error {
 	switch {
 	case strings.TrimSpace(name) == "":
-		return errors.New("A sheet name can't be blank")
+		return errors.New("a sheet name can't be blank")
 	case len([]rune(name)) > 31:
-		return errors.New("A sheet name can't be longer than 31 characters")
+		return errors.New("a sheet name can't be longer than 31 characters")
 	case strings.ContainsAny(name, `:\/?*[]`):
-		return errors.New(`A sheet name can't contain : \ / ? * [ or ]`)
+		return errors.New(`a sheet name can't contain : \ / ? * [ or ]`)
 	case name[0] == '\'' || name[len(name)-1] == '\'':
-		return errors.New("A sheet name can't begin or end with an apostrophe")
+		return errors.New("a sheet name can't begin or end with an apostrophe")
 	case strings.EqualFold(name, "History"):
-		return errors.New("History is a reserved sheet name")
+		return errors.New("history is a reserved sheet name")
 	}
 	return nil
 }

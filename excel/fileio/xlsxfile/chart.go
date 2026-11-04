@@ -328,7 +328,9 @@ func (r *reader) readTheme(name string) *model.Theme {
 		return nil
 	}
 	data, err := io.ReadAll(rc)
-	rc.Close()
+	if closeErr := rc.Close(); err == nil {
+		err = closeErr
+	}
 	if err != nil {
 		return nil
 	}
@@ -1131,7 +1133,9 @@ func (r *reader) readChart(name string) *model.Chart {
 		return nil
 	}
 	data, err := io.ReadAll(rc)
-	rc.Close()
+	if closeErr := rc.Close(); err == nil {
+		err = closeErr
+	}
 	if err != nil {
 		return nil
 	}
@@ -1187,7 +1191,9 @@ func (r *reader) keepParts(raw *model.ChartRaw, rels []model.RawRel, depth int) 
 			continue
 		}
 		data, err := io.ReadAll(rc)
-		rc.Close()
+		if closeErr := rc.Close(); err == nil {
+			err = closeErr
+		}
 		if err != nil {
 			continue
 		}

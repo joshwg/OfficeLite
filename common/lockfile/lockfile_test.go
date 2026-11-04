@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -312,7 +313,9 @@ func TestRegistryStale(t *testing.T) {
 	if st := Check(path); !st.Elsewhere || !st.Locked() {
 		t.Errorf("Check = %+v", st)
 	}
-	os.Remove(live)
+	if err := os.Remove(live); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // TestHandOff checks the hand-off protocol: raising, a wrong token and a
@@ -359,8 +362,19 @@ func TestHelperProcess(t *testing.T) {
 	d := NewDoc(func() { fmt.Println("raised") })
 	d.Set(path, false)
 	fmt.Println("ready")
-	bufio.NewReader(os.Stdin).ReadString('\n')
+	if _, err := bufio.NewReader(os.Stdin).ReadString('\n'); err != nil && err != io.EOF {
+		panic(err)
+	}
 	os.Exit(0)
+}
+
+func readTestLine(t *testing.T, r *bufio.Reader) string {
+	t.Helper()
+	line, err := r.ReadString('\n')
+	if err != nil {
+		t.Fatal(err)
+	}
+	return line
 }
 
 // TestCrossProcess checks Check and Activate against a helper process, and
@@ -385,7 +399,7 @@ func TestCrossProcess(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := bufio.NewReader(stdout)
-	if line, _ := out.ReadString('\n'); line != "ready\n" {
+	if line := readTestLine(t, out); line != "ready\n" {
 		t.Fatalf("helper said %q", line)
 	}
 	if st := Check(path); !st.Elsewhere || st.InUse || st.Owner != "" {
@@ -394,7 +408,7 @@ func TestCrossProcess(t *testing.T) {
 	if !Activate(path) {
 		t.Fatal("not handed off")
 	}
-	if line, _ := out.ReadString('\n'); line != "raised\n" {
+	if line := readTestLine(t, out); line != "raised\n" {
 		t.Errorf("helper said %q", line)
 	}
 	// A relative path means something else in the helper's directory.
@@ -402,12 +416,16 @@ func TestCrossProcess(t *testing.T) {
 	if rel, err := filepath.Rel(wd, path); err == nil && !filepath.IsAbs(rel) {
 		if !Activate(rel) {
 			t.Error("relative path not handed off")
-		} else if line, _ := out.ReadString('\n'); line != "raised\n" {
+		} else if line := readTestLine(t, out); line != "raised\n" {
 			t.Errorf("helper said %q after a relative path", line)
 		}
 	}
-	stdin.Close()
-	cmd.Wait()
+	if err := stdin.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Wait(); err != nil {
+		t.Fatal(err)
+	}
 	if st := Check(path); st.Locked() {
 		t.Errorf("Check after the helper exited = %+v", st)
 	}

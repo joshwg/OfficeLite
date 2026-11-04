@@ -563,7 +563,7 @@ func (r *reader) runToken(rn *node, span *model.Span) token {
 		case "w:noBreakHyphen":
 			text.WriteString("‑")
 		case "w:softHyphen":
-			text.WriteString("­")
+			text.WriteString("\u00ad")
 		case "w:tab":
 			flush()
 			add(model.Run{Kind: model.RunTab})

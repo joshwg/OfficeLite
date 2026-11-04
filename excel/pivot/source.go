@@ -16,7 +16,7 @@ import (
 
 // ErrFieldName is Excel's refusal of source data without a header for
 // every column.
-var ErrFieldName = errors.New("The PivotTable field name is not valid. To create a PivotTable report, you must use data that is organized as a list with labeled columns. If you are changing the name of a PivotTable field, you must type a new name for the field.")
+var ErrFieldName = errors.New("the PivotTable field name is not valid. To create a PivotTable report, you must use data that is organized as a list with labeled columns. If you are changing the name of a PivotTable field, you must type a new name for the field")
 
 // Item is a distinct value of a field. Items are told apart as Excel
 // tells them apart: numbers (and dates) by value, text ignoring case.

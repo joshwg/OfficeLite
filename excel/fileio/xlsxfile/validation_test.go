@@ -88,7 +88,9 @@ func rewritePart(t *testing.T, data []byte, name string, f func(string) string) 
 		if err != nil {
 			t.Fatal(err)
 		}
-		w.Write([]byte(v))
+		if _, err := w.Write([]byte(v)); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := zw.Close(); err != nil {
 		t.Fatal(err)

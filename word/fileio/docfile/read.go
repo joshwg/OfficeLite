@@ -384,22 +384,3 @@ func abs(v int) int {
 }
 
 // charAt reads any CP of the document (including subdocuments).
-func (r *reader) charAt(cp int) (uint16, bool) {
-	for _, p := range r.pieces {
-		if cp >= p.cp && cp < p.cpEnd {
-			if p.compressed {
-				fc := int(p.fc) + cp - p.cp
-				if fc < len(r.wd) {
-					return uint16(textenc.Windows1252Rune(r.wd[fc])), true
-				}
-			} else {
-				fc := int(p.fc) + 2*(cp-p.cp)
-				if fc+2 <= len(r.wd) {
-					return u16(r.wd[fc:]), true
-				}
-			}
-			return 0, false
-		}
-	}
-	return 0, false
-}

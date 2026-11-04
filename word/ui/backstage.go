@@ -3,6 +3,7 @@ package ui
 import (
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -204,7 +205,9 @@ func (d *window) savedAs(f fileio.Format, path string, export bool, version int,
 	if filepath.IsAbs(path) {
 		d.path = path
 		d.fileInfo, _ = os.Stat(path)
-		d.cfg.Recent.Add(path, recent.Document)
+		if err := d.cfg.Recent.Add(path, recent.Document); err != nil {
+			log.Printf("add %s to recent documents: %v", path, err)
+		}
 		d.lk.readOnly = false
 		d.lk.doc.Set(path, true) // the new file's registration and owner file
 		d.as.elsewhere = false

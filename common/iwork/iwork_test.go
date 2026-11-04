@@ -359,10 +359,17 @@ func TestOpenErrors(t *testing.T) {
 		var buf bytes.Buffer
 		zw := zip.NewWriter(&buf)
 		for _, n := range names {
-			w, _ := zw.Create(n)
-			w.Write([]byte("x"))
+			w, err := zw.Create(n)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := w.Write([]byte("x")); err != nil {
+				t.Fatal(err)
+			}
 		}
-		zw.Close()
+		if err := zw.Close(); err != nil {
+			t.Fatal(err)
+		}
 		return buf.Bytes()
 	}
 	if _, err := Open(mk("index.xml.gz", "QuickLook/Thumbnail.jpg")); !errors.Is(err, ErrOldFormat) {
@@ -424,17 +431,36 @@ func TestDetectIndexZip(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			w, _ := iw.Create(f.Name)
-			w.Write(b)
+			w, err := iw.Create(f.Name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := w.Write(b); err != nil {
+				t.Fatal(err)
+			}
 		}
-		iw.Close()
+		if err := iw.Close(); err != nil {
+			t.Fatal(err)
+		}
 		var outer bytes.Buffer
 		ow := zip.NewWriter(&outer)
-		w, _ := ow.Create("Index.zip")
-		w.Write(inner.Bytes())
-		w, _ = ow.Create("Metadata/Properties.plist")
-		w.Write([]byte("x"))
-		ow.Close()
+		w, err := ow.Create("Index.zip")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write(inner.Bytes()); err != nil {
+			t.Fatal(err)
+		}
+		w, err = ow.Create("Metadata/Properties.plist")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte("x")); err != nil {
+			t.Fatal(err)
+		}
+		if err := ow.Close(); err != nil {
+			t.Fatal(err)
+		}
 		b := outer.Bytes()
 		if got := Detect(bytes.NewReader(b), int64(len(b))); got != app {
 			t.Errorf("%s in Index.zip: Detect = %v, want %v", name, got, app)
@@ -447,9 +473,16 @@ func TestDetectIndexZip(t *testing.T) {
 	for _, content := range [][]byte{[]byte("not a zip"), nil} {
 		var outer bytes.Buffer
 		ow := zip.NewWriter(&outer)
-		w, _ := ow.Create("Index.zip")
-		w.Write(content)
-		ow.Close()
+		w, err := ow.Create("Index.zip")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write(content); err != nil {
+			t.Fatal(err)
+		}
+		if err := ow.Close(); err != nil {
+			t.Fatal(err)
+		}
 		if got := Detect(bytes.NewReader(outer.Bytes()), int64(outer.Len())); got != Unknown {
 			t.Errorf("Index.zip of %q: Detect = %v", content, got)
 		}

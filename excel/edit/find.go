@@ -40,7 +40,7 @@ func (f Found) before(g Found) bool {
 // Excel.
 func (o FindOptions) pattern() (*regexp.Regexp, error) {
 	if o.What == "" {
-		return nil, errors.New("Type what to find")
+		return nil, errors.New("type what to find")
 	}
 	var b strings.Builder
 	if !o.MatchCase {
@@ -155,7 +155,7 @@ func (b *Book) FindNext(from Found, o FindOptions, back bool) (Found, error) {
 }
 
 // ErrNotFound is Excel's message when nothing matches.
-var ErrNotFound = errors.New("We couldn't find what you were looking for")
+var ErrNotFound = errors.New("we couldn't find what you were looking for")
 
 // replaced is the cell at f after replacing; ok is false when nothing in
 // it matches or the result isn't a valid entry.
@@ -231,7 +231,7 @@ func (b *Book) ReplaceAll(sheet int, o FindOptions) (int, calc.Result, error) {
 }
 
 // ErrBadReference is Go To's message for text it can't read.
-var ErrBadReference = errors.New("Reference isn't valid")
+var ErrBadReference = errors.New("reference isn't valid")
 
 // ResolveRef reads a Go To reference: B12, A1:C5, C:D, 3:7,
 // Sheet2!A1:C5, 'My Sheet'!B2, or a defined name. Unqualified references

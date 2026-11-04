@@ -285,12 +285,16 @@ func (d *Document) File(name string) []byte {
 }
 
 // readZipFile returns the contents of a zip entry, capped at 1 GiB.
-func readZipFile(f *zip.File) ([]byte, error) {
+func readZipFile(f *zip.File) (data []byte, err error) {
 	rc, err := f.Open()
 	if err != nil {
 		return nil, err
 	}
-	defer rc.Close()
+	defer func() {
+		if closeErr := rc.Close(); err == nil {
+			err = closeErr
+		}
+	}()
 	return io.ReadAll(io.LimitReader(rc, 1<<30))
 }
 

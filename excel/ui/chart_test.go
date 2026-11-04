@@ -131,11 +131,10 @@ func TestChartFollowsInsertedRows(t *testing.T) {
 	h := chartHarness(t)
 	a := h.a
 	sh := a.wb.Sheets[0]
-	c := sh.Charts[2] // rows 16..31
 	a.selectRange(0, model.Range{R1: 0, C1: 0, R2: 1, C2: model.MaxCols - 1})
 	h.frame()
 	h.press("=", key.ModShortcut|key.ModShift)
-	c = sh.Charts[2]
+	c := sh.Charts[2]
 	if c.Anchor.From.Row != 18 || c.Plots[0].Series[0].Val.Ref != "Data!$B$4:$B$9" {
 		t.Fatalf("insert: anchor %+v ref %s", c.Anchor.From, c.Plots[0].Series[0].Val.Ref)
 	}

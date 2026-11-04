@@ -470,10 +470,10 @@ func binomPMF(k, n, p float64) float64 {
 			return v
 		}
 	}
-	switch {
-	case p == 0:
+	switch p {
+	case 0:
 		return b2f(k == 0)
-	case p == 1:
+	case 1:
 		return b2f(k == n)
 	}
 	return math.Exp(lgamma(n+1) - lgamma(k+1) - lgamma(n-k+1) + k*math.Log(p) + (n-k)*math.Log1p(-p))

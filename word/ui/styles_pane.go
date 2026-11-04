@@ -245,7 +245,7 @@ func (d *window) stylesPaneLayout(gtx layout.Context) layout.Dimensions {
 // paneList lays out a scrolling list of n rows.
 func paneList(gtx layout.Context, th *gui.Theme, l *widget.List, n int, row func(layout.Context, int) layout.Dimensions) layout.Dimensions {
 	l.Axis = layout.Vertical
-	return l.List.Layout(gtx, n, row)
+	return l.Layout(gtx, n, row)
 }
 
 // newStyleDialog is New Style (Create New Style from Formatting): name,

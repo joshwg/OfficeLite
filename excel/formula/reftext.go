@@ -77,8 +77,9 @@ func (e *Env) r1c1(s string) (Ref, bool) {
 	if !ok {
 		return Ref{}, false
 	}
-	r2, c2, kind2 := r1, c1, kind1
+	r2, c2 := r1, c1
 	if isRange {
+		var kind2 byte
 		if r2, c2, kind2, ok = e.r1c1Part(b); !ok || kind2 != kind1 {
 			return Ref{}, false
 		}

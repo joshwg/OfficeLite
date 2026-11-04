@@ -116,7 +116,7 @@ func (e ChartElem) Name(c *model.Chart, wb *model.Workbook, home string) string 
 			if ax.Kind != model.AxisVal {
 				kind = "(Category)"
 			}
-			pre := "Vertical"
+			var pre string
 			if ax.Pos == "r" || ax.Pos == "t" {
 				pre = "Secondary Vertical"
 				if dir == "Horizontal" {
@@ -234,7 +234,6 @@ type axisInfo struct {
 	labelRot float32 // degrees
 	skip     int     // show every skip-th category label
 	lines    int     // wrapped lines of category labels
-	size     float32 // room the labels take beside the plot
 	shown    bool
 	cross    *axisInfo // the axis it crosses
 	second   bool      // a secondary axis (right or top)
@@ -775,14 +774,14 @@ func (l *chartLayout) legend(inner rect32) rect32 {
 		return inner
 	}
 	const sep = 8
-	switch {
-	case pos == "r":
+	switch pos {
+	case "r":
 		inner.x1 = box.x0 - sep
-	case pos == "l":
+	case "l":
 		inner.x0 = box.x1 + sep
-	case pos == "t":
+	case "t":
 		inner.y0 = box.y1 + sep
-	case pos == "tr":
+	case "tr":
 		inner.x1 = box.x0 - sep
 	default:
 		inner.y1 = box.y0 - sep

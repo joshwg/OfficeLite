@@ -59,7 +59,7 @@ func (p *pkg) find(name string) *zip.File {
 	return nil
 }
 
-func (p *pkg) read(name string) ([]byte, error) {
+func (p *pkg) read(name string) (b []byte, err error) {
 	f := p.find(name)
 	if f == nil {
 		return nil, fmt.Errorf("missing part %s", name)
@@ -68,7 +68,11 @@ func (p *pkg) read(name string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rc.Close()
+	defer func() {
+		if closeErr := rc.Close(); err == nil {
+			err = closeErr
+		}
+	}()
 	return io.ReadAll(io.LimitReader(rc, 1<<30))
 }
 

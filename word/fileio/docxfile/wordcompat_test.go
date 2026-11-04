@@ -3,7 +3,6 @@ package docxfile
 import (
 	"archive/zip"
 	"bytes"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,19 +22,18 @@ func docxWithBody(t *testing.T, body string) []byte {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	for _, f := range zr.File {
-		rc, _ := f.Open()
-		b, _ := io.ReadAll(rc)
-		rc.Close()
+		b := readZipFile(t, f)
 		if f.Name == "word/document.xml" {
 			s := string(b)
 			i := strings.Index(s, "<w:body>") + len("<w:body>")
 			j := strings.Index(s, "<w:sectPr")
 			b = []byte(s[:i] + body + s[j:])
 		}
-		w, _ := zw.Create(f.Name)
-		w.Write(b)
+		writeZipFile(t, zw, f.Name, b)
 	}
-	zw.Close()
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
 	return buf.Bytes()
 }
 

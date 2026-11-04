@@ -6,6 +6,7 @@ package gui
 import (
 	"image"
 	"image/color"
+	"log"
 
 	"gioui.org/font"
 	"gioui.org/io/pointer"
@@ -141,7 +142,11 @@ func (b *Backstage) AutoSaveRows(th *Theme, ext string) []layout.Widget {
 				layout.Rigid(layout.Spacer{Width: 10}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					if i := b.autosave.Layout(gtx, th, 80, cur, items); i >= 0 {
-						go autosave.SetDefault(i == 1) // a file write
+						go func(on bool) {
+							if err := autosave.SetDefault(on); err != nil {
+								log.Printf("save AutoSave setting: %v", err)
+							}
+						}(i == 1)
 					}
 					return layout.Dimensions{Size: image.Pt(gtx.Dp(80), gtx.Dp(24))}
 				}),

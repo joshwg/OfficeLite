@@ -34,12 +34,17 @@ func (k Kind) String() string {
 
 // DetectFile inspects the file at path, reading only what it needs: the
 // zip or compound-file directory, not the whole file.
-func DetectFile(path string) (Kind, error) {
+func DetectFile(path string) (kind Kind, err error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return Unknown, err
 	}
-	defer f.Close()
+	defer func() {
+		if closeErr := f.Close(); closeErr != nil && err == nil {
+			err = closeErr
+			kind = Unknown
+		}
+	}()
 	st, err := f.Stat()
 	if err != nil {
 		return Unknown, err

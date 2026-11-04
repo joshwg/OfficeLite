@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"image"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -39,7 +40,11 @@ func (b *Backstage) AutoRecoverRows(th *Theme) []layout.Widget {
 				layout.Rigid(layout.Spacer{Width: 10}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					if i := b.recover.Layout(gtx, th, 120, minutesLabel(autorecover.Minutes()), items); i >= 0 {
-						go autorecover.SetMinutes(autorecover.Choices[i]) // a file write
+						go func(minutes int) {
+							if err := autorecover.SetMinutes(minutes); err != nil {
+								log.Printf("save AutoRecover setting: %v", err)
+							}
+						}(autorecover.Choices[i])
 					}
 					return layout.Dimensions{Size: image.Pt(gtx.Dp(120), gtx.Dp(24))}
 				}),
@@ -128,7 +133,9 @@ func (r *Recovery) Entries() []autorecover.Entry {
 // next start, when the window has closed.
 func (r *Recovery) Release() {
 	for _, it := range r.items {
-		autorecover.Release(it.e)
+		if err := autorecover.Release(it.e); err != nil {
+			log.Printf("release AutoRecover copy %s: %v", it.e.Copy, err)
+		}
 	}
 	r.items = nil
 }
@@ -188,7 +195,9 @@ func (r *Recovery) SaveAs(i int) {
 				err = errors.New("the save dialog didn't give a file path")
 			}
 			if wc != nil {
-				wc.Close()
+				if closeErr := wc.Close(); err == nil {
+					err = closeErr
+				}
 			}
 			if declined(err, r.cfg.Declined) {
 				err = ErrCancelled

@@ -153,12 +153,16 @@ func (r *reader) open(name string) (io.ReadCloser, error) {
 	return f.Open()
 }
 
-func (r *reader) unmarshal(name string, v any) error {
+func (r *reader) unmarshal(name string, v any) (err error) {
 	rc, err := r.open(name)
 	if err != nil {
 		return err
 	}
-	defer rc.Close()
+	defer func() {
+		if closeErr := rc.Close(); err == nil {
+			err = closeErr
+		}
+	}()
 	return xml.NewDecoder(rc).Decode(v)
 }
 
@@ -247,15 +251,18 @@ func unescapeOOXML(s string) string {
 
 // --- shared strings ---
 
-func (r *reader) readSST(name string) ([]string, error) {
+func (r *reader) readSST(name string) (out []string, err error) {
 	rc, err := r.open(name)
 	if err != nil {
 		return nil, err
 	}
-	defer rc.Close()
+	defer func() {
+		if closeErr := rc.Close(); err == nil {
+			err = closeErr
+		}
+	}()
 	dec := xml.NewDecoder(rc)
 	var (
-		out   []string
 		cur   strings.Builder
 		inT   bool
 		inRPh int // depth inside phonetic runs, whose text is not displayed
@@ -307,7 +314,11 @@ func (r *reader) loadStyles(data []byte) {
 		r.wb.Warnings = append(r.wb.Warnings, "styles could not be read; showing unformatted values")
 		return
 	}
-	defer x.Close()
+	defer func() {
+		if err := x.Close(); err != nil {
+			r.wb.Warnings = append(r.wb.Warnings, "styles reader could not be closed: "+err.Error())
+		}
+	}()
 
 	cache := map[model.Style]uint32{}
 	for i := 0; ; i++ {
@@ -420,12 +431,16 @@ type sharedFormula struct {
 	text     string
 }
 
-func (r *reader) readSheet(name string, sh *model.Sheet) error {
+func (r *reader) readSheet(name string, sh *model.Sheet) (err error) {
 	rc, err := r.open(name)
 	if err != nil {
 		return err
 	}
-	defer rc.Close()
+	defer func() {
+		if closeErr := rc.Close(); err == nil {
+			err = closeErr
+		}
+	}()
 	dec := xml.NewDecoder(rc)
 
 	var (

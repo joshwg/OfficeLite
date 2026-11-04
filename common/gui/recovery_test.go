@@ -46,7 +46,9 @@ func TestRecoverySaveName(t *testing.T) {
 func fakeEntry(t *testing.T, dir, base string, e autorecover.Entry) autorecover.Entry {
 	e.Copy = filepath.Join(dir, base+autorecover.Ext(e.App))
 	e.Sidecar = filepath.Join(dir, base+".json")
-	os.WriteFile(e.Copy, []byte("copy"), 0o600)
+	if err := os.WriteFile(e.Copy, []byte("copy"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := autorecover.Release(e); err != nil { // writes the sidecar
 		t.Fatal(err)
 	}

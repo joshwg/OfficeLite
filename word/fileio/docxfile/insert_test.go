@@ -6,14 +6,14 @@ import (
 	"image"
 	"image/color"
 	"image/png"
-	"io"
 	"strings"
 	"testing"
 
 	"officelite/word/model"
 )
 
-func insertTestPNG() []byte {
+func insertTestPNG(t *testing.T) []byte {
+	t.Helper()
 	img := image.NewNRGBA(image.Rect(0, 0, 40, 20))
 	for y := range 20 {
 		for x := range 40 {
@@ -21,7 +21,9 @@ func insertTestPNG() []byte {
 		}
 	}
 	var b bytes.Buffer
-	png.Encode(&b, img)
+	if err := png.Encode(&b, img); err != nil {
+		t.Fatal(err)
+	}
 	return b.Bytes()
 }
 
@@ -33,9 +35,7 @@ func zipPart(t *testing.T, data []byte, name string) string {
 	}
 	for _, f := range zr.File {
 		if f.Name == name {
-			rc, _ := f.Open()
-			b, _ := io.ReadAll(rc)
-			rc.Close()
+			b := readZipFile(t, f)
 			return string(b)
 		}
 	}
@@ -51,7 +51,7 @@ func TestInsertedContentRoundTrip(t *testing.T) {
 	e.InsertLink("Go", "go.dev")
 	e.InsertText(" now")
 	e.Enter()
-	pic, w, h, err := model.NewPicture(insertTestPNG(), "chart.png")
+	pic, w, h, err := model.NewPicture(insertTestPNG(t), "chart.png")
 	if err != nil {
 		t.Fatal(err)
 	}

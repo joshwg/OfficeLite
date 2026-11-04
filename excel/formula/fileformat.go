@@ -209,7 +209,7 @@ func AddFuturePrefixes(f string) string {
 			continue
 		}
 		afterFunc := i > 0 && toks[i-1].Kind == TokFunc
-		if n := len(stack); n > 0 && !(t.Kind == TokLParen && afterFunc) {
+		if n := len(stack); n > 0 && (t.Kind != TokLParen || !afterFunc) {
 			stack[n-1].toks++
 		}
 		switch t.Kind {

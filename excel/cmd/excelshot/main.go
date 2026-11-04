@@ -136,7 +136,9 @@ func main() {
 		list := recent.Open("")
 		for _, s := range []string{"Samples/excel/leasing.xls", flag.Arg(0)} {
 			if abs, err := filepath.Abs(s); err == nil {
-				list.Add(abs, recent.Spreadsheet)
+				if err := list.Add(abs, recent.Spreadsheet); err != nil {
+					log.Printf("add %s to recent workbooks: %v", abs, err)
+				}
 			}
 		}
 		path, _ := filepath.Abs(flag.Arg(0))
@@ -161,7 +163,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			log.Printf("close screenshot %s: %v", *out, err)
+		}
+	}()
 	if err := png.Encode(f, img); err != nil {
 		log.Fatal(err)
 	}

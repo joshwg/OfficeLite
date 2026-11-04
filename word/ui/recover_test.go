@@ -53,8 +53,13 @@ func (h *harness) sidecar(dir string) autorecover.Entry {
 	var e autorecover.Entry
 	for _, n := range recoverFiles(dir) {
 		if filepath.Ext(n) == ".json" {
-			b, _ := os.ReadFile(filepath.Join(dir, n))
-			json.Unmarshal(b, &e)
+			b, err := os.ReadFile(filepath.Join(dir, n))
+			if err != nil {
+				h.t.Fatal(err)
+			}
+			if err := json.Unmarshal(b, &e); err != nil {
+				h.t.Fatal(err)
+			}
 			e.Copy = filepath.Join(dir, n[:len(n)-len(".json")]+".docx")
 		}
 	}
@@ -119,7 +124,9 @@ func TestOpenRecovered(t *testing.T) {
 	if err := fileio.SaveFile(src.d.doc, e.Copy, fileio.DOCX); err != nil {
 		t.Fatal(err)
 	}
-	autorecover.Release(e)
+	if err := autorecover.Release(e); err != nil {
+		t.Fatal(err)
+	}
 
 	h := newHarness(t)
 	d := h.d

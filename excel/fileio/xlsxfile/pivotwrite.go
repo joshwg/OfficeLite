@@ -82,8 +82,14 @@ func (x *writer) pivotParts(zr *zip.Reader, edits map[string][]func([]byte) ([]b
 			if err != nil {
 				return nil, err
 			}
-			b, _ := io.ReadAll(rc)
-			rc.Close()
+			b, readErr := io.ReadAll(rc)
+			closeErr := rc.Close()
+			if readErr != nil {
+				return nil, readErr
+			}
+			if closeErr != nil {
+				return nil, closeErr
+			}
 			for _, m := range numFmtRe.FindAllSubmatch(b, -1) {
 				id, _ := strconv.Atoi(string(m[1]))
 				fmtIDs[xmlUnescape(string(m[2]))] = id

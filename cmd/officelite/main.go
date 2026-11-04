@@ -36,12 +36,16 @@ func main() {
 	word := flag.Bool("word", false, "open files as documents; with no files, start a blank document")
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "usage: officelite [--excel | --word] [file ...]\n")
+		if _, err := fmt.Fprintf(flag.CommandLine.Output(), "usage: officelite [--excel | --word] [file ...]\n"); err != nil {
+			log.Print(err)
+		}
 		flag.PrintDefaults()
 	}
 	flag.Parse()
 	if *excel && *word {
-		fmt.Fprintln(flag.CommandLine.Output(), "officelite: --excel and --word can't be used together")
+		if _, err := fmt.Fprintln(flag.CommandLine.Output(), "officelite: --excel and --word can't be used together"); err != nil {
+			log.Print(err)
+		}
 		flag.Usage()
 		os.Exit(2)
 	}
@@ -123,7 +127,9 @@ func main() {
 	// went to another one, the copies wait for the next start.
 	if len(orphans) > 0 && started.Load() == 0 {
 		for _, e := range orphans {
-			autorecover.Release(e)
+			if err := autorecover.Release(e); err != nil {
+				log.Printf("release AutoRecover copy %s: %v", e.Copy, err)
+			}
 		}
 	}
 	if len(orphans) > 0 && started.Load() > 0 {

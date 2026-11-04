@@ -13,7 +13,9 @@ import (
 
 func TestPictureLayout(t *testing.T) {
 	var buf bytes.Buffer
-	png.Encode(&buf, image.NewGray(image.Rect(0, 0, 400, 200)))
+	if err := png.Encode(&buf, image.NewGray(image.Rect(0, 0, 400, 200))); err != nil {
+		t.Fatal(err)
+	}
 	pic, w, h, err := model.NewPicture(buf.Bytes(), "a.png")
 	if err != nil {
 		t.Fatal(err)

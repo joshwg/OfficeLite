@@ -122,7 +122,7 @@ func (b *Book) InsertChartSheet(at int, name string, c *model.Chart) error {
 		return err
 	}
 	if b.sheetIndex(name) >= 0 {
-		return fmt.Errorf("That name is already taken. Try a different one.")
+		return fmt.Errorf("that name is already taken. Try a different one")
 	}
 	c = c.Clone()
 	c.Anchor = model.Anchor{}
@@ -550,7 +550,7 @@ func ApplyChartStyle(c *model.Chart, style int) {
 func SwitchRowColumn(wb *model.Workbook, c *model.Chart, home string) error {
 	src, ok := ChartDataSource(wb, c, home)
 	if !ok {
-		return fmt.Errorf("The data range is too complex to be displayed: switch rows and columns in Select Data with one range of cells")
+		return fmt.Errorf("the data range is too complex to be displayed: switch rows and columns in Select Data with one range of cells")
 	}
 	src.ByCols = !src.ByCols
 	SetChartSource(wb, c, home, src)

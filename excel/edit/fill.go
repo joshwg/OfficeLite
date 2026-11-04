@@ -104,7 +104,7 @@ func (b *Book) fill(sheet int, sel model.Range, down bool) calc.Result {
 
 // ErrFillShape is returned for an AutoFill target that doesn't extend
 // the source along one side.
-var ErrFillShape = errors.New("The fill area must extend the selection in one direction")
+var ErrFillShape = errors.New("the fill area must extend the selection in one direction")
 
 // AutoFill extends the cells of src over to (which contains src and
 // extends it down, up, right or left), as dragging the fill handle does:

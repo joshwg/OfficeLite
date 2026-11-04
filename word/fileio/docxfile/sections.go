@@ -40,7 +40,7 @@ func parseSection(s *node) *model.Section {
 				c.Space = v
 			}
 			c.Separator = onOffAttr(k.attr("w:sep"))
-			if cols := k.children("w:col"); len(cols) > 1 && !(k.attr("w:equalWidth") != "" && onOffAttr(k.attr("w:equalWidth"))) {
+			if cols := k.children("w:col"); len(cols) > 1 && (k.attr("w:equalWidth") == "" || !onOffAttr(k.attr("w:equalWidth"))) {
 				for _, col := range cols {
 					w, _ := twipsPt(col.attr("w:w"))
 					sp, _ := twipsPt(col.attr("w:space"))
@@ -177,7 +177,7 @@ type noteParts struct {
 func (r *reader) loadNotes() {
 	r.np = noteParts{read: map[*node]*model.Note{}}
 	for _, rl := range r.rels {
-		k := -1
+		var k int
 		switch {
 		case rl.is(relFootnotes):
 			k = 0

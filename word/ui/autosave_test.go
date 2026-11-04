@@ -189,7 +189,9 @@ func TestAutoSaveError(t *testing.T) {
 	clock := h.startAutoSave(filepath.Join(dir, "Letter.docx"))
 	d.setAutoSave(true)
 	h.typeText("Dear")
-	os.RemoveAll(dir)
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatal(err)
+	}
 	clock.Advance(autosave.Delay)
 	h.settle()
 	if d.as.saver.On() || !strings.HasPrefix(d.errMsg, "AutoSave turned off: Save failed") || !d.modified() || h.text() != "Dear" {
@@ -203,11 +205,18 @@ func TestAutoSaveDefault(t *testing.T) {
 	settings := filepath.Join(t.TempDir(), "settings.json")
 	old := autorecover.SettingsPath
 	autorecover.SettingsPath = func() string { return settings }
-	t.Cleanup(func() { autosave.SetDefault(false); autorecover.SettingsPath = old })
+	t.Cleanup(func() {
+		if err := autosave.SetDefault(false); err != nil {
+			t.Errorf("reset AutoSave setting: %v", err)
+		}
+		autorecover.SettingsPath = old
+	})
 	h := newHarness(t)
 	d := h.d
 	h.startAutoSave("")
-	autosave.SetDefault(true)
+	if err := autosave.SetDefault(true); err != nil {
+		t.Fatal(err)
+	}
 	dir := t.TempDir()
 	d.savedAs(fileio.DOC, filepath.Join(dir, "Letter.doc"), false, d.ed.Version, nil)
 	if d.as.saver.On() {

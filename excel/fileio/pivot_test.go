@@ -122,7 +122,9 @@ func pivotSample(t *testing.T) (*model.Workbook, *edit.Book) {
 	products := []string{"Laptop", "Monitor", "Keyboard", "Mouse"}
 	price := []float64{899, 249, 49, 19}
 	for c, h := range head {
-		b.Enter(0, 0, c, h)
+		if _, err := b.Enter(0, 0, c, h); err != nil {
+			t.Fatal(err)
+		}
 	}
 	for i := 1; i <= 48; i++ {
 		p := (i/4 + i*7) % 4

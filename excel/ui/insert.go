@@ -214,15 +214,14 @@ func (a *App) shiftCells(insert bool, how edit.Shift) {
 // --- Function ---
 
 type functionDialog struct {
-	search  widget.Editor
-	cat     gui.DropDown
-	catIdx  int // 0 = all
-	cats    []functions.Category
-	list    widget.List
-	btns    []widget.Clickable
-	shown   []string
-	sel     string
-	lastHit string
+	search widget.Editor
+	cat    gui.DropDown
+	catIdx int // 0 = all
+	cats   []functions.Category
+	list   widget.List
+	btns   []widget.Clickable
+	shown  []string
+	sel    string
 }
 
 // insertFunctionDialog lists the implemented functions by category with

@@ -23,15 +23,15 @@ import (
 
 var (
 	// ErrPivotChange is Excel's refusal to edit a report's cells.
-	ErrPivotChange = errors.New("You can't change this part of a PivotTable report.")
+	ErrPivotChange = errors.New("you can't change this part of a PivotTable report")
 	// ErrPivotOverlap is Excel's refusal to let two reports overlap.
-	ErrPivotOverlap = errors.New("A PivotTable report cannot overlap another PivotTable report.")
+	ErrPivotOverlap = errors.New("a PivotTable report cannot overlap another PivotTable report")
 	// ErrPivotOverwrite asks before a report covers other cells with
 	// data; the caller asks "There's already data in ..." and tries
 	// again with overwrite set.
-	ErrPivotOverwrite = errors.New("There's already data in the cells the PivotTable report needs.")
+	ErrPivotOverwrite = errors.New("there's already data in the cells the PivotTable report needs")
 	// ErrPivotSource is a source that isn't a reference.
-	ErrPivotSource = errors.New("Reference isn't valid.")
+	ErrPivotSource = errors.New("reference isn't valid")
 )
 
 // The PivotStyleLight16 colors: the header and total bands and their
@@ -122,7 +122,7 @@ func (b *Book) pivotCells(sheet int, pts []*model.PivotTable, i int, overwrite b
 	pivot.Sync(pt, src)
 	res := pivot.Compute(pt, src, b.nf)
 	if res.Out.Area.R2 >= model.MaxRows || res.Out.Area.C2 >= model.MaxCols {
-		return nil, errors.New("The PivotTable report doesn't fit on the sheet.")
+		return nil, errors.New("the PivotTable report doesn't fit on the sheet")
 	}
 	var old model.Range
 	hadOld := i < len(sh.Pivots)
@@ -348,7 +348,7 @@ func pivotCut(sh *model.Sheet, rows bool, at, n int) bool {
 			continue
 		}
 		end := at - n - 1
-		if at <= hi && end >= lo && !(at <= lo && end >= hi) {
+		if at <= hi && end >= lo && (at > lo || end < hi) {
 			return true
 		}
 	}
@@ -475,7 +475,7 @@ func (b *Book) pivotEnter(sheet, idx, row, col int, text string) (calc.Result, e
 		}
 		for i, v := range pt.Values {
 			if i != h.Value && strings.EqualFold(v.Name, name) {
-				return calc.Result{}, errors.New("PivotTable field name already exists.")
+				return calc.Result{}, errors.New("PivotTable field name already exists")
 			}
 		}
 		p := pt.Clone()

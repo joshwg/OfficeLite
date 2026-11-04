@@ -668,7 +668,9 @@ func (d *window) choosePicture() {
 					path = f.Name()
 				}
 				data, err = io.ReadAll(rc)
-				rc.Close()
+				if closeErr := rc.Close(); err == nil {
+					err = closeErr
+				}
 			}
 		}
 		d.calls.Post(func() { d.insertPictureData(path, data, err) })

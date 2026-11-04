@@ -540,7 +540,7 @@ func TestRejects(t *testing.T) {
 		name, want string
 		f          func([]byte)
 	}{
-		{"word95", "Word 6.0/95", func(wd []byte) { binary.LittleEndian.PutUint16(wd[2:], 0x0065) }},
+		{"word95", "word 6.0/95", func(wd []byte) { binary.LittleEndian.PutUint16(wd[2:], 0x0065) }},
 		{"encrypted", "password", func(wd []byte) { wd[11] |= 0x01 }},
 		{"obfuscated", "obfuscated", func(wd []byte) { wd[11] |= 0x81 }},
 		{"signature", "not a Word document", func(wd []byte) { wd[0] = 0 }},
@@ -557,7 +557,9 @@ func TestRejects(t *testing.T) {
 	// Truncated streams must not panic.
 	data := buf.Bytes()
 	for _, n := range []int{512, 1024, 1536, len(data) / 2} {
-		Read(data[:n])
+		if _, err := Read(data[:n]); err == nil {
+			t.Errorf("truncated stream of %d bytes was accepted", n)
+		}
 	}
 }
 

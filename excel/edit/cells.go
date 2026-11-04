@@ -25,7 +25,7 @@ const (
 )
 
 // ErrMergedShift is Excel's refusal to shift part of a merged area.
-var ErrMergedShift = errors.New("We can't do that to a merged cell")
+var ErrMergedShift = errors.New("we can't do that to a merged cell")
 
 // cellsOp is an insertion or deletion of a block with a shift.
 type cellsOp struct {

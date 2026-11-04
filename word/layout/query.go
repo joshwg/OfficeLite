@@ -298,7 +298,7 @@ func (e *Engine) SelectionRects(pg *Page, a, b model.Pos) []Rect {
 			out = append(out, Rect{pl.X - cellMargin, pl.Y, pl.X + pl.W + cellMargin, pl.Y + l.Height})
 			continue
 		}
-		if !ls.Less(b) || !(a.Less(le) || l.Last && a == le && b.Para > pl.Para) {
+		if !ls.Less(b) || (!a.Less(le) && (!l.Last || a != le || b.Para <= pl.Para)) {
 			continue
 		}
 		x0 := l.X0

@@ -85,7 +85,7 @@ func Read(data []byte) (*model.Workbook, error) {
 		return nil, err
 	}
 	if name == "Book" {
-		return nil, errors.New("Excel 5.0/95 workbooks (BIFF5) are not supported; save as .xls 97-2003 or .xlsx")
+		return nil, errors.New("excel 5.0/95 workbooks (BIFF5) are not supported; save as .xls 97-2003 or .xlsx")
 	}
 	p := &parser{stream: stream, wb: &model.Workbook{}, formats: map[int]string{}, palette: map[int]uint32{}}
 	if err := p.globals(); err != nil {

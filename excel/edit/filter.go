@@ -20,7 +20,7 @@ import (
 // shows only what the filter hid. Each change is one undo step.
 
 // ErrFilterRange is Excel's refusal to filter an empty cell.
-var ErrFilterRange = errors.New("This can't be applied to the selected range. Select a single cell in a range and try again.")
+var ErrFilterRange = errors.New("this can't be applied to the selected range. Select a single cell in a range and try again")
 
 // filterChange is a change of a sheet's AutoFilter and filtered rows.
 type filterChange struct {

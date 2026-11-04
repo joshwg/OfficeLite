@@ -124,7 +124,7 @@ func GetData(pt *model.PivotTable, dataField string, pairs []formula.Value) (row
 			good := true
 			for k := range depth {
 				v, ok := want[fs[k]]
-				if !ok || valueKey(v) != l.Items[k] && !(l.Items[k] == "" && isBlankArg(v)) {
+				if !ok || valueKey(v) != l.Items[k] && (l.Items[k] != "" || !isBlankArg(v)) {
 					good = false
 					break
 				}

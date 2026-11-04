@@ -106,7 +106,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			log.Printf("close screenshot %s: %v", *out, err)
+		}
+	}()
 	if err := png.Encode(f, img); err != nil {
 		log.Fatal(err)
 	}

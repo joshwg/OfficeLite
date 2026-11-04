@@ -597,9 +597,19 @@ func (o *objWriter) object(n int, body string) {
 func (o *objWriter) stream(n int, dict string, data []byte, compress bool) {
 	if compress && o.compress {
 		var z bytes.Buffer
-		zw, _ := zlib.NewWriterLevel(&z, zlib.BestCompression)
-		zw.Write(data)
-		zw.Close()
+		zw, err := zlib.NewWriterLevel(&z, zlib.BestCompression)
+		if err != nil {
+			o.err = err
+			return
+		}
+		if _, err := zw.Write(data); err != nil {
+			o.err = err
+			return
+		}
+		if err := zw.Close(); err != nil {
+			o.err = err
+			return
+		}
 		data = z.Bytes()
 		dict = "/Filter /FlateDecode " + dict
 	}

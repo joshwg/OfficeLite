@@ -38,32 +38,40 @@ func readText(data []byte) *model.Document {
 // are separated by tabs.
 func writeText(doc *model.Document, w io.Writer) error {
 	bw := bufio.NewWriter(w)
-	var blocks func([]model.Block)
-	blocks = func(bs []model.Block) {
+	var writeErr error
+	write := func(s string) {
+		if writeErr == nil {
+			_, writeErr = bw.WriteString(s)
+		}
+	}
+	blocks := func(bs []model.Block) {
 		for _, b := range bs {
 			switch b := b.(type) {
 			case *model.Paragraph:
-				bw.WriteString(strings.NewReplacer("\n", "\r\n", "\f", "\r\n").Replace(plainText(b)))
-				bw.WriteString("\r\n")
+				write(strings.NewReplacer("\n", "\r\n", "\f", "\r\n").Replace(plainText(b)))
+				write("\r\n")
 			case *model.Table:
 				for _, row := range b.Rows {
 					for i, c := range row.Cells {
 						if i > 0 {
-							bw.WriteString("\t")
+							write("\t")
 						}
 						var parts []string
 						model.WalkBlocks(c.Blocks, func(p *model.Paragraph) bool {
 							parts = append(parts, plainText(p))
 							return true
 						})
-						bw.WriteString(strings.Join(parts, " "))
+						write(strings.Join(parts, " "))
 					}
-					bw.WriteString("\r\n")
+					write("\r\n")
 				}
 			}
 		}
 	}
 	blocks(doc.Body)
+	if writeErr != nil {
+		return writeErr
+	}
 	return bw.Flush()
 }
 

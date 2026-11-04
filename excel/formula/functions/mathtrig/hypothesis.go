@@ -166,7 +166,7 @@ func zTest(e *f.Env, a []f.Value) f.Value {
 	if n == 0 {
 		return f.ErrNA
 	}
-	sigma := math.NaN()
+	var sigma float64
 	if len(a) > 2 && !missing(a[2]) {
 		if sigma, err = f.Num(a[2]); err != nil {
 			return err

@@ -96,13 +96,18 @@ func (ic *Icon) image(sz int, c color.NRGBA) paint.ImageOp {
 	if img, ok := ic.images[k]; ok {
 		return img
 	}
-	m, _ := iconvg.DecodeMetadata(ic.src)
+	m, err := iconvg.DecodeMetadata(ic.src)
+	if err != nil {
+		panic(err)
+	}
 	dx, dy := m.ViewBox.AspectRatio()
 	rgba := image.NewRGBA(image.Rectangle{Max: image.Pt(sz, int(float32(sz)*dy/dx))})
 	var r iconvg.Rasterizer
 	r.SetDstImage(rgba, rgba.Bounds(), draw.Src)
 	m.Palette[0] = linearRGBA(c)
-	iconvg.Decode(&r, ic.src, &iconvg.DecodeOptions{Palette: &m.Palette})
+	if err := iconvg.Decode(&r, ic.src, &iconvg.DecodeOptions{Palette: &m.Palette}); err != nil {
+		panic(err)
+	}
 	img := paint.NewImageOp(rgba)
 	if ic.images == nil || len(ic.images) >= maxIconImages {
 		ic.images = map[iconKey]paint.ImageOp{}

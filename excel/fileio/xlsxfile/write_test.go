@@ -115,7 +115,9 @@ func roundTrip(t *testing.T, wb *model.Workbook) (*model.Workbook, []byte) {
 	if err != nil {
 		t.Fatalf("excelize cannot open the written file: %v", err)
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
 	got, err := Read(buf.Bytes())
 	if err != nil {
 		t.Fatal(err)
@@ -242,8 +244,14 @@ func zipParts(t *testing.T, data []byte) map[string]string {
 		if err != nil {
 			t.Fatal(err)
 		}
-		b, _ := io.ReadAll(rc)
-		rc.Close()
+		b, readErr := io.ReadAll(rc)
+		closeErr := rc.Close()
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if closeErr != nil {
+			t.Fatal(closeErr)
+		}
 		out[f.Name] = string(b)
 	}
 	return out
@@ -390,9 +398,18 @@ func TestWriteExtremeNumbers(t *testing.T) {
 		if f.Name != "xl/worksheets/sheet1.xml" {
 			continue
 		}
-		rc, _ := f.Open()
-		xml, _ := io.ReadAll(rc)
-		rc.Close()
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		xml, readErr := io.ReadAll(rc)
+		closeErr := rc.Close()
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if closeErr != nil {
+			t.Fatal(closeErr)
+		}
 		if strings.Contains(string(xml), "0000000000000000000000") {
 			t.Errorf("number written without exponent: %s", xml)
 		}

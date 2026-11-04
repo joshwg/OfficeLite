@@ -215,7 +215,9 @@ func TestCopyPaste(t *testing.T) {
 	b.expect(t, "fill", map[string]string{"E1": "1", "F2": "1"})
 
 	// Cut and paste moves cells, and references to them follow.
-	b.Paste(b.Copy(0, rng("A1", "A2"), true), 0, rng("H5", "H5"))
+	if _, _, err := b.Paste(b.Copy(0, rng("A1", "A2"), true), 0, rng("H5", "H5")); err != nil {
+		t.Fatal(err)
+	}
 	if got := b.cell(0, "B1").Formula; got != "H5*10" {
 		t.Errorf("B1 = %q after moving A1", got)
 	}
@@ -239,13 +241,17 @@ func TestPasteText(t *testing.T) {
 	if got := SplitText("a\tb\r\n\"x\ny\"\t\"q\"\"\"\r\n"); !reflect.DeepEqual(got, [][]string{{"a", "b"}, {"x\ny", `q"`}}) {
 		t.Errorf("SplitText: %q", got)
 	}
-	b.PasteText("1,000\t12%\n=A1*2\tTRUE\n", 0, rng("A1", "A1"))
+	if _, _, err := b.PasteText("1,000\t12%\n=A1*2\tTRUE\n", 0, rng("A1", "A1")); err != nil {
+		t.Fatal(err)
+	}
 	b.expect(t, "text", map[string]string{"A1": "1,000", "B1": "12%", "A2": "2000", "B2": "TRUE"})
 	if b.cell(0, "A1").Num != 1000 {
 		t.Error("A1 is not the number 1000")
 	}
 	// One value fills the selection.
-	b.PasteText("7", 0, rng("D1", "D3"))
+	if _, _, err := b.PasteText("7", 0, rng("D1", "D3")); err != nil {
+		t.Fatal(err)
+	}
 	b.expect(t, "fill", map[string]string{"D1": "7", "D3": "7"})
 	if got := CopyText(b.WB.Sheets[0], rng("A1", "B1")); got != "1,000\t12%\r\n" {
 		t.Errorf("CopyText = %q", got)
@@ -320,14 +326,18 @@ func TestInsertDeleteCols(t *testing.T) {
 	b.enter(t, 0, "A1", "5")
 	b.enter(t, 0, "C1", "=A1+B1")
 	b.WB.Sheets[0].ColWidth[1] = 20
-	b.InsertCols(0, 1, 1)
+	if _, err := b.InsertCols(0, 1, 1); err != nil {
+		t.Fatal(err)
+	}
 	if got := b.cell(0, "D1").Formula; got != "A1+C1" {
 		t.Errorf("D1 = %q", got)
 	}
 	if b.WB.Sheets[0].ColWidth[2] != 20 {
 		t.Errorf("widths %v", b.WB.Sheets[0].ColWidth)
 	}
-	b.DeleteCols(0, 0, 1)
+	if _, err := b.DeleteCols(0, 0, 1); err != nil {
+		t.Fatal(err)
+	}
 	if got := b.cell(0, "C1"); got.Formula != "#REF!+B1" || got.Text != "#REF!" {
 		t.Errorf("C1 = %q (%q)", got.Formula, got.Text)
 	}
@@ -355,7 +365,9 @@ func TestSheets(t *testing.T) {
 	if _, err := b.RenameSheet(2, "a[1]"); err == nil {
 		t.Error("bad name accepted")
 	}
-	b.DeleteSheet(2)
+	if _, err := b.DeleteSheet(2); err != nil {
+		t.Fatal(err)
+	}
 	if got := b.cell(0, "A1"); got.Formula != "#REF!*2" || got.Text != "#REF!" {
 		t.Errorf("after delete: %q (%q)", got.Formula, got.Text)
 	}
@@ -365,7 +377,9 @@ func TestSheets(t *testing.T) {
 	if got := b.cell(0, "A1"); got.Formula != "'My Data'!A1*2" || got.Text != "8" {
 		t.Errorf("undo delete: %q (%q)", got.Formula, got.Text)
 	}
-	b.DeleteSheet(1)
+	if _, err := b.DeleteSheet(1); err != nil {
+		t.Fatal(err)
+	}
 	b.Undo()
 	if where, _, _ := b.Redo(); where.Sheet != 1 || b.WB.Sheets[1].Name != "My Data" {
 		t.Errorf("redo delete selects sheet %d (%v)", where.Sheet, b.WB.Sheets)
@@ -376,7 +390,9 @@ func TestSheets(t *testing.T) {
 	if len(b.WB.Sheets) != 2 || b.cell(0, "A1").Formula != "Data!A1*2" {
 		t.Errorf("after undoing everything: %d sheets, A1 %q", len(b.WB.Sheets), b.cell(0, "A1").Formula)
 	}
-	b.DeleteSheet(1)
+	if _, err := b.DeleteSheet(1); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := b.DeleteSheet(0); err == nil {
 		t.Error("deleted the last sheet")
 	}
@@ -393,7 +409,9 @@ func TestCutPasteCrossSheet(t *testing.T) {
 	b.enter(t, 0, "A3", "=D4+1") // D4 stays behind
 	b.enter(t, 0, "D4", "5")
 	b.enter(t, 0, "F1", "=A1") // outside, points at the block
-	b.Paste(b.Copy(0, rng("A1", "A3"), true), 1, rng("B2", "B2"))
+	if _, _, err := b.Paste(b.Copy(0, rng("A1", "A3"), true), 1, rng("B2", "B2")); err != nil {
+		t.Fatal(err)
+	}
 	for ref, want := range map[string]string{"B3": "B2*2", "B4": "Sheet1!D4+1"} {
 		if got := b.cell(1, ref).Formula; got != want {
 			t.Errorf("Data!%s = %q, want %q", ref, got, want)
@@ -406,7 +424,9 @@ func TestCutPasteCrossSheet(t *testing.T) {
 	b2 := newBook()
 	b2.enter(t, 0, "A1", "1")
 	b2.enter(t, 0, "A2", "=A1+1")
-	b2.Paste(b2.Copy(0, rng("A1", "A2"), true), 0, rng("J20", "J20"))
+	if _, _, err := b2.Paste(b2.Copy(0, rng("A1", "A2"), true), 0, rng("J20", "J20")); err != nil {
+		t.Fatal(err)
+	}
 	if got := b2.cell(0, "J21").Formula; got != "J20+1" {
 		t.Errorf("J21 = %q, want J20+1", got)
 	}

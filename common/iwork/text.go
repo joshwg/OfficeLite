@@ -120,15 +120,6 @@ func (t attrTable) exact(i int) uint64 {
 	return 0
 }
 
-// next is the first change after character i (or -1).
-func (t attrTable) next(i int) int {
-	k := sort.SearchInts(t.at, i+1)
-	if k < len(t.at) {
-		return t.at[k]
-	}
-	return -1
-}
-
 // Paragraphs splits a TSWP.StorageArchive (or the storage a
 // TST.RichTextPayloadArchive points to) into paragraphs of styled spans.
 // Character positions in the attribute tables count UTF-16 code units, as

@@ -475,7 +475,7 @@ func FormatDateTime(t time.Time, pattern string) string {
 		switch c {
 		case 'y', 'u', 'Y':
 			if n == 2 {
-				b.WriteString(fmt.Sprintf("%02d", t.Year()%100))
+				fmt.Fprintf(&b, "%02d", t.Year()%100)
 			} else {
 				b.WriteString(strconv.Itoa(t.Year()))
 			}

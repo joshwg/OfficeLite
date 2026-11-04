@@ -67,9 +67,6 @@ func (m *mouseState) track(e pointer.Event) {
 	}
 }
 
-// busy reports whether a margin, move or border drag is in progress.
-func (m *mouseState) busy() bool { return m.marginActive || m.pending || m.moving || m.resizing }
-
 // docCursor sets the page view's cursor: the I-beam over text, an arrow
 // in the left margin and while moving text, resize arrows on table
 // borders, a hand over a link with Ctrl held, and the Format Painter's.

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -160,7 +161,11 @@ func Run(w *app.Window, cfg Config) error {
 	if cfg.Launch == nil {
 		fonts := cfg.Fonts
 		cfg.Launch = func(_ doctype.Kind, path string) {
-			go Run(new(app.Window), Config{Path: path, Fonts: fonts})
+			go func() {
+				if err := Run(new(app.Window), Config{Path: path, Fonts: fonts}); err != nil {
+					log.Printf("open %s in ExcelLite: %v", path, err)
+				}
+			}()
 		}
 	}
 	w.Option(app.Title(appName), app.Size(unit.Dp(1280), unit.Dp(800)))
@@ -273,8 +278,11 @@ func (a *App) openDialog() {
 			a.finishLoad("", nil, err)
 			return
 		}
-		defer rc.Close()
 		if f, ok := rc.(*os.File); ok && filepath.IsAbs(f.Name()) {
+			if err := rc.Close(); err != nil {
+				a.finishLoad("", nil, err)
+				return
+			}
 			path := f.Name()
 			a.calls.Post(func() { a.openFile(path) })
 			return
@@ -282,6 +290,9 @@ func (a *App) openDialog() {
 		a.loading.Store(true)
 		a.win.Invalidate()
 		data, err := io.ReadAll(rc)
+		if closeErr := rc.Close(); err == nil {
+			err = closeErr
+		}
 		if err != nil {
 			a.finishLoad("", nil, err)
 			return
@@ -378,7 +389,9 @@ func (a *App) applyLoad(r loadResult, readOnly bool) {
 	a.lk.readOnly, a.lk.closeOnCancel = readOnly, false
 	if r.path != "" {
 		a.fileInfo, _ = os.Stat(r.path)
-		a.recent.Add(r.path, recent.Spreadsheet)
+		if err := a.recent.Add(r.path, recent.Spreadsheet); err != nil {
+			log.Printf("add %s to recent workbooks: %v", r.path, err)
+		}
 	}
 	a.setWorkbook(r.wb)
 	if r.rec != nil {

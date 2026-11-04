@@ -159,34 +159,34 @@ func Preview(gtx layout.Context, fonts *gui.FontLibrary, list *recent.List, wb *
 	}
 	if o.ChartUI != "" {
 		a.layout(gtx)
-		gtx.Ops.Reset()
+		gtx.Reset()
 		a.previewChart(o.ChartUI)
 		a.layout(gtx)
-		gtx.Ops.Reset()
+		gtx.Reset()
 		a.layout(gtx)
 		return
 	}
 	if o.Pivot != "" {
 		a.layout(gtx)
-		gtx.Ops.Reset()
+		gtx.Reset()
 		a.previewPivot(o.Pivot)
 		a.layout(gtx)
-		gtx.Ops.Reset()
+		gtx.Reset()
 		a.layout(gtx)
 		return
 	}
 	if o.Data != "" {
 		a.layout(gtx)
-		gtx.Ops.Reset()
+		gtx.Reset()
 		a.previewData(o.Data)
 		a.layout(gtx)
-		gtx.Ops.Reset()
+		gtx.Reset()
 		a.layout(gtx)
 		return
 	}
 	if o.Filter != "" {
 		a.layout(gtx)
-		gtx.Ops.Reset()
+		gtx.Reset()
 		if _, r, err := a.book.ResolveRef(o.Filter, a.active); err == nil {
 			switch o.Dialog {
 			case "custom":
@@ -199,7 +199,7 @@ func Preview(gtx layout.Context, fonts *gui.FontLibrary, list *recent.List, wb *
 		}
 		if o.FilterSub && a.filt.open {
 			a.layout(gtx) // places the submenu's row
-			gtx.Ops.Reset()
+			gtx.Reset()
 			fm := &a.filt
 			openCtx(&fm.subMenu, &fm.subActs, image.Pt(fm.at.X+gtx.Dp(filterMenuWidth)-gtx.Dp(4), fm.at.Y+fm.subY), a.subItems(fm.col, fm.kind))
 		}
@@ -212,7 +212,7 @@ func Preview(gtx layout.Context, fonts *gui.FontLibrary, list *recent.List, wb *
 	}
 	// Lay out once to place the grid, then again with the menu or drag.
 	a.layout(gtx)
-	gtx.Ops.Reset()
+	gtx.Reset()
 	st := a.state()
 	v := &st.view
 	p := v.Sel.Active
@@ -374,7 +374,10 @@ func (a *App) previewUndo(redo bool) {
 	b, sh := a.book, a.active
 	p := a.state().view.Sel.Active
 	cell := model.Range{R1: p.Row, C1: p.Col, R2: p.Row, C2: p.Col}
-	b.Enter(sh, p.Row, p.Col, "Total")
+	if _, err := b.Enter(sh, p.Row, p.Col, "Total"); err != nil {
+		a.errMsg = "Preview edit failed: " + err.Error()
+		return
+	}
 	func() {
 		defer b.Op("Bold")()
 		b.Format(sh, cell, func(st *model.Style, _, _ int) { st.Font.Bold = true })
@@ -383,9 +386,15 @@ func (a *App) previewUndo(redo bool) {
 		defer b.Op("Fill Color")()
 		b.Format(sh, cell, func(st *model.Style, _, _ int) { st.Fill = colors.RGB(0xFFFF00) })
 	}()
-	b.InsertRows(sh, p.Row+1, 1)
+	if _, err := b.InsertRows(sh, p.Row+1, 1); err != nil {
+		a.errMsg = "Preview edit failed: " + err.Error()
+		return
+	}
 	b.ResizeCols(sh, []int{p.Col}, 14)
-	b.Enter(sh, p.Row+1, p.Col, "=SUM(A1:A3)")
+	if _, err := b.Enter(sh, p.Row+1, p.Col, "=SUM(A1:A3)"); err != nil {
+		a.errMsg = "Preview edit failed: " + err.Error()
+		return
+	}
 	b.FillDown(sh, model.Range{R1: p.Row + 1, C1: p.Col, R2: p.Row + 3, C2: p.Col})
 	a.syncSheets()
 	a.changed(calc.Result{})

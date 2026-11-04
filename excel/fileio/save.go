@@ -114,8 +114,12 @@ func SaveFile(wb *model.Workbook, path string, f Format, sheet int) (err error) 
 	}
 	defer func() {
 		if err != nil {
-			tmp.Close()
-			os.Remove(tmp.Name())
+			if closeErr := tmp.Close(); closeErr != nil {
+				err = fmt.Errorf("%w (closing temporary file: %v)", err, closeErr)
+			}
+			if removeErr := os.Remove(tmp.Name()); removeErr != nil && !os.IsNotExist(removeErr) {
+				err = fmt.Errorf("%w (removing temporary file: %v)", err, removeErr)
+			}
 		}
 	}()
 	bw := bufio.NewWriterSize(tmp, 256<<10)

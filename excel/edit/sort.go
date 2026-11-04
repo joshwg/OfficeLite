@@ -26,7 +26,7 @@ type SortSpec struct {
 }
 
 // ErrSortMerged is Excel's refusal to sort a range with merged cells.
-var ErrSortMerged = errors.New("To do this, all the merged cells need to be the same size")
+var ErrSortMerged = errors.New("to do this, all the merged cells need to be the same size")
 
 // Sort sorts the rows of spec.Range as Excel does: whole rows of the
 // range move with their styles, notes and links; relative references in

@@ -73,8 +73,13 @@ func TestAutoRecover(t *testing.T) {
 		case ".xlsx":
 			copyPath = filepath.Join(dir, n)
 		case ".json":
-			b, _ := os.ReadFile(filepath.Join(dir, n))
-			json.Unmarshal(b, &e)
+			b, err := os.ReadFile(filepath.Join(dir, n))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(b, &e); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	if e.App != autorecover.Excel || e.Name != a.wb.Name || e.Path != "" || e.PID != os.Getpid() {
@@ -99,8 +104,13 @@ func TestAutoRecover(t *testing.T) {
 	h.waitRecover(dir, 2)
 	for _, n := range recoverFiles(dir) {
 		if strings.HasSuffix(n, ".json") {
-			b, _ := os.ReadFile(filepath.Join(dir, n))
-			json.Unmarshal(b, &e)
+			b, err := os.ReadFile(filepath.Join(dir, n))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(b, &e); err != nil {
+				t.Fatal(err)
+			}
 		} else if !strings.HasSuffix(n, ".xlsx") {
 			t.Errorf("copy %s", n)
 		}
@@ -128,7 +138,9 @@ func TestOpenRecovered(t *testing.T) {
 	if err := fileio.SaveFile(src.a.wb, e.Copy, fileio.XLSX, 0); err != nil {
 		t.Fatal(err)
 	}
-	autorecover.Release(e)
+	if err := autorecover.Release(e); err != nil {
+		t.Fatal(err)
+	}
 
 	h := newHarness(t)
 	a := h.a

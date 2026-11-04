@@ -147,7 +147,7 @@ func (wb *Workbook) resolveRef(ref, home string) ([]SheetRange, bool) {
 				continue
 			}
 			local := dn.Sheet >= 0 && dn.Sheet < len(wb.Sheets)
-			if pass == 0 && !(local && strings.EqualFold(wb.Sheets[dn.Sheet].Name, scope)) {
+			if pass == 0 && (!local || !strings.EqualFold(wb.Sheets[dn.Sheet].Name, scope)) {
 				continue // a sheet's own name first
 			}
 			if pass == 1 && local {

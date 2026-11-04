@@ -216,17 +216,25 @@ func TestOrphans(t *testing.T) {
 	live := writeFake(t, dir, "Live~03", Entry{Name: "Live.docx", App: Word, Saved: at, PID: os.Getpid(), Started: selfStart})
 	expired := writeFake(t, dir, "Old~04", Entry{Name: "Old.xlsx", App: Excel, Saved: at.Add(-MaxAge - time.Hour), PID: dead})
 	noCopy := writeFake(t, dir, "Gone~05", Entry{Name: "Gone.xlsx", App: Excel, Saved: at, PID: dead})
-	os.Remove(noCopy.Copy)
+	if err := os.Remove(noCopy.Copy); err != nil {
+		t.Fatal(err)
+	}
 	// A copy whose sidecar was never written: kept a while, then deleted.
 	young := filepath.Join(dir, "Half~06.xlsx")
 	stale := filepath.Join(dir, "Half~07.docx")
 	tmp := filepath.Join(dir, "Half~08.xlsx.123.tmp")
 	for _, p := range []string{young, stale, tmp} {
-		os.WriteFile(p, []byte("x"), 0o600)
+		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	day := at.Add(-strayAge - time.Hour)
-	os.Chtimes(stale, day, day)
-	os.Chtimes(tmp, day, day)
+	if err := os.Chtimes(stale, day, day); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(tmp, day, day); err != nil {
+		t.Fatal(err)
+	}
 
 	got := Orphans(dir)
 	if len(got) != 2 || got[0].Sidecar != released.Sidecar || got[1].Sidecar != crashed.Sidecar {
@@ -254,7 +262,9 @@ func TestOrphans(t *testing.T) {
 	if o := Orphans(dir); len(o) != 1 {
 		t.Errorf("claimed entry still listed: %+v", o)
 	}
-	Release(got[1])
+	if err := Release(got[1]); err != nil {
+		t.Fatal(err)
+	}
 	if o := Orphans(dir); len(o) != 2 {
 		t.Errorf("released entry not listed: %+v", o)
 	}
@@ -287,7 +297,9 @@ func TestClaimAll(t *testing.T) {
 	// the last writer, so ClaimAll reports who holds it now.
 	other := b
 	other.PID, other.Started = os.Getpid()+1, selfStart+1
-	writeEntry(other.Sidecar, other)
+	if err := writeEntry(other.Sidecar, other); err != nil {
+		t.Fatal(err)
+	}
 	if got := ClaimAll([]Entry{b}); len(got) != 1 {
 		t.Errorf("re-claim %+v", got)
 	}
@@ -348,8 +360,12 @@ func TestSettings(t *testing.T) {
 	if m := Minutes(); m != DefaultMinutes {
 		t.Errorf("default %d", m)
 	}
-	os.MkdirAll(filepath.Dir(path), 0o755)
-	os.WriteFile(path, []byte(`{"other": "kept", "autoRecoverMinutes": 2}`), 0o644)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"other": "kept", "autoRecoverMinutes": 2}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	reset()
 	if m := Minutes(); m != 2 || UserInterval() != 2*time.Minute {
 		t.Errorf("read %d", m)
@@ -363,7 +379,9 @@ func TestSettings(t *testing.T) {
 	reset()
 	var s map[string]any
 	b, _ := os.ReadFile(path)
-	json.Unmarshal(b, &s)
+	if err := json.Unmarshal(b, &s); err != nil {
+		t.Fatal(err)
+	}
 	if Minutes() != 0 || s["other"] != "kept" {
 		t.Errorf("saved %s", b)
 	}
@@ -383,10 +401,24 @@ func TestCrash(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	defer cmd.Process.Kill()
+	t.Cleanup(func() {
+		if cmd.ProcessState != nil {
+			return
+		}
+		if err := cmd.Process.Kill(); err != nil {
+			t.Errorf("kill child during cleanup: %v", err)
+		}
+		if err := cmd.Wait(); err == nil {
+			t.Error("child exited without being killed during cleanup")
+		}
+	})
 	ready := make(chan string, 1)
 	go func() {
-		line, _ := bufio.NewReader(out).ReadString('\n')
+		line, err := bufio.NewReader(out).ReadString('\n')
+		if err != nil {
+			ready <- ""
+			return
+		}
 		ready <- line
 	}()
 	select {
@@ -400,8 +432,12 @@ func TestCrash(t *testing.T) {
 	if o := Orphans(dir); len(o) != 0 {
 		t.Fatalf("a running process's copy listed: %+v", o)
 	}
-	cmd.Process.Kill() // the crash
-	cmd.Wait()
+	if err := cmd.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Wait(); err == nil {
+		t.Fatal("child exited without being killed")
+	}
 	o := Orphans(dir)
 	if len(o) != 1 || o[0].Name != "Report.docx" || o[0].App != Word || o[0].PID != cmd.Process.Pid {
 		t.Fatalf("after the crash: %+v", o)
@@ -425,7 +461,9 @@ func TestCrashChild(t *testing.T) {
 	s.Start()
 	(<-ui)()
 	s.Wait()
-	os.Stdout.WriteString("ready\n")
+	if _, err := os.Stdout.WriteString("ready\n"); err != nil {
+		panic(err)
+	}
 	for f := range ui { // until killed
 		f()
 	}

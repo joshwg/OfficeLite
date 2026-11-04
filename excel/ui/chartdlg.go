@@ -250,13 +250,13 @@ func (a *App) parseChartRef(s string) (string, error) {
 	}
 	rs, ok := model.ParseRefList(s, home)
 	if !ok || len(rs) == 0 {
-		return "", fmt.Errorf("The reference %q isn't valid", s)
+		return "", fmt.Errorf("the reference %q isn't valid", s)
 	}
 	var parts []string
 	for _, r := range rs {
 		si := slices.IndexFunc(a.wb.Sheets, func(sh *model.Sheet) bool { return strings.EqualFold(sh.Name, r.Sheet) })
 		if si < 0 || a.wb.Sheets[si].IsChartSheet() {
-			return "", fmt.Errorf("The reference %q isn't valid", s)
+			return "", fmt.Errorf("the reference %q isn't valid", s)
 		}
 		parts = append(parts, edit.ChartSource{Sheet: a.wb.Sheets[si].Name, Range: r.Range}.SourceRef())
 	}
@@ -284,7 +284,7 @@ func (a *App) tryDataRange(quiet bool) {
 		}
 		d.rangeText = t
 		if err == nil {
-			err = fmt.Errorf("The chart data range must be one block of cells")
+			err = fmt.Errorf("the chart data range must be one block of cells")
 		}
 		d.err = err.Error()
 		return
@@ -427,7 +427,7 @@ func (a *App) runEditSeries() bool {
 	d := &a.ch.dlg
 	vals, err := a.parseChartRef(d.serVals.Text())
 	if err == nil && vals == "" {
-		err = fmt.Errorf("Enter the series values as a reference, e.g. =Sheet1!$B$2:$B$5")
+		err = fmt.Errorf("enter the series values as a reference, e.g. =Sheet1!$B$2:$B$5")
 	}
 	if err != nil {
 		d.err = err.Error()

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -102,7 +103,9 @@ func (a *App) pristine() bool {
 // window; documents go to a WordLite window.
 func (a *App) openFile(path string) {
 	if _, err := os.Stat(path); err != nil {
-		a.recent.Remove(path)
+		if removeErr := a.recent.Remove(path); removeErr != nil {
+			log.Printf("remove %s from recent workbooks: %v", path, removeErr)
+		}
 		a.errMsg = fmt.Sprintf("Can't open %s: %v", filepath.Base(path), err)
 		a.back.Hide()
 		return
@@ -333,7 +336,9 @@ func (a *App) savedSnapshot(owner, wb *model.Workbook, revision uint64, sheet in
 	if filepath.IsAbs(path) {
 		a.path = path
 		a.fileInfo, _ = os.Stat(path)
-		a.recent.Add(path, recent.Spreadsheet)
+		if err := a.recent.Add(path, recent.Spreadsheet); err != nil {
+			log.Printf("add %s to recent workbooks: %v", path, err)
+		}
 		a.lk.readOnly = false
 		a.lk.doc.Set(path, true) // the new file's registration and owner file
 		a.as.elsewhere = false

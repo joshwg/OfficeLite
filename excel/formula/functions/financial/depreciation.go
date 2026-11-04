@@ -147,9 +147,10 @@ func vdb(e *f.Env, a []f.Value) f.Value {
 	if noSwitch {
 		for i := iStart + 1; i <= iEnd; i++ {
 			term := ddbOf(cost, salvage, life, i, factor)
-			if i == iStart+1 {
+			switch i {
+			case iStart + 1:
 				term *= math.Min(end, iStart+1) - start
-			} else if i == iEnd {
+			case iEnd:
 				term *= end + 1 - iEnd
 			}
 			res += term

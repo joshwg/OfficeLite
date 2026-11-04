@@ -32,8 +32,12 @@ func TestOpenPages(t *testing.T) {
 
 	var old bytes.Buffer
 	zw := zip.NewWriter(&old)
-	zw.Create("index.xml.gz")
-	zw.Close()
+	if _, err := zw.Create("index.xml.gz"); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := Read("old.pages", old.Bytes()); err == nil || !strings.Contains(err.Error(), "not supported") {
 		t.Errorf("iWork '09 file: %v", err)
 	}

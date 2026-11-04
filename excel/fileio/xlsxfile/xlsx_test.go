@@ -16,7 +16,11 @@ import (
 func buildSample(t *testing.T) []byte {
 	t.Helper()
 	f := excelize.NewFile()
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			t.Errorf("close sample workbook: %v", err)
+		}
+	}()
 	const sh = "Sheet1"
 	must := func(err error) {
 		t.Helper()
@@ -87,7 +91,9 @@ func patchZip(t *testing.T, data []byte, name, old, new string) []byte {
 			t.Fatal(err)
 		}
 		b, err := io.ReadAll(rc)
-		rc.Close()
+		if closeErr := rc.Close(); err == nil {
+			err = closeErr
+		}
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -101,7 +107,9 @@ func patchZip(t *testing.T, data []byte, name, old, new string) []byte {
 		if err != nil {
 			t.Fatal(err)
 		}
-		w.Write(b)
+		if _, err := w.Write(b); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := zw.Close(); err != nil {
 		t.Fatal(err)

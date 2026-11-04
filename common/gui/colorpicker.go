@@ -266,8 +266,8 @@ func (p *ColorPicker) panel(gtx layout.Context, th *Theme, noneLabel string) (la
 		p.tipped = true
 		for col, tc := range themeColors {
 			SetTip(&p.cells[col], tc.name, "", "")
-			shades, names := themeShades(tc.c)
-			for i := range shades {
+			_, names := themeShades(tc.c)
+			for i := range names {
 				SetTip(&p.cells[10*(i+1)+col], tc.name+", "+names[i], "", "")
 			}
 		}

@@ -154,7 +154,7 @@ func (c Criteria) Match(v Value) bool {
 	case "=":
 		return isText && WildcardMatch(c.text, string(s))
 	case "<>":
-		return !(isText && WildcardMatch(c.text, string(s)))
+		return !isText || !WildcardMatch(c.text, string(s))
 	}
 	if !isText {
 		return false

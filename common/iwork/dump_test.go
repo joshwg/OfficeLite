@@ -15,7 +15,7 @@ import (
 // TestDump prints every object of the document named by $IWORK_DUMP as
 // raw protobuf fields, for working out the format:
 //
-//	IWORK_DUMP=Samples/Sample2.numbers go test ./common/iwork -run Dump -v
+//	IWORK_DUMP=Samples/excel-tests/Sample2.numbers go test ./common/iwork -run Dump -v
 func TestDump(t *testing.T) {
 	path := os.Getenv("IWORK_DUMP")
 	if path == "" {

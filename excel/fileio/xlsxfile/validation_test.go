@@ -10,7 +10,7 @@ import (
 	"officelite/excel/model"
 )
 
-// validationRules is a rule of each kind, as Samples/Data-Tools has.
+// validationRules is a rule of each kind, as Samples/excel-data/Data-Tools.xlsx has.
 func validationRules() []model.Validation {
 	return []model.Validation{
 		{Ranges: []model.Range{{R1: 1, C1: 0, R2: 9, C2: 0}}, Type: model.ValidList, Formula1: `"Red,Green,Blue"`,

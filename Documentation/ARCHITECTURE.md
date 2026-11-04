@@ -217,7 +217,7 @@ excel/
                      bar, input, File pages (Info, Save As, Print, Export)
   cmd/excelshot/     headless PNG renderer (dev tool)
   cmd/calccheck/     recalculate and compare with Excel's saved values
-  cmd/chartsample/   writes Samples/Charts.xlsx (internal/chartsample)
+  cmd/chartsample/   writes Samples/excel-charts/Charts.xlsx (internal/chartsample)
 word/              WordLite
   model/             document model: blocks, runs, styles, lists; editing
                      operations and undo (edit.go); table editing,
@@ -238,8 +238,9 @@ word/              WordLite
                      editing, Styles pane, File pages
   cmd/wordshot/      headless PNG renderer (dev tool)
 Fonts/             local fonts, not committed (see Fonts/README.md)
-Samples/           sample workbooks and documents for trying features by
-                   hand (Go test fixtures live in each package's testdata/)
+Samples/           topic-based samples: excel/, excel-functions/, excel-data/,
+                   excel-charts/, excel-pivots/, excel-tests/, word/ and
+                   word-tests/ (Go fixtures also live in package testdata/)
 ```
 
 ## Fonts

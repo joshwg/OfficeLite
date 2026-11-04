@@ -11,7 +11,7 @@ import (
 // A .pages file opens through Read (by content) but can't be saved back:
 // Save goes to Save As.
 func TestOpenPages(t *testing.T) {
-	data, err := os.ReadFile("../../Samples/PagesInvoice.pages")
+	data, err := os.ReadFile("../../Samples/word-tests/PagesInvoice.pages")
 	if err != nil {
 		t.Skip(err)
 	}

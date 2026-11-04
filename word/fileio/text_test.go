@@ -12,7 +12,7 @@ import (
 // writes the text they show (it used to drop it), but not the
 // placeholders of pictures and shapes.
 func TestSaveTextKeepsFieldText(t *testing.T) {
-	doc, err := Open("../../Samples/Tables-Pictures-Links.doc")
+	doc, err := Open("../../Samples/word-tests/Tables-Pictures-Links.doc")
 	if err != nil {
 		t.Skip(err)
 	}

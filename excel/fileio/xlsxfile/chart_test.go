@@ -48,7 +48,7 @@ func parts(t *testing.T, data []byte) map[string]string {
 }
 
 func TestReadExcelChart(t *testing.T) {
-	data, err := os.ReadFile("../../../Samples/Pivot-Tables-and-Charts.xlsx")
+	data, err := os.ReadFile("../../../Samples/excel-pivots/Pivot-Tables-and-Charts.xlsx")
 	if err != nil {
 		t.Skip(err)
 	}

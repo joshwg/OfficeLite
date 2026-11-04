@@ -11,7 +11,7 @@ import (
 // A .numbers file opens through Read (by content) but can't be saved
 // back: Save goes to Save As.
 func TestOpenNumbers(t *testing.T) {
-	data, err := os.ReadFile("../../Samples/Sample3.numbers")
+	data, err := os.ReadFile("../../Samples/excel-tests/Sample3.numbers")
 	if err != nil {
 		t.Skip(err)
 	}

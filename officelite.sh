@@ -61,10 +61,14 @@ else
     fi
     exe="$ROOT/bin/officelite"
     go build -o "$exe" ./cmd/officelite
+    echo "For hardware rendering, run with: LIBGL_ALWAYS_SOFTWARE=0 ./officelite.sh --linux"
     $build_only && { echo "built $exe"; exit 0; }
     # Under WSL, borrow the Windows fonts (Calibri, Segoe UI, ...).
     if [[ -d /mnt/c/Windows/Fonts ]]; then
         export OFFICELITE_FONTS="${OFFICELITE_FONTS:+$OFFICELITE_FONTS:}/mnt/c/Windows/Fonts"
     fi
+    # Avoid Mesa's DRI3 device warning on Linux displays without DRI3.
+    # Preserve an explicit setting for systems that support hardware rendering.
+    export LIBGL_ALWAYS_SOFTWARE="${LIBGL_ALWAYS_SOFTWARE:-1}"
     exec "$exe" "$@"
 fi

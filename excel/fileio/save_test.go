@@ -49,7 +49,7 @@ func roundTrip(t *testing.T, wb *model.Workbook) *model.Workbook {
 
 func TestSaveSamples(t *testing.T) {
 	paths := []string{"xlsfile/testdata/sample.xls"}
-	if m, _ := filepath.Glob("../../Samples/*.xls*"); len(m) > 0 {
+	if m, _ := filepath.Glob("../../Samples/excel*/*.xls*"); len(m) > 0 {
 		paths = append(paths, m...)
 	}
 	for _, p := range paths {

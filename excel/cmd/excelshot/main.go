@@ -134,7 +134,7 @@ func main() {
 	}
 	if winView {
 		list := recent.Open("")
-		for _, s := range []string{"Samples/leasing.xls", flag.Arg(0)} {
+		for _, s := range []string{"Samples/excel/leasing.xls", flag.Arg(0)} {
 			if abs, err := filepath.Abs(s); err == nil {
 				list.Add(abs, recent.Spreadsheet)
 			}

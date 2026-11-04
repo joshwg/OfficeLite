@@ -37,6 +37,24 @@ func (h *harness) chartPt(c *model.Chart, corner bool) f32.Point {
 	return f32.Pt(float32(rc.Min.X+rc.Max.X)/2, float32(gridTop+(rc.Min.Y+rc.Max.Y)/2))
 }
 
+func (h *harness) chartAreaPt(c *model.Chart) f32.Point {
+	h.t.Helper()
+	v := &h.a.state().view
+	rc, ok := v.ChartRect(c)
+	if !ok {
+		h.t.Fatalf("chart %s not on screen", c.Name)
+	}
+	for y := rc.Min.Y + 2; y < rc.Max.Y-2; y += 3 {
+		for x := rc.Min.X + 2; x < rc.Max.X-2; x += 3 {
+			if v.ChartElementAt(c, float32(x), float32(y)).Kind == render.ElemChartArea {
+				return f32.Pt(float32(x), float32(gridTop+y))
+			}
+		}
+	}
+	h.t.Fatalf("chart %s has no blank chart-area point", c.Name)
+	return f32.Point{}
+}
+
 // chartHarness is a harness showing the chartsample workbook.
 func chartHarness(t *testing.T) *harness {
 	h := newHarness(t)
@@ -58,7 +76,7 @@ func TestChartSelectDeleteUndo(t *testing.T) {
 
 	// A click on the chart selects it, not the cell under it.
 	before := h.active()
-	h.clickMods(h.chartPt(first, false), pointer.ButtonPrimary, 0)
+	h.clickMods(h.chartAreaPt(first), pointer.ButtonPrimary, 0)
 	if v.SelChart != first || h.active() != before {
 		t.Fatalf("click: selected %v, active %s (was %s)", v.SelChart != nil, h.active(), before)
 	}
@@ -231,6 +249,8 @@ func TestInsertChart(t *testing.T) {
 	// The Data ribbon's Combo button.
 	a.selectRange(0, model.Range{R1: 1, C1: 1, R2: 1, C2: 1})
 	h.dataTab()
+	h.r.Queue(pointer.Event{Kind: pointer.Scroll, Source: pointer.Mouse, Position: f32.Pt(500, 100), Scroll: f32.Pt(0, 1000)})
+	h.frame()
 	p := h.locate(&a.ch.charts.combo, chartRibbon, 10)
 	h.click(p.X, p.Y)
 	if len(sh.Charts) != 1 || len(sh.Charts[0].Plots) != 2 || sh.Charts[0].Plots[1].Type != model.ChartLine {

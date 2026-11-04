@@ -94,7 +94,7 @@ func TestExportPDFSamples(t *testing.T) {
 	if dir == "" {
 		t.Skip("PDF_SAMPLES not set")
 	}
-	files, _ := filepath.Glob("../../Samples/*.xls*")
+	files, _ := filepath.Glob("../../Samples/excel*/*.xls*")
 	lib := gui.NewFontLibrary(gui.DefaultFontDirs()...)
 	for _, path := range files {
 		wb, err := fileio.Open(path)

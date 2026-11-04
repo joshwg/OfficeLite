@@ -44,7 +44,7 @@ func sameTexts(a, b [][]string) bool {
 // TestExcelPivots opens a workbook Excel made with two PivotTables:
 // they are recognised, and refreshing them reproduces what Excel saved.
 func TestExcelPivots(t *testing.T) {
-	wb, err := Open(filepath.Join("..", "..", "Samples", "Pivot-Tables-and-Charts.xlsx"))
+	wb, err := Open(filepath.Join("..", "..", "Samples", "excel-pivots", "Pivot-Tables-and-Charts.xlsx"))
 	if err != nil {
 		t.Fatal(err)
 	}

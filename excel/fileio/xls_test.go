@@ -210,12 +210,15 @@ func TestXLSRoundTrip(t *testing.T) {
 
 func TestXLSSamples(t *testing.T) {
 	paths := []string{"xlsfile/testdata/sample.xls"}
-	if m, _ := filepath.Glob("../../Samples/*.xls*"); len(m) > 0 {
+	if m, _ := filepath.Glob("../../Samples/excel*/*.xls*"); len(m) > 0 {
 		paths = append(paths, m...)
 	}
 	for _, p := range paths {
 		if strings.Contains(p, ":") { // Windows Zone.Identifier streams
 			continue
+		}
+		if strings.HasPrefix(filepath.Base(p), "Function-Tests-") {
+			continue // These XLSX formula demos intentionally exercise functions .xls cannot preserve.
 		}
 		t.Run(filepath.Base(p), func(t *testing.T) {
 			want, err := Open(p)

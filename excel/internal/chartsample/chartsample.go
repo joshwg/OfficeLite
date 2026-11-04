@@ -1,5 +1,5 @@
 // Package chartsample builds a workbook with a chart of each kind
-// ExcelLite draws (Samples/Charts.xlsx, and the chart tests' data).
+// ExcelLite draws (Samples/excel-charts/Charts.xlsx, and the chart tests' data).
 package chartsample
 
 import (

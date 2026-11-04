@@ -206,8 +206,8 @@ the permitted choices. Selecting a choice enters it into the cell.
 
 Files: `.xlsx` reads and writes `<dataValidations>` (and reads the
 `x14:dataValidations` Excel 2010+ keeps in the sheet's extLst for lists
-on other sheets); `.xls` reads and writes DVAL and DV records. Samples/
-Data-Tools.xlsx and .xls have a rule of each kind, Text to Columns data
+on other sheets); `.xls` reads and writes DVAL and DV records.
+Samples/excel-data/Data-Tools.xlsx and .xls have a rule of each kind, Text to Columns data
 and a duplicates table.
 
 **Group** (Shift+Alt+Right) puts the selected whole rows or columns one
@@ -250,7 +250,7 @@ col `outlineLevel`/`collapsed`, `sheetFormatPr` `outlineLevelRow`/
 `outlineLevelCol` and `sheetPr/outlinePr` `summaryBelow`/`summaryRight`;
 `.xls` the ROW record's outline level and collapsed bits, COLINFO level
 and collapsed, GUTS (gutter size and levels) and WSBOOL's summary bits.
-Samples/Data-Outline.xlsx and .xls have a subtotalled list (North
+Samples/excel-data/Data-Outline.xlsx and .xls have a subtotalled list (North
 collapsed), a budget with rows and columns grouped two levels deep (one
 of each collapsed) and a sheet with summaries above and left.
 
@@ -347,7 +347,7 @@ kept as plain cells with a warning. `.xls`: PivotTables are read and saved
 as plain cells (a warning on opening and before saving). Date grouping
 (Years/Quarters/Months), calculated fields, styles other than the default
 look, "Defer Layout Update" and the +/- buttons aren't supported.
-Samples/PivotTables.xlsx has a sales table and three reports (compact with
+Samples/excel-pivots/PivotTables.xlsx has a sales table and three reports (compact with
 a column field, tabular with a report filter and subtotals, outline with
 two value fields, one as % of the grand total).
 
@@ -464,13 +464,13 @@ are drawn from their report's cells and kept as PivotCharts. `.xls`: charts
 and chart sheets can't be read or saved (a warning on opening and before
 saving); `.numbers` charts are dropped with a warning. PDF export prints
 the charts as vector graphics where they are on the sheet, and chart
-sheets on a landscape page. Samples/Charts.xlsx (written by
+sheets on a landscape page. Samples/excel-charts/Charts.xlsx (written by
 `go run ./excel/cmd/chartsample`) has a chart of each kind and a chart
-sheet; Samples/Charts-Created.xlsx (`go run ./excel/cmd/chartsample
+sheet; Samples/excel-charts/Charts-Created.xlsx (`go run ./excel/cmd/chartsample
 -created`) the charts the editing commands make and change (each kind,
 titles, legends, labels, axis titles, gridlines, palettes, styles, a
 switched row/column, combos, a chart moved to a chart sheet);
-Samples/Pivot-Tables-and-Charts.xlsx has a PivotChart made by Excel.
+Samples/excel-pivots/Pivot-Tables-and-Charts.xlsx has a PivotChart made by Excel.
 
 ### Editing
 
@@ -576,19 +576,19 @@ Samples/Pivot-Tables-and-Charts.xlsx has a PivotChart made by Excel.
 Excel saved — any real workbook becomes a test:
 
 ```sh
-go run ./excel/cmd/calccheck Samples/Book1.xlsx
+go run ./excel/cmd/calccheck Samples/excel/Book1.xlsx
 ```
 
 `excelshot` renders a sheet to a PNG without a window, for checking rendering:
 
 ```sh
 GOOS=windows go build -o bin/excelshot.exe ./excel/cmd/excelshot
-bin/excelshot.exe -o out.png -w 1280 -h 800 Samples/Book1.xlsx
-bin/excelshot.exe -window -ribbon data -filter B1 -o out.png Samples/Data-AutoFilter.xlsx
-bin/excelshot.exe -window -select A3 -data list -o out.png Samples/Data-Tools.xlsx
-bin/excelshot.exe -window -ribbon data -data rows2 -o out.png Samples/Data-Outline.xlsx
-bin/excelshot.exe -window -sheet 1 -select A5 -pivot menu -o out.png Samples/PivotTables.xlsx
-bin/excelshot.exe -chart 4 -zoom 1.5 -o out.png Samples/Charts.xlsx
+bin/excelshot.exe -o out.png -w 1280 -h 800 Samples/excel/Book1.xlsx
+bin/excelshot.exe -window -ribbon data -filter B1 -o out.png Samples/excel-data/Data-AutoFilter.xlsx
+bin/excelshot.exe -window -select A3 -data list -o out.png Samples/excel-data/Data-Tools.xlsx
+bin/excelshot.exe -window -ribbon data -data rows2 -o out.png Samples/excel-data/Data-Outline.xlsx
+bin/excelshot.exe -window -sheet 1 -select A5 -pivot menu -o out.png Samples/excel-pivots/PivotTables.xlsx
+bin/excelshot.exe -chart 4 -zoom 1.5 -o out.png Samples/excel-charts/Charts.xlsx
 ```
 
 `-window` draws the whole window; `-ribbon data`, `-menu N`, `-filter B1`

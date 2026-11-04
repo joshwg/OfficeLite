@@ -63,8 +63,8 @@ func TestDetect(t *testing.T) {
 // content (skipped when the samples are missing).
 func TestDetectIWork(t *testing.T) {
 	for name, want := range map[string]Kind{
-		"Sample2.numbers":    Spreadsheet,
-		"PagesInvoice.pages": Document,
+		"excel-tests/Sample2.numbers":   Spreadsheet,
+		"word-tests/PagesInvoice.pages": Document,
 	} {
 		data, err := os.ReadFile("../../Samples/" + name)
 		if err != nil {

@@ -5,7 +5,7 @@ import (
 	"officelite/excel/model"
 )
 
-// Created builds Samples/Charts-Created.xlsx: charts made the way the
+// Created builds Samples/excel-charts/Charts-Created.xlsx: charts made the way the
 // Insert menu and the Chart Design tab make them (through edit), each
 // kind, with titles, legends, labels, colours and styles changed, a
 // switched row/column, a combo with per-series kinds and a chart moved

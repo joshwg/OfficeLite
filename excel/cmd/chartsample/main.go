@@ -1,11 +1,11 @@
-// Command chartsample writes Samples/Charts.xlsx: a workbook with a chart
+// Command chartsample writes Samples/excel-charts/Charts.xlsx: a workbook with a chart
 // of each kind ExcelLite draws, made through the model and the .xlsx
 // writer, for checking them against Excel; with -created,
-// Samples/Charts-Created.xlsx: charts made and changed as the Insert
+// Samples/excel-charts/Charts-Created.xlsx: charts made and changed as the Insert
 // menu and the Chart Design tab do.
 //
-//	go run ./excel/cmd/chartsample [-o Samples/Charts.xlsx]
-//	go run ./excel/cmd/chartsample -created [-o Samples/Charts-Created.xlsx]
+//	go run ./excel/cmd/chartsample [-o Samples/excel-charts/Charts.xlsx]
+//	go run ./excel/cmd/chartsample -created [-o Samples/excel-charts/Charts-Created.xlsx]
 package main
 
 import (
@@ -17,13 +17,13 @@ import (
 )
 
 func main() {
-	out := flag.String("o", "", "output file (Samples/Charts.xlsx, or Samples/Charts-Created.xlsx with -created)")
+	out := flag.String("o", "", "output file (Samples/excel-charts/Charts.xlsx, or Samples/excel-charts/Charts-Created.xlsx with -created)")
 	created := flag.Bool("created", false, "write the charts made through the editing commands")
 	flag.Parse()
 	wb := chartsample.Workbook()
-	name := "Samples/Charts.xlsx"
+	name := "Samples/excel-charts/Charts.xlsx"
 	if *created {
-		wb, name = chartsample.Created(), "Samples/Charts-Created.xlsx"
+		wb, name = chartsample.Created(), "Samples/excel-charts/Charts-Created.xlsx"
 	}
 	if *out != "" {
 		name = *out

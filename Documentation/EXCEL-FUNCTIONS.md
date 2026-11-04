@@ -12,6 +12,21 @@ reference, where each function name links to its full Microsoft description.
 ExcelLite's results and supported options are not guaranteed to match every
 Excel release in all cases.
 
+Single-sheet function test workbooks are available in `Samples/excel-functions/`, with
+representative formulas, expected results, recalculated results and a PASS/FAIL
+check for each test:
+
+- [Database](../Samples/excel-functions/Function-Tests-Database.xlsx)
+- [Date and time](../Samples/excel-functions/Function-Tests-Date-and-Time.xlsx)
+- [Engineering](../Samples/excel-functions/Function-Tests-Engineering.xlsx)
+- [Financial](../Samples/excel-functions/Function-Tests-Financial.xlsx)
+- [Information](../Samples/excel-functions/Function-Tests-Information.xlsx)
+- [Logical](../Samples/excel-functions/Function-Tests-Logical.xlsx)
+- [Lookup and reference](../Samples/excel-functions/Function-Tests-Lookup-and-Reference.xlsx)
+- [Math and trigonometry](../Samples/excel-functions/Function-Tests-Math-and-Trigonometry.xlsx)
+- [Statistical](../Samples/excel-functions/Function-Tests-Statistical.xlsx)
+- [Text](../Samples/excel-functions/Function-Tests-Text.xlsx)
+
 ## Database
 
 `database` is a table with field names in its first row; `field` is a field

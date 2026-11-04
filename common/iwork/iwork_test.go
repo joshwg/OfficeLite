@@ -380,9 +380,9 @@ func TestOpenErrors(t *testing.T) {
 // sample document in Samples/ (skipped when they're absent).
 func TestOpenSamples(t *testing.T) {
 	for name, app := range map[string]App{
-		"Sample1.numbers": Numbers, "Sample2.numbers": Numbers, "Sample3.numbers": Numbers,
-		"PagesSample1.pages": Pages, "PagesInvoice.pages": Pages, "PagesBrochure.pages": Pages,
-		"Avery5371BusinessCardsWide.pages": Pages,
+		"excel-tests/Sample1.numbers": Numbers, "excel-tests/Sample2.numbers": Numbers, "excel-tests/Sample3.numbers": Numbers,
+		"word-tests/PagesSample1.pages": Pages, "word-tests/PagesInvoice.pages": Pages, "word-tests/PagesBrochure.pages": Pages,
+		"word-tests/Avery5371BusinessCardsWide.pages": Pages,
 	} {
 		data, err := os.ReadFile(filepath.Join("..", "..", "Samples", name))
 		if err != nil {
@@ -405,7 +405,7 @@ func TestOpenSamples(t *testing.T) {
 // TestDetectIndexZip checks that Detect and Open see through an inner
 // Index.zip, as in a bundle zipped from a directory, to the same app.
 func TestDetectIndexZip(t *testing.T) {
-	for name, app := range map[string]App{"PagesInvoice.pages": Pages, "Sample1.numbers": Numbers} {
+	for name, app := range map[string]App{"word-tests/PagesInvoice.pages": Pages, "excel-tests/Sample1.numbers": Numbers} {
 		data, err := os.ReadFile(filepath.Join("..", "..", "Samples", name))
 		if err != nil {
 			t.Skip(err)
@@ -457,9 +457,9 @@ func TestDetectIndexZip(t *testing.T) {
 }
 
 // TestSampleTable checks the shape, displayed values and a formula of the
-// table in Samples/PagesInvoice.pages.
+// table in Samples/word-tests/PagesInvoice.pages.
 func TestSampleTable(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "Samples", "PagesInvoice.pages"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "Samples", "word-tests", "PagesInvoice.pages"))
 	if err != nil {
 		t.Skip(err)
 	}
@@ -500,7 +500,7 @@ func TestSampleTable(t *testing.T) {
 // every object of the samples is cut short in turn and everything that reads
 // objects runs over it.
 func TestDamagedObjects(t *testing.T) {
-	for _, name := range []string{"Sample3.numbers", "PagesInvoice.pages"} {
+	for _, name := range []string{"excel-tests/Sample3.numbers", "word-tests/PagesInvoice.pages"} {
 		data, err := os.ReadFile(filepath.Join("..", "..", "Samples", name))
 		if err != nil {
 			t.Skip(err)

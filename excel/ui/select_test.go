@@ -24,7 +24,7 @@ func TestDragSelect(t *testing.T) {
 	a := &App{ui: gui.NewTheme(fonts, accent, accentDark), fonts: fonts, recent: recent.Open(""), zoom: 1, states: map[int]*sheetState{}}
 	a.th = a.ui.Theme
 	a.shaper = a.th.Shaper
-	wb, err := fileio.Open("../../Samples/Book1.xlsx")
+	wb, err := fileio.Open("../../Samples/excel/Book1.xlsx")
 	if err != nil {
 		t.Fatal(err)
 	}

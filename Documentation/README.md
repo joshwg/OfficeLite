@@ -30,8 +30,8 @@ See the
 ## Running and building
 
 ```sh
-./officelite.sh Samples/Book1.xlsx a.xls   # build and open workbooks
-./officelite.sh Samples/Word-Sample.docx   # open a document
+./officelite.sh Samples/excel/Book1.xlsx a.xls   # build and open workbooks
+./officelite.sh Samples/word/Word-Sample.docx   # open a document
 ./officelite.sh                            # open a blank workbook
 ./officelite.sh --word                     # open a blank document
 ./officelite.sh --excel notes.txt          # force a spreadsheet
@@ -43,6 +43,10 @@ See the
 Under WSL, the default is `bin/OfficeLite.exe`; the Linux build needs CGO and
 X11/Wayland development headers. On macOS, `--apple` builds
 `bin/OfficeLite-Apple-Silicon`, separate from the Windows and Linux binaries.
+When launching the native Linux build, the script defaults Mesa to software
+rendering to avoid DRI3 warnings on displays without a DRI3 device. Set
+`LIBGL_ALWAYS_SOFTWARE=0` to enable hardware rendering on a supported display:
+`LIBGL_ALWAYS_SOFTWARE=0 ./officelite.sh --linux`.
 
 For macOS builds, install Apple's command-line developer tools if needed and
 enable CGO:
@@ -60,5 +64,5 @@ GOOS=darwin GOARCH=amd64 go build -o bin/OfficeLite-Intel ./cmd/officelite      
 ```
 
 See [EXCEL.md](./EXCEL.md), [WORD.md](./WORD.md), and
-[EXCEL-FUNCTIONS.md](./EXCEL-FUNCTIONS.md) for feature details. `Samples/`
-contains example workbooks and documents.
+[EXCEL-FUNCTIONS.md](./EXCEL-FUNCTIONS.md) for feature details. The
+[`Samples/`](../Samples/) directory groups workbooks and documents by topic.

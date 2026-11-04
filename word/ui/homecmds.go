@@ -1,6 +1,10 @@
 package ui
 
 import (
+	"fmt"
+	"strings"
+	"time"
+
 	"gioui.org/font"
 	"gioui.org/io/clipboard"
 	"gioui.org/io/key"
@@ -99,20 +103,63 @@ func (d *window) homeExtra(item int) {
 	}
 }
 
-// updateFields updates the table of contents the selection is in (F9,
-// Word's Update Field): its entries and page numbers from the headings.
+// updateFields is Word's Update Field (F9): the fields in the selection,
+// or the one at the caret, are computed again (page numbers, dates and
+// times, the file name, statistics); with a selection, or with no field
+// at the caret, the table of contents it touches (or the first one) is
+// rebuilt from the headings too.
 func (d *window) updateFields() {
-	if d.hf.on {
-		return
-	}
 	d.relayout()
-	pg := d.doc.Page
-	if d.ed.UpdateTOC(pg.Width-pg.MarginLeft-pg.MarginRight, d.eng.PageNumberOf) {
+	found, changed, skipped := d.ed.UpdateFields(d.fieldContext)
+	if changed > 0 {
 		d.edited()
-		d.notice = "Table of contents updated"
-	} else {
-		d.notice = "There is no table of contents to update (other fields show their last result)."
+		d.relayout()
 	}
+	sel := d.ed.Sel.Anchor != d.ed.Sel.Caret
+	toc := false
+	if !d.hf.on && (found+len(skipped) == 0 || sel) {
+		pg := d.doc.Page
+		if toc = d.ed.UpdateTOC(pg.Width-pg.MarginLeft-pg.MarginRight, d.eng.PageNumberOf); toc {
+			d.edited()
+		}
+	}
+	d.notice = ""
+	switch {
+	case toc && found > 0:
+		d.notice = fmt.Sprintf("Table of contents and %d %s updated", found, plural(found, "field", "fields"))
+	case toc:
+		d.notice = "Table of contents updated"
+	case found > 0:
+		d.notice = fmt.Sprintf("%d %s updated", found, plural(found, "field", "fields"))
+	case len(skipped) == 0:
+		d.notice = "There are no fields to update here. Select text with fields in it (Ctrl+A for all) and press F9."
+	}
+	if len(skipped) > 0 {
+		if d.notice != "" {
+			d.notice += ". "
+		}
+		d.notice += "WordLite doesn't compute " + strings.Join(skipped, ", ") + " fields; they show their last result."
+	}
+}
+
+// fieldContext is the context of a field at p in the editor's text: the
+// page it's on, the time, and the document's file and statistics.
+func (d *window) fieldContext(p model.Pos) model.FieldContext {
+	page := d.hf.page
+	if !d.hf.on {
+		page = d.eng.PageOfPos(p)
+	}
+	c := d.eng.PageFieldContext(page)
+	c.Now, c.FilePath, c.Doc = time.Now(), d.path, d.doc
+	return c
+}
+
+// plural is one when n is 1, else many.
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }
 
 // extraKeys handles the shortcuts of these commands.
@@ -123,7 +170,7 @@ func (d *window) extraKeys(gtx layout.Context) {
 			key.Filter{Name: "H", Required: key.ModShortcut},
 			key.Filter{Name: "G", Required: key.ModShortcut},
 			key.Filter{Name: key.NameF3, Optional: key.ModShift},
-			key.Filter{Name: key.NameF9},
+			key.Filter{Name: key.NameF9, Optional: key.ModAlt | key.ModShortcut},
 			key.Filter{Name: "C", Required: key.ModShortcut | key.ModShift},
 			key.Filter{Name: "V", Required: key.ModShortcut | key.ModShift},
 			key.Filter{Name: "V", Required: key.ModShortcut | key.ModAlt},
@@ -149,7 +196,13 @@ func (d *window) extraKeys(gtx layout.Context) {
 		case "G":
 			d.openFind(findGoTo)
 		case key.NameF9:
-			d.updateFields()
+			if e.Modifiers.Contain(key.ModShortcut) {
+				d.openFieldDialog() // Ctrl+F9: Word's new field; fielddlg.go
+			} else if alt {
+				d.toggleFieldCodes()
+			} else {
+				d.updateFields()
+			}
 			continue
 		case key.NameF3:
 			if d.find.what.Text() != "" {
@@ -194,8 +247,17 @@ func (d *window) toggleMarks() {
 	d.laidOut = -1
 }
 
-// handleEscape closes what Esc closes among these features (the Format
-// Painter, the find bar, header editing) and reports whether it did.
+// toggleFieldCodes shows field codes in place of their results, or the
+// results again (Alt+F9); exported and printed pages show results.
+func (d *window) toggleFieldCodes() {
+	d.showCodes = !d.showCodes
+	d.eng.SetShowFieldCodes(d.showCodes)
+	d.laidOut = -1
+}
+
+// handleEscape closes what Esc closes among these features (their
+// dialogs, the Format Painter, the find bar, header editing) and reports
+// whether it did.
 func (d *window) handleEscape() bool {
 	switch {
 	case d.cancelMouse():
@@ -205,6 +267,8 @@ func (d *window) handleEscape() bool {
 		d.pasteSpec.open = false
 	case d.newStyle.open:
 		d.newStyle.open = false
+	case d.hf.nums.open: // before header editing, which it is over
+		d.hf.nums.open = false
 	case d.painter.armed:
 		d.painterOff()
 	case d.find.open:
@@ -218,7 +282,7 @@ func (d *window) handleEscape() bool {
 }
 
 // extraModal reports whether one of these features' dialogs is open.
-func (d *window) extraModal() bool { return d.pasteSpec.open || d.newStyle.open }
+func (d *window) extraModal() bool { return d.pasteSpec.open || d.newStyle.open || d.hf.nums.open }
 
 // extraDialogs draws these features' dialogs.
 func (d *window) extraDialogs(gtx layout.Context) {
@@ -227,6 +291,9 @@ func (d *window) extraDialogs(gtx layout.Context) {
 	}
 	if d.newStyle.open {
 		d.newStyle.layout(gtx, d)
+	}
+	if d.hf.nums.open {
+		d.hf.nums.layout(gtx, d) // pagenum.go
 	}
 }
 

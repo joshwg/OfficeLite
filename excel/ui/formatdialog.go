@@ -3,6 +3,7 @@ package ui
 import (
 	"image"
 	"image/color"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -492,8 +493,10 @@ func (a *App) layoutAsk(gtx layout.Context) {
 			a.grid.focusPending = true
 			return
 		}
+		// ParseFloat takes "NaN" and "Inf", which slip past the callers'
+		// range checks (NaN compares false with every bound).
 		x, err := strconv.ParseFloat(strings.TrimSpace(d.ed.Text()), 64)
-		if err == nil && d.number(x) {
+		if err == nil && !math.IsNaN(x) && !math.IsInf(x, 0) && d.number(x) {
 			d.open = false
 			a.grid.focusPending = true
 			return

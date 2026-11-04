@@ -2,7 +2,11 @@
 
 package render
 
-import "math"
+import (
+	"math"
+
+	"officelite/excel"
+)
 
 // Value axis scaling as Excel picks it when the axis' bounds and units
 // are automatic:
@@ -175,7 +179,7 @@ func logScale(dmin, dmax float64, o scaleOpts) axisScale {
 func (s *axisScale) ticks() []float64 {
 	var out []float64
 	if s.Log > 1 {
-		for v := s.Min; v <= s.Max*(1+1e-9) && len(out) < 100; v *= s.Major {
+		for v := s.Min; v <= s.Max*(1+1e-9) && len(out) < excel.ChartMaxLogTicks; v *= s.Major {
 			out = append(out, v)
 		}
 		return out
@@ -184,7 +188,7 @@ func (s *axisScale) ticks() []float64 {
 		return []float64{s.Min, s.Max}
 	}
 	n := int(math.Round((s.Max - s.Min) / s.Major))
-	for i := 0; i <= n && i <= 1000; i++ {
+	for i := 0; i <= n && i <= excel.ChartMaxTicks; i++ {
 		v := s.Min + float64(i)*s.Major
 		if math.Abs(v) < s.Major*1e-9 {
 			v = 0 // no -0 or 1e-17 labels
@@ -196,7 +200,7 @@ func (s *axisScale) ticks() []float64 {
 
 // minorTicks lists the minor tick values between the major ones.
 func (s *axisScale) minorTicks() []float64 {
-	if s.Log > 1 || s.Minor <= 0 || (s.Max-s.Min)/s.Minor > 500 {
+	if s.Log > 1 || s.Minor <= 0 || (s.Max-s.Min)/s.Minor > excel.ChartMaxMinorTicks {
 		return nil
 	}
 	var out []float64

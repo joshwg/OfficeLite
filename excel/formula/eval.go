@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"officelite/excel/model"
+	"officelite/excel"
 )
 
 // Context gives formulas access to the workbook. Implemented by the
@@ -54,9 +54,6 @@ func (s *scope) lookup(name string) (Value, bool) {
 	}
 	return nil, false
 }
-
-// maxDepth bounds nested evaluation (deep LAMBDA recursion).
-const maxDepth = 1000
 
 // Env evaluates formulas for one cell.
 type Env struct {
@@ -247,10 +244,10 @@ func (e *Env) ref(n refNode) Value {
 	}
 	r := Ref{Sheet: sh, R1: n.r1, C1: n.c1, R2: n.r2, C2: n.c2}
 	if n.wholeCols {
-		r.R1, r.R2 = 0, model.MaxRows-1
+		r.R1, r.R2 = 0, excel.MaxRows-1
 	}
 	if n.wholeRows {
-		r.C1, r.C2 = 0, model.MaxCols-1
+		r.C1, r.C2 = 0, excel.MaxCols-1
 	}
 	return normRef(r)
 }
@@ -328,9 +325,10 @@ func (e *Env) name(n nameNode) Value {
 	return e.nested(func() Value { return e.Eval(node.(Node)) })
 }
 
-// nested calls f one level deeper, returning #CALC! past maxDepth.
+// nested calls f one level deeper, returning #CALC! past
+// excel.FormulaMaxEvalDepth.
 func (e *Env) nested(f func() Value) Value {
-	if e.depth >= maxDepth {
+	if e.depth >= excel.FormulaMaxEvalDepth {
 		return ErrCalc
 	}
 	e.depth++
@@ -366,18 +364,25 @@ func (e *Env) Deref(v Value) Value {
 // those sheets, so they still combine element by element:
 // =SUMPRODUCT((Sheet2!A:A>1)*B:B).
 func (e *Env) trim(r Ref) Ref {
-	wholeCols := r.R1 == 0 && r.R2 >= model.MaxRows-1
-	wholeRows := r.C1 == 0 && r.C2 >= model.MaxCols-1
-	if !wholeCols && !wholeRows {
-		return r
+	wholeCols := r.R1 == 0 && r.R2 >= excel.MaxRows-1
+	wholeRows := r.C1 == 0 && r.C2 >= excel.MaxCols-1
+	if wholeCols || wholeRows {
+		rows, cols := e.usedSize(r)
+		ext := e.commonExtent()
+		if wholeCols {
+			r.R2 = max(r.R1, min(r.R2, max(rows, ext[0])-1))
+		}
+		if wholeRows {
+			r.C2 = max(r.C1, min(r.C2, max(cols, ext[1])-1))
+		}
 	}
-	rows, cols := e.usedSize(r)
-	ext := e.commonExtent()
-	if wholeCols {
-		r.R2 = max(r.R1, min(r.R2, max(rows, ext[0])-1))
-	}
-	if wholeRows {
-		r.C2 = max(r.C1, min(r.C2, max(cols, ext[1])-1))
+	// A range still too big to materialize (B2:XFD1048576, 17 billion
+	// cells; A:XFD) is cut to the used area too: past it every cell is
+	// blank. Ordinary ranges keep their exact shape.
+	if float64(r.Rows())*float64(r.Cols()) > excel.FormulaMaxArrayCells {
+		rows, cols := e.usedSize(r)
+		r.R2 = max(r.R1, min(r.R2, rows-1))
+		r.C2 = max(r.C1, min(r.C2, cols-1))
 	}
 	return r
 }
@@ -418,10 +423,10 @@ func (e *Env) commonExtent() [2]int {
 			continue
 		}
 		r := Ref{Sheet: si, R1: d.R1, C1: d.C1, R2: d.R2, C2: d.C2}
-		if r.R2 >= model.MaxRows-1 {
+		if r.R2 >= excel.MaxRows-1 {
 			colRefs, colSheets[si] = append(colRefs, r), true
 		}
-		if r.C2 >= model.MaxCols-1 {
+		if r.C2 >= excel.MaxCols-1 {
 			rowRefs, rowSheets[si] = append(rowRefs, r), true
 		}
 	}
@@ -863,7 +868,10 @@ func (e *Env) scalarOp(op string, l, r Value) Value {
 		if err != nil {
 			return err
 		}
-		return String(a + b)
+		if s := a + b; len(s) <= excel.FormulaMaxText || UTF16Len(s) <= excel.FormulaMaxText {
+			return String(s)
+		}
+		return ErrValue // longer than a cell can hold, as in Excel
 	case "=", "<>", "<", "<=", ">", ">=":
 		c, err := Compare(l, r)
 		if err != nil {
@@ -922,6 +930,18 @@ func (e *Env) scalarOp(op string, l, r Value) Value {
 		return ErrValue
 	}
 	return NumberOrErr(v)
+}
+
+// UTF16Len is the length of s in UTF-16 code units, as Excel counts text.
+func UTF16Len(s string) int {
+	n := 0
+	for _, r := range s {
+		n++
+		if r >= 0x10000 {
+			n++
+		}
+	}
+	return n
 }
 
 // NumberOrErr returns v as a Number, or #NUM! for NaN and infinities.

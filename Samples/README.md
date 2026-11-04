@@ -10,6 +10,8 @@ Samples are grouped by application and feature:
 - `excel-tests/` contains Numbers files used by spreadsheet import tests.
 - `word/` contains Word-compatible documents and related reference images.
 - `word-tests/` contains Pages files and documents used by Word import tests.
+- `word-templates/` contains `.dotx` and `.dot` templates made from
+  `word/Headers-Footers-and-Styles.docx`, used by the template tests.
 
 The Go test suites use these sample files for integration and file-format
 coverage. Some tests skip the sample-specific checks if their input files are

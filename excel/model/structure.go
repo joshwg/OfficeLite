@@ -8,18 +8,20 @@ package model
 import (
 	"maps"
 	"slices"
+
+	"officelite/excel"
 )
 
 // InsertRows inserts n empty rows before row at. Cells pushed past
-// MaxRows are dropped.
+// excel.MaxRows are dropped.
 func (s *Sheet) InsertRows(at, n int) {
-	if n <= 0 || at >= MaxRows {
+	if n <= 0 || at >= excel.MaxRows {
 		return
 	}
 	if at < len(s.rows) {
 		s.rows = slices.Insert(s.rows, at, make([][]Cell, n)...)
-		if len(s.rows) > MaxRows {
-			s.rows = s.rows[:MaxRows]
+		if len(s.rows) > excel.MaxRows {
+			s.rows = s.rows[:excel.MaxRows]
 		}
 	}
 	s.RowHeight = shiftKeys(s.RowHeight, at, n)
@@ -40,15 +42,15 @@ func (s *Sheet) DeleteRows(at, n int) {
 }
 
 // InsertCols inserts n empty columns before column at. Cells pushed past
-// MaxCols are dropped.
+// excel.MaxCols are dropped.
 func (s *Sheet) InsertCols(at, n int) {
-	if n <= 0 || at >= MaxCols {
+	if n <= 0 || at >= excel.MaxCols {
 		return
 	}
 	for i, r := range s.rows {
 		if at < len(r) {
 			r = slices.Insert(r, at, make([]Cell, n)...)
-			s.rows[i] = r[:min(len(r), MaxCols)]
+			s.rows[i] = r[:min(len(r), excel.MaxCols)]
 		}
 	}
 	s.ColWidth = shiftKeys(s.ColWidth, at, n)
@@ -112,13 +114,19 @@ func shiftKeys(m map[int]float32, at, n int) map[int]float32 {
 	return out
 }
 
-// shiftRange moves r along rows or columns; false if it was deleted.
+// shiftRange moves r along rows or columns; false if it was deleted or
+// pushed off the sheet. An insertion clips the part pushed past the
+// sheet's last row (column), so a whole-column range stays one.
 func shiftRange(r Range, rows bool, at, n int) (Range, bool) {
 	var ok bool
 	if rows {
 		r.R1, r.R2, ok = ShiftSpan(r.R1, r.R2, at, n)
+		r.R2 = min(r.R2, excel.MaxRows-1)
+		ok = ok && r.R1 <= r.R2
 	} else {
 		r.C1, r.C2, ok = ShiftSpan(r.C1, r.C2, at, n)
+		r.C2 = min(r.C2, excel.MaxCols-1)
+		ok = ok && r.C1 <= r.C2
 	}
 	return r, ok
 }
@@ -141,9 +149,13 @@ func (s *Sheet) shift(rows bool, at, n int) {
 		if rows {
 			i = a[0]
 		}
+		limit := excel.MaxCols
+		if rows {
+			limit = excel.MaxRows
+		}
 		i2, ok := ShiftIndex(i, at, n)
-		if !ok {
-			continue
+		if !ok || i2 >= limit {
+			continue // deleted, or pushed off the sheet with its cell
 		}
 		if rows {
 			a[0] = i2

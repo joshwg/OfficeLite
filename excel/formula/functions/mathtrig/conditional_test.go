@@ -6,9 +6,9 @@ package mathtrig
 import (
 	"testing"
 
+	"officelite/excel"
 	f "officelite/excel/formula"
 	"officelite/excel/formula/functions/internal/ftest"
-	"officelite/excel/model"
 )
 
 // condData lays out Microsoft's documentation examples:
@@ -61,7 +61,7 @@ func condData(ctx *f.TestContext) {
 // TestConditional checks the criteria functions on Microsoft's examples,
 // whole-column ranges, array criteria and shape mismatches.
 func TestConditional(t *testing.T) {
-	const rows = float64(model.MaxRows)
+	const rows = float64(excel.MaxRows)
 	ftest.Run(t, registry(), condData, []ftest.Case{
 		{"=SUMIF(E2:E5,\">160000\",F2:F5)", 63000},
 		{"=SUMIF(E2:E5,\">160000\")", 900000},

@@ -8,6 +8,7 @@ import (
 	"math"
 	"strings"
 
+	"officelite/excel"
 	f "officelite/excel/formula"
 )
 
@@ -72,7 +73,7 @@ func parse(v f.Value, radix int) (int64, f.Value) {
 	if err != nil {
 		return 0, err
 	}
-	if len(s) > 10 {
+	if len(s) > excel.EngMaxDigits {
 		return 0, f.ErrNum
 	}
 	var n int64
@@ -115,7 +116,7 @@ func format(x float64, radix int, a []f.Value) f.Value {
 				return err
 			}
 			p = math.Trunc(p)
-			if p < 0 || p > 10 {
+			if p < 0 || p > excel.EngMaxDigits {
 				return f.ErrNum
 			}
 			places = int(p)

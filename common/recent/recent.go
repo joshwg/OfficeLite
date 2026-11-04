@@ -14,10 +14,8 @@ import (
 	"time"
 
 	"officelite/common/atomicfile"
+	"officelite/common/limits"
 )
-
-// Max is how many files the list keeps.
-const Max = 50
 
 // Kind tells which app a file belongs to.
 type Kind string
@@ -115,8 +113,8 @@ func (l *List) Add(path string, kind Kind) error {
 	return l.update(func(list []Entry) []Entry {
 		list = slices.DeleteFunc(list, func(e Entry) bool { return samePath(e.Path, path) })
 		list = slices.Insert(list, 0, Entry{Path: path, Kind: kind, Opened: time.Now()})
-		if len(list) > Max {
-			list = list[:Max]
+		if len(list) > limits.RecentFiles {
+			list = list[:limits.RecentFiles]
 		}
 		return list
 	})

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"officelite/excel"
 	f "officelite/excel/formula"
 	"officelite/excel/numfmt"
 )
@@ -220,10 +221,10 @@ func decimalsArg(v f.Value) (int, f.Value) {
 	if err != nil {
 		return 0, err
 	}
-	if d > 127 {
+	if d > excel.TextMaxDecimals {
 		return 0, f.ErrValue
 	}
-	return max(d, -400), nil
+	return max(d, excel.TextMinDecimals), nil
 }
 
 // fixed implements FIXED(number, [decimals], [no_commas]).

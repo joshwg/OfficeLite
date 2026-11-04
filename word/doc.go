@@ -1,4 +1,6 @@
-// Package word will hold WordLite (rendering, fonts and styles for .docx and
-// .doc; no macros). Shared pieces it will build on already live in common/:
-// ole (the .doc container), textenc, colors and gui (fonts, painting).
+// Package word holds WordLite's limits (limits.go): the caps and tunables
+// of the document model, the .doc, .docx and Pages readers and writers, the
+// layout engine and the editor window, in one place. WordLite itself lives
+// in the packages below it: model, layout, fileio and ui. This package
+// imports no other word/ package, so every one of them can use it.
 package word

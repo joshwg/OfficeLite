@@ -185,21 +185,26 @@ func CurrentRegion(sh *model.Sheet, row, col int) model.Range {
 		}
 		return false
 	}
+	// Each side grows as far as it can before the next is tried: growing
+	// one row per pass rescans the whole height of the sides every time,
+	// which takes minutes for a table of 100,000 rows. Growth only ever
+	// adds cells to check, so the region reached is the same.
+	usedRows, usedCols := sh.UsedRows(), sh.UsedCols()
 	for grew := true; grew; {
 		grew = false
-		if r.R1 > 0 && lineFilled(r.R1-1, r.C1-1, r.R1-1, r.C2+1) {
+		for r.R1 > 0 && lineFilled(r.R1-1, r.C1-1, r.R1-1, r.C2+1) {
 			r.R1--
 			grew = true
 		}
-		if r.R2 < sh.UsedRows()-1 && lineFilled(r.R2+1, r.C1-1, r.R2+1, r.C2+1) {
+		for r.R2 < usedRows-1 && lineFilled(r.R2+1, r.C1-1, r.R2+1, r.C2+1) {
 			r.R2++
 			grew = true
 		}
-		if r.C1 > 0 && lineFilled(r.R1-1, r.C1-1, r.R2+1, r.C1-1) {
+		for r.C1 > 0 && lineFilled(r.R1-1, r.C1-1, r.R2+1, r.C1-1) {
 			r.C1--
 			grew = true
 		}
-		if r.C2 < sh.UsedCols()-1 && lineFilled(r.R1-1, r.C2+1, r.R2+1, r.C2+1) {
+		for r.C2 < usedCols-1 && lineFilled(r.R1-1, r.C2+1, r.R2+1, r.C2+1) {
 			r.C2++
 			grew = true
 		}

@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"officelite/common/limits"
 	"path"
 	"slices"
 	"sort"
@@ -295,7 +296,7 @@ func readZipFile(f *zip.File) (data []byte, err error) {
 			err = closeErr
 		}
 	}()
-	return io.ReadAll(io.LimitReader(rc, 1<<30))
+	return io.ReadAll(io.LimitReader(rc, limits.IWorkMaxZipEntry))
 }
 
 // findDocument finds the Index/Document.iwa entry of a zip, and whether it

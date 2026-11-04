@@ -16,6 +16,7 @@ import (
 	"gioui.org/widget/material"
 
 	"officelite/common/colors"
+	"officelite/common/limits"
 	"officelite/common/recent"
 	"officelite/common/version"
 )
@@ -46,6 +47,7 @@ func (p Page) String() string { return pageNames[p] }
 type Template struct {
 	Name string
 	Kind recent.Kind
+	Path string // the template file a new document starts from; "" for a blank one
 }
 
 // Action is what a backstage event asks the app to do.
@@ -70,7 +72,10 @@ type BackstageEvent struct {
 // BackstageConfig supplies the app-specific parts of the backstage.
 type BackstageConfig struct {
 	Templates []Template
-	Recent    []recent.Entry
+	// TemplateNote is shown under the New page's tiles, e.g. where to save
+	// templates for them to be listed; "" for none.
+	TemplateNote string
+	Recent       []recent.Entry
 	// Content returns the rows of the app's own pages (Info, Save As,
 	// Print, Export), below the page title.
 	Content func(p Page) []layout.Widget
@@ -229,11 +234,14 @@ func (b *Backstage) content(gtx layout.Context, th *Theme, cfg BackstageConfig) 
 	var rows []layout.Widget
 	switch b.Page {
 	case PageHome:
-		rows = append(rows, th.Title(greeting(time.Now())), th.Heading("New"), b.tileRow(th, cfg.Templates),
+		rows = append(rows, th.Title(greeting(time.Now())), th.Heading("New"), b.tileRow(th, cfg.Templates, 1),
 			th.Heading("Recent"))
-		rows = append(rows, b.recentRows(th, cfg.Recent, 12)...)
+		rows = append(rows, b.recentRows(th, cfg.Recent, limits.HomeRecentFiles)...)
 	case PageNew:
-		rows = append(rows, th.Title("New"), b.tileRow(th, cfg.Templates))
+		rows = append(rows, th.Title("New"), b.tileRow(th, cfg.Templates, 0))
+		if cfg.TemplateNote != "" {
+			rows = append(rows, th.Paragraph(cfg.TemplateNote, MutedText))
+		}
 	case PageOpen:
 		rows = append(rows, th.Title("Open"),
 			func(gtx layout.Context) layout.Dimensions {
@@ -267,26 +275,47 @@ func greeting(now time.Time) string {
 	}
 }
 
-// tileRow is the row of New tiles.
-func (b *Backstage) tileRow(th *Theme, ts []Template) layout.Widget {
+// tileRow lays out the New tiles left to right, wrapping onto as many
+// rows as they need, or at most maxRows rows (0 for no limit); tiles that
+// don't fit are left out.
+func (b *Backstage) tileRow(th *Theme, ts []Template, maxRows int) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
-		children := make([]layout.FlexChild, 0, 2*len(ts))
-		for i, t := range ts {
-			children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return b.tile(gtx, th, &b.tiles[i], t)
-			}), layout.Rigid(layout.Spacer{Width: 20}.Layout))
+		tileW, gap := gtx.Dp(tileWidth), gtx.Dp(tileGap)
+		perRow := max(1, (gtx.Constraints.Max.X+gap)/(tileW+gap))
+		rows := make([]layout.FlexChild, 0, (len(ts)+perRow-1)/perRow)
+		for start := 0; start < len(ts); start += perRow {
+			if maxRows > 0 && len(rows) == maxRows {
+				break
+			}
+			end := min(start+perRow, len(ts))
+			rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				children := make([]layout.FlexChild, 0, 2*(end-start))
+				for i := start; i < end; i++ {
+					children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return b.tile(gtx, th, &b.tiles[i], ts[i])
+					}), layout.Rigid(layout.Spacer{Width: tileGap}.Layout))
+				}
+				return layout.Inset{Bottom: 12}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{}.Layout(gtx, children...)
+				})
+			}))
 		}
-		return layout.Inset{Bottom: 12}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{}.Layout(gtx, children...)
-		})
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, rows...)
 	}
 }
+
+// Size of a New tile's thumbnail and the space between tiles.
+const (
+	tileWidth  = 150
+	tileHeight = 110
+	tileGap    = 20
+)
 
 // tile draws one New tile: template t's thumbnail in a border that
 // thickens to the accent on hover, with its name below.
 func (b *Backstage) tile(gtx layout.Context, th *Theme, btn *widget.Clickable, t Template) layout.Dimensions {
 	return Hoverable(gtx, btn, colors.Transparent, colors.Transparent, func(gtx layout.Context) layout.Dimensions {
-		tw, tht := gtx.Dp(150), gtx.Dp(110)
+		tw, tht := gtx.Dp(tileWidth), gtx.Dp(tileHeight)
 		border := ChromeLine
 		if btn.Hovered() {
 			border = th.Accent

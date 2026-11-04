@@ -4,6 +4,7 @@
 package gui
 
 import (
+	"officelite/common/limits"
 	"strings"
 	"syscall"
 	"unicode/utf16"
@@ -85,7 +86,7 @@ func filterSpec(filters []FileFilter) *uint16 {
 // and returns its path or ErrCancelled.
 func (d *FileDialog) open(filters []FileFilter) (string, error) {
 	filter := filterSpec(filters)
-	path := make([]uint16, 32768)
+	path := make([]uint16, limits.WindowsPathChars)
 	ofn := openFileName{
 		Owner:       d.owner.Load(),
 		Filter:      filter,
@@ -105,7 +106,7 @@ func (d *FileDialog) open(filters []FileFilter) (string, error) {
 // first extension as the default, and returns the path or ErrCancelled.
 func (d *FileDialog) save(name string, filters []FileFilter) (string, error) {
 	filter := filterSpec(filters)
-	path := make([]uint16, 32768)
+	path := make([]uint16, limits.WindowsPathChars)
 	copy(path[:len(path)-1], utf16.Encode([]rune(name)))
 	ofn := openFileName{
 		Owner:       d.owner.Load(),

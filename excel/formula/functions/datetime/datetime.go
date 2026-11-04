@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"officelite/excel"
 	f "officelite/excel/formula"
 )
 
@@ -387,7 +388,7 @@ func timeFn(e *f.Env, a []f.Value) f.Value {
 		if err != nil {
 			return err
 		}
-		if n > 32767 {
+		if n > excel.DateTimeMaxTimeArg {
 			return f.ErrNum
 		}
 		p[i] = n

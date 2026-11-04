@@ -13,31 +13,34 @@ import (
 	"gioui.org/widget"
 	"gioui.org/x/explorer"
 
-	"officelite/common/doctype"
 	"officelite/common/gui"
 	"officelite/common/lockfile"
 	"officelite/common/recent"
+	"officelite/common/templates"
 	"officelite/common/version"
+	"officelite/word"
 	"officelite/word/fileio"
 	"officelite/word/model"
 )
 
 // Formats offered by Save As, and by Export.
 var (
-	saveFormats   = []fileio.Format{fileio.DOCX, fileio.DOC, fileio.TXT}
-	exportFormats = []fileio.Format{fileio.TXT, fileio.DOC}
+	saveFormats   = [...]fileio.Format{fileio.DOCX, fileio.DOC, fileio.DOTX, fileio.DOT, fileio.TXT}
+	exportFormats = [...]fileio.Format{fileio.TXT, fileio.DOC}
 )
 
 // backstageState holds the widgets of WordLite's own backstage pages.
 type backstageState struct {
 	saveFmt    int // index into saveFormats
-	saveOpts   [3]widget.Clickable
+	saveOpts   [len(saveFormats)]widget.Clickable
 	saveBtn    widget.Clickable
-	exportOpts [2]widget.Clickable
+	exportOpts [len(exportFormats)]widget.Clickable
 	pdfOpt     widget.Clickable
 	printBtn   widget.Clickable
 	pdf        pdfState // PDF export (pdfexport.go)
 	info       infoCache
+	tmpl       templates.Lister // the user's templates, for the New page (template.go)
+	tiles      []gui.Template   // the New tiles shown this frame: blankTiles, then templates
 }
 
 // infoCache keeps the Info page's style list, which needs a pass over the
@@ -50,9 +53,10 @@ type infoCache struct {
 
 func (d *window) backstageConfig() gui.BackstageConfig {
 	return gui.BackstageConfig{
-		Templates: templates,
-		Recent:    d.cfg.Recent.Entries(),
-		Content:   d.backstagePage,
+		Templates:    d.newTiles(), // template.go
+		TemplateNote: templateNote(),
+		Recent:       d.cfg.Recent.Entries(),
+		Content:      d.backstagePage,
 	}
 }
 
@@ -62,15 +66,15 @@ func (d *window) handleBackstage(ev gui.BackstageEvent) {
 		d.v.focusPending = true
 		d.closeAfterSave = false
 	case gui.ActNew:
-		d.back.Hide()
-		kind := doctype.Document
-		if templates[ev.Template].Kind == recent.Spreadsheet {
-			kind = doctype.Spreadsheet
+		d.closeAfterSave = false // leaving the Save As page abandons a close waiting for it
+		if ev.Template >= 0 && ev.Template < len(d.bs.tiles) {
+			d.newFromTile(d.bs.tiles[ev.Template]) // template.go
 		}
-		d.cfg.Launch(kind, "")
 	case gui.ActOpenRecent:
+		d.closeAfterSave = false
 		d.openFile(ev.Entry.Path)
 	case gui.ActBrowse:
+		d.closeAfterSave = false
 		d.openDialog()
 	case gui.ActSave:
 		d.save()
@@ -86,14 +90,10 @@ func (d *window) saveFormat() (fileio.Format, bool) {
 		return 0, false
 	}
 	switch strings.ToLower(filepath.Ext(d.path)) {
-	case ".docx":
-		return fileio.DOCX, true
-	case ".doc":
-		return fileio.DOC, true
-	case ".txt":
-		return fileio.TXT, true
+	case ".docx", ".doc", ".txt", ".dotx", ".dot":
+		return fileio.FormatFor(d.path)
 	}
-	return 0, false // .docm and others: Save As
+	return 0, false // .docm, .dotm and others: Save As
 }
 
 // save writes the document back to its file, or asks where to save it.
@@ -154,15 +154,25 @@ func (d *window) saveAs(f fileio.Format, export bool) {
 	d.checkLossy(f, func() { d.writeAs(f, export) })
 }
 
+// writeAs asks for a file name and writes a clone of the document there
+// in the background. d.saving stays set until the result is handled on
+// the UI goroutine, so the window isn't pristine (and its document can't
+// be replaced) in between.
 func (d *window) writeAs(f fileio.Format, export bool) {
 	d.saving.Store(true)
-	doc, version := d.doc.Clone(), d.bodyEd().Version
+	owner := d.doc
+	doc, version := owner.Clone(), d.bodyEd().Version
 	name := d.saveAsName(f) // recover.go
 	go func() {
-		defer d.saving.Store(false)
+		if f.IsTemplate() {
+			name = templateSaveName(name) // template.go
+		}
 		wc, err := d.expl.CreateFile(name)
 		if errors.Is(err, explorer.ErrUserDecline) {
-			d.calls.Post(func() { d.closeAfterSave = false })
+			d.calls.Post(func() {
+				d.saving.Store(false)
+				d.closeAfterSave = false
+			})
 			return
 		}
 		if err == nil {
@@ -175,8 +185,23 @@ func (d *window) writeAs(f fileio.Format, export bool) {
 		if file, ok := wc.(*os.File); ok && err == nil {
 			path = file.Name()
 		}
-		d.calls.Post(func() { d.savedAs(f, path, export, version, err) })
+		d.calls.Post(func() { d.writeAsDone(owner, f, path, export, version, err) })
 	}()
+}
+
+// writeAsDone runs on the UI goroutine when writeAs has written owner's
+// clone: the save ends, and when the window still shows owner it becomes
+// the saved file (savedAs). A document that replaced owner meanwhile
+// keeps its own path and name.
+func (d *window) writeAsDone(owner *model.Document, f fileio.Format, path string, export bool, version int, err error) {
+	d.saving.Store(false)
+	if owner != d.doc && err == nil && !export {
+		d.errMsg = ""
+		d.notice = "Saved " + filepath.Base(path)
+		d.closeAfterSave = false
+		return
+	}
+	d.savedAs(f, path, export, version, err)
 }
 
 // savedAs runs on the UI goroutine after a Save As or export finishes.
@@ -198,6 +223,7 @@ func (d *window) savedAs(f fileio.Format, path string, export bool, version int,
 		d.notice += " (text only)"
 	}
 	if export {
+		d.closeAfterSave = false // an export isn't the save the close waits for
 		return
 	}
 	d.saved = version
@@ -300,9 +326,9 @@ func (d *window) infoPage() []layout.Widget {
 			th.Property("Modified", fi.ModTime().Format("January 2, 2006 3:04 PM")))
 	}
 	styles := d.bs.info.styles
-	styleText := strings.Join(styles[:min(len(styles), 12)], ", ")
-	if len(styles) > 12 {
-		styleText += fmt.Sprintf(" and %d more", len(styles)-12)
+	styleText := strings.Join(styles[:min(len(styles), word.UIMaxInfoStyles)], ", ")
+	if len(styles) > word.UIMaxInfoStyles {
+		styleText += fmt.Sprintf(" and %d more", len(styles)-word.UIMaxInfoStyles)
 	}
 	rows = append(rows,
 		th.Property("Pages", fmt.Sprint(len(d.eng.Pages))),
@@ -363,6 +389,12 @@ func fileType(path string) string {
 		return "Word Macro-Enabled Document (macros are not run)"
 	case ".doc":
 		return "Word 97-2003 Document"
+	case ".dotx":
+		return "Word Template"
+	case ".dotm":
+		return "Word Macro-Enabled Template (macros are not run)"
+	case ".dot":
+		return "Word 97-2003 Template"
 	case ".txt":
 		return "Plain Text"
 	case ".pages":
@@ -384,6 +416,10 @@ func formatDesc(f fileio.Format) string {
 		return "Text, formatting, styles and lists"
 	case fileio.DOC:
 		return "For Word 97 to 2003"
+	case fileio.DOTX:
+		return "A starting point for new documents, listed on the New page"
+	case fileio.DOT:
+		return "A template for Word 97 to 2003"
 	case fileio.TXT:
 		return "Text only, one line per paragraph"
 	}

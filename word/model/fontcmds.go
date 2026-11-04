@@ -2,6 +2,8 @@ package model
 
 import (
 	"unicode"
+
+	"officelite/word"
 )
 
 // Font commands of the Home ribbon's Font group beyond those in edit.go.
@@ -17,7 +19,7 @@ func stepSize(s float64, dir int) float64 {
 				return v
 			}
 		}
-		return min(s+10, 1638)
+		return min(s+10, word.MaxFontSize)
 	}
 	for i := len(growSizes) - 1; i >= 0; i-- {
 		if growSizes[i] < s-0.01 {

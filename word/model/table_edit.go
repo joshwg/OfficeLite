@@ -4,6 +4,8 @@ import (
 	"math"
 	"slices"
 	"strings"
+
+	"officelite/word"
 )
 
 // Table editing: Insert > Table and the table commands (insert and
@@ -13,10 +15,6 @@ import (
 // cellPad is Word's default left and right cell margin, points; a cell's
 // text is its grid width less twice this.
 const cellPad = 5.4
-
-// MaxTableSize is the largest number of rows or columns Insert Table
-// creates (Word allows 63 columns).
-const MaxTableSize = 63
 
 // TableLoc says where a cell is: its table, the table's container and the
 // cell's row, index in the row and grid column.
@@ -135,7 +133,7 @@ func (e *Editor) textWidth(loc ParaLoc) float64 {
 // NewTable returns a rows × cols table width points wide with single
 // borders around every cell, as Word's "Table Grid" draws it.
 func NewTable(rows, cols int, width float64) *Table {
-	rows, cols = min(max(rows, 1), 32767), min(max(cols, 1), MaxTableSize)
+	rows, cols = min(max(rows, 1), word.MaxTableRows), min(max(cols, 1), word.MaxTableSize)
 	t := &Table{Borders: true}
 	cw := width / float64(cols)
 	for range cols {

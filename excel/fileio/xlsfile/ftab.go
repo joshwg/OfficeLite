@@ -30,7 +30,6 @@ func (f *funcInfo) argClass(i int) byte {
 
 const (
 	funcUser  = 255 // add-in / user-defined / future function call
-	maxArgs   = 30  // BIFF8 limit on arguments of one call
 	funcIF    = 1
 	funcSUM   = 4
 	funcCHOOS = 100

@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"officelite/common/textenc"
+	"officelite/excel"
 	"officelite/excel/formula"
 	"officelite/excel/model"
 	"officelite/excel/numfmt"
@@ -29,6 +30,11 @@ func Read(name string, data []byte) (*model.Workbook, error) {
 	if f := strings.TrimRight(first, "\r"); strings.HasPrefix(strings.ToLower(f), "sep=") && utf8.RuneCountInString(f) == 5 {
 		delim, _ = utf8.DecodeLastRuneInString(f)
 		text = rest
+		// encoding/csv refuses these as a delimiter, which failed the
+		// whole read: sniff one instead.
+		if delim == '"' || delim == '\r' || delim == utf8.RuneError {
+			delim = 0
+		}
 	}
 	if delim == 0 {
 		delim = sniffDelimiter(text, strings.ToLower(filepath.Ext(name)))
@@ -155,7 +161,7 @@ func sniffDelimiter(text, ext string) rune {
 		if strings.TrimSpace(line) != "" {
 			lines = append(lines, line)
 		}
-		if len(lines) == 20 {
+		if len(lines) == excel.CSVSniffLines {
 			break
 		}
 	}

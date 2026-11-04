@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"officelite/excel"
 	"officelite/excel/model"
 )
 
@@ -38,13 +39,13 @@ func TestSheetViewClamped(t *testing.T) {
 		t.Fatal(err)
 	}
 	g := got.Sheets[0]
-	if g.TopRow != model.MaxRows-1 || g.LeftCol != model.MaxCols-1 {
+	if g.TopRow != excel.MaxRows-1 || g.LeftCol != excel.MaxCols-1 {
 		t.Errorf("top-left = %d,%d", g.TopRow, g.LeftCol)
 	}
-	if g.ActiveRow < 0 || g.ActiveRow >= model.MaxRows || g.ActiveCol < 0 || g.ActiveCol >= model.MaxCols {
+	if g.ActiveRow < 0 || g.ActiveRow >= excel.MaxRows || g.ActiveCol < 0 || g.ActiveCol >= excel.MaxCols {
 		t.Errorf("active = %d,%d", g.ActiveRow, g.ActiveCol)
 	}
-	if g.FreezeRows != 0 || g.FreezeCols < 0 || g.FreezeCols >= model.MaxCols {
+	if g.FreezeRows != 0 || g.FreezeCols < 0 || g.FreezeCols >= excel.MaxCols {
 		t.Errorf("freeze = %d×%d", g.FreezeRows, g.FreezeCols)
 	}
 	if want := (model.Range{R1: 1, C1: 1, R2: 2, C2: 2}); len(g.Merges) != 1 || g.Merges[0] != want {
@@ -63,5 +64,29 @@ func TestParseCellRefBounds(t *testing.T) {
 	}
 	if r, c, ok := parseCellRef("XFD1048576"); !ok || r != 1048575 || c != 16383 {
 		t.Errorf("XFD1048576 = %d,%d,%v", r, c, ok)
+	}
+}
+
+// TestExcelizeUnzipLimit checks that excelize is opened with an unzip
+// limit: a package bigger than it is refused (the workbook then shows
+// unformatted values), one within it opens, and the limit is 1 GB.
+func TestExcelizeUnzipLimit(t *testing.T) {
+	if excel.XlsxUnzipLimit != 1<<30 {
+		t.Errorf("limit %d, want 1 GB", excel.XlsxUnzipLimit)
+	}
+	wb := &model.Workbook{Sheets: []*model.Sheet{model.NewSheet("Sheet1")}, Styles: []model.Style{model.DefaultStyle()}}
+	var buf bytes.Buffer
+	if err := Write(wb, &buf); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := openExcelize(buf.Bytes(), 100); err == nil || !strings.Contains(err.Error(), "unzip size") {
+		t.Errorf("a package over the limit opened (err %v)", err)
+	}
+	x, err := openExcelize(buf.Bytes(), excel.XlsxUnzipLimit)
+	if err != nil {
+		t.Fatalf("a small package was refused: %v", err)
+	}
+	if err := x.Close(); err != nil {
+		t.Error(err)
 	}
 }

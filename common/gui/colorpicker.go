@@ -21,6 +21,7 @@ import (
 	"gioui.org/widget/material"
 
 	"officelite/common/colors"
+	"officelite/common/limits"
 )
 
 // The Office theme's colors (Office 2023 and later), as Excel and Word
@@ -159,7 +160,7 @@ type ColorPicker struct {
 	dd     DropDown
 	cells  [70]widget.Clickable // theme row, 5 shade rows, standard row
 	recent []color.NRGBA
-	recBtn [10]widget.Clickable
+	recBtn [limits.RecentColors]widget.Clickable
 	none   widget.Clickable
 	more   widget.Clickable
 	custom customColor

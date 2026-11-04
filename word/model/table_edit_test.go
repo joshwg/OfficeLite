@@ -293,3 +293,33 @@ func TestLinkTarget(t *testing.T) {
 		}
 	}
 }
+
+// TestRowWithoutCells checks that the table commands work on a table read
+// with a row that has no cells (Locate drops it) instead of indexing its
+// missing cells.
+func TestRowWithoutCells(t *testing.T) {
+	ops := map[string]func(e *Editor){
+		"SelectTable": (*Editor).SelectTable, "SelectRow": (*Editor).SelectRow, "DeleteRows": (*Editor).DeleteRows,
+		"InsertRow": func(e *Editor) { e.InsertRow(true) }, "InsertColumn": func(e *Editor) { e.InsertColumn(true) },
+		"DeleteColumns": (*Editor).DeleteColumns, "NextCell": func(e *Editor) { e.NextCell(1); e.NextCell(-1) },
+	}
+	for _, op := range ops {
+		for _, emptyFirst := range []bool{false, true} {
+			tb := NewTable(1, 2, 400)
+			if emptyFirst {
+				tb.Rows = append([]*TableRow{{}}, tb.Rows...)
+			} else {
+				tb.Rows = append(tb.Rows, &TableRow{})
+			}
+			d := New("x")
+			d.Body = []Block{tb, &Paragraph{}}
+			e := NewEditor(d)
+			if len(tb.Rows) != 1 {
+				t.Fatalf("%d rows; the row without cells should go", len(tb.Rows))
+			}
+			e.SetCaret(Pos{1, 0}, false)
+			op(e) // must not panic
+			e.Undo()
+		}
+	}
+}

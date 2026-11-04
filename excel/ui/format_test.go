@@ -5,6 +5,7 @@ import (
 
 	"gioui.org/io/key"
 
+	"officelite/excel"
 	"officelite/excel/model"
 )
 
@@ -138,14 +139,14 @@ func TestHideUnhideSizes(t *testing.T) {
 	h.press(key.NameReturn, 0)
 	a.book.ResizeRows(0, []int{199}, 40)
 	a.book.ResizeCols(0, []int{60}, 25)
-	a.selectRange(0, model.Range{R1: 199, R2: 199, C2: model.MaxCols - 1})
+	a.selectRange(0, model.Range{R1: 199, R2: 199, C2: excel.MaxCols - 1})
 	a.formatMenu(a.gtx, fmtHideRows)
-	a.selectRange(0, model.Range{C1: 60, C2: 60, R2: model.MaxRows - 1})
+	a.selectRange(0, model.Range{C1: 60, C2: 60, R2: excel.MaxRows - 1})
 	a.formatMenu(a.gtx, fmtHideCols)
 	if !sh.RowHidden(199) || !sh.IndexHidden(false, 60) {
 		t.Fatalf("not hidden: %v %v", sh.RowHeight, sh.ColWidth)
 	}
-	a.selectRange(0, model.Range{R2: model.MaxRows - 1, C2: model.MaxCols - 1}) // Select All
+	a.selectRange(0, model.Range{R2: excel.MaxRows - 1, C2: excel.MaxCols - 1}) // Select All
 	a.formatMenu(a.gtx, fmtUnhideRows)
 	a.formatMenu(a.gtx, fmtUnhideCols)
 	if sh.RowHeight[199] != 40 || sh.ColWidth[60] != 25 {
@@ -155,5 +156,28 @@ func TestHideUnhideSizes(t *testing.T) {
 	a.undo()
 	if !sh.RowHidden(199) || !sh.IndexHidden(false, 60) {
 		t.Errorf("undo unhide: %v %v", sh.RowHeight[199], sh.ColWidth[60])
+	}
+}
+
+// TestAskRejectsNaN checks that a number prompt refuses "NaN", which
+// ParseFloat accepts and every range check lets through, instead of
+// setting a NaN row height.
+func TestAskRejectsNaN(t *testing.T) {
+	h := newHarness(t)
+	a := h.a
+	a.formatMenu(a.gtx, fmtRowHeight)
+	h.frame()
+	if !a.askDlg.open {
+		t.Fatal("no Row Height prompt")
+	}
+	for _, s := range []string{"NaN", "nan", "-NaN", "Inf"} {
+		a.askDlg.ed.SetText(s)
+		h.press(key.NameReturn, 0)
+		if !a.askDlg.open || !a.askDlg.bad {
+			t.Errorf("%q: prompt open %v, bad %v; want it refused", s, a.askDlg.open, a.askDlg.bad)
+		}
+		if ht, ok := a.wb.Sheets[0].RowHeight[0]; ok {
+			t.Errorf("%q: row 1 height set to %v", s, ht)
+		}
 	}
 }

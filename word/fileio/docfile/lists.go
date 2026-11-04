@@ -41,9 +41,9 @@ func (r *reader) readLists() {
 	if fc+2 > len(t) {
 		return
 	}
-	n := int(i16(t[fc:]))
+	n := max(int(i16(t[fc:])), 0) // a damaged count may be negative
 	p := fc + 2
-	defs := make([]*lstf, 0, n)
+	defs := make([]*lstf, 0, min(n, (len(t)-p)/28))
 	for i := 0; i < n && p+28 <= len(t); i++ {
 		defs = append(defs, &lstf{lsid: int32(u32(t[p:])), simple: t[p+26]&1 != 0})
 		p += 28

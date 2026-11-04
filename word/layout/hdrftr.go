@@ -2,6 +2,7 @@ package layout
 
 import (
 	"image"
+	"maps"
 	"math"
 	"strconv"
 	"strings"
@@ -72,55 +73,65 @@ func (e *Engine) prepareHF(all bool) {
 }
 
 // FieldValue formats the value of a PAGE, NUMPAGES or SECTIONPAGES field
-// on page (1-based) of n, honoring the \* roman, Roman, alphabetic and
-// ALPHABETIC format switches; ok is false for other fields.
+// on page (1-based) of n in a one-section document, honoring the \*
+// number format switches; ok is false for other fields.
 func FieldValue(instr string, page, n int) (string, bool) {
-	return FieldValueFmt(instr, page, n, "")
+	return pageFieldValue(instr, &model.FieldContext{Page: page, Pages: n, Section: 1, SectionPages: n})
 }
 
-// FieldValueFmt is FieldValue with the number format of the page's
-// section ("" = decimal; see model.FormatNumber) for PAGE fields without
-// a format switch.
-func FieldValueFmt(instr string, page, n int, format string) (string, bool) {
-	v := 0
-	switch model.FieldName(instr) {
-	case model.FieldPage:
-		v = page
-	case model.FieldNumPages, "SECTIONPAGES":
-		v = n
-	default:
+// pageFieldValue computes a field whose result depends on the page it's
+// on (model.IsPageField) in context c; ok is false for other fields,
+// which show their stored result.
+func pageFieldValue(instr string, c *model.FieldContext) (string, bool) {
+	if !model.IsPageField(model.FieldName(instr)) {
 		return "", false
 	}
-	f := strings.Fields(instr)
-	for i := 1; i+1 < len(f); i++ {
-		if f[i] != `\*` {
-			continue
-		}
-		switch f[i+1] {
-		case "roman":
-			return model.FormatNumber(v, "lowerRoman"), true
-		case "Roman", "ROMAN":
-			return model.FormatNumber(v, "upperRoman"), true
-		case "alphabetic":
-			return model.FormatNumber(v, "lowerLetter"), true
-		case "ALPHABETIC":
-			return model.FormatNumber(v, "upperLetter"), true
-		}
-	}
-	if format != "" && format != "decimal" && model.FieldName(instr) == model.FieldPage {
-		return model.FormatNumber(v, format), true
-	}
-	return strconv.Itoa(v), true
+	return model.EvalField(instr, c)
 }
 
-// PageFieldValue is the value of a PAGE or NUMPAGES field on page i
-// (0-based).
-func (e *Engine) PageFieldValue(i int, instr string) (string, bool) {
-	if i < 0 || i >= len(e.Pages) {
-		return FieldValue(instr, i+1, len(e.Pages))
+// PageFieldContext is the context of a field on page i (0-based): its
+// page number and format, the page count, and its section's number and
+// page count.
+func (e *Engine) PageFieldContext(i int) model.FieldContext {
+	n := len(e.Pages)
+	if i < 0 || i >= n {
+		return model.FieldContext{Page: i + 1, Pages: n, Section: 1, SectionPages: n}
 	}
 	pg := e.Pages[i]
-	return FieldValueFmt(instr, pg.Number, len(e.Pages), e.sectionOf(pg).PageNumFormat)
+	return model.FieldContext{Page: pg.Number, PageFormat: e.sectionOf(pg).PageNumFormat, Pages: n,
+		Section: pg.Section + 1, SectionPages: e.sectionPages(pg.Section)}
+}
+
+// sectionPages returns how many pages section sec takes. The counts are
+// kept until the pages change, so that the headers of every page (and
+// the body's page fields) don't each count all the pages again.
+func (e *Engine) sectionPages(sec int) int {
+	n := len(e.Pages)
+	if n == 0 {
+		return 0
+	}
+	if e.secCount.n != n || e.secCount.last != e.Pages[n-1] {
+		// Pages are made anew by every Layout (and set by EditView).
+		e.secCount.n, e.secCount.last = n, e.Pages[n-1]
+		e.secCount.pages = e.secCount.pages[:0]
+		for _, p := range e.Pages {
+			for len(e.secCount.pages) <= p.Section {
+				e.secCount.pages = append(e.secCount.pages, 0)
+			}
+			e.secCount.pages[p.Section]++
+		}
+	}
+	if sec < 0 || sec >= len(e.secCount.pages) {
+		return 0
+	}
+	return e.secCount.pages[sec]
+}
+
+// PageFieldValue is the value of a PAGE, NUMPAGES, SECTIONPAGES or
+// SECTION field on page i (0-based).
+func (e *Engine) PageFieldValue(i int, instr string) (string, bool) {
+	c := e.PageFieldContext(i)
+	return pageFieldValue(instr, &c)
 }
 
 // sectionOf returns a page's section.
@@ -176,15 +187,71 @@ func (e *Engine) pageHF(pg *Page, footer bool) (*model.HeaderFooter, model.HFKin
 	return model.HeaderFor(e.secs, pg.Section, k, footer), k
 }
 
-// fieldText is the text shown for an opaque run: its field's current
-// value when the engine computes it, else its stored text.
-func (e *Engine) fieldText(r *model.Run) string {
-	if e.FieldValue != nil && r.Opaque != nil && r.Opaque.Field != "" {
+// fieldText is the text shown for opaque run r at caret offset off of
+// paragraph p: its field's current value when the engine computes it (a
+// header's page fields through FieldValue, the body's from the last
+// pagination), else its stored text.
+func (e *Engine) fieldText(p *model.Paragraph, off int, r *model.Run) string {
+	if r.Opaque == nil || r.Opaque.Field == "" || r.Opaque.FieldChar != model.FieldNone {
+		return r.Text
+	}
+	if e.showCodes {
+		return "{ " + strings.TrimSpace(r.Opaque.Field) + " }"
+	}
+	if e.FieldValue != nil {
 		if v, ok := e.FieldValue(r.Opaque.Field); ok {
 			return v
 		}
+		return r.Text
+	}
+	if v, ok := e.bodyFields[p][off]; ok {
+		return v
 	}
 	return r.Text
+}
+
+// updateBodyFields computes the page fields of the body (a PAGE field in
+// body text, "Page 3 of 7") for the pages they landed on, marking the
+// paragraphs whose values changed to be laid out again; it reports
+// whether any did. Header and footer engines (FieldValue set) have none.
+func (e *Engine) updateBodyFields() bool {
+	if e.FieldValue != nil {
+		return false
+	}
+	changed := false
+	seen := make(map[*model.Paragraph]bool, len(e.bodyFields))
+	for i, l := range e.locs {
+		p := l.P
+		if !p.HasPageFields() {
+			continue
+		}
+		seen[p] = true
+		vals := map[int]string{}
+		off := 0
+		for ri := range p.Runs {
+			r := &p.Runs[ri]
+			if o := r.Opaque; o != nil && o.Field != "" && o.FieldChar == model.FieldNone {
+				if v, ok := e.PageFieldValue(e.PageOfPos(model.Pos{Para: i, Off: off}), o.Field); ok {
+					vals[off] = v
+				}
+			}
+			off += model.RunLen(r)
+		}
+		if !maps.Equal(vals, e.bodyFields[p]) {
+			if e.bodyFields == nil {
+				e.bodyFields = map[*model.Paragraph]map[int]string{}
+			}
+			e.bodyFields[p] = vals
+			e.dirty[p] = true
+			changed = true
+		}
+	}
+	for p := range e.bodyFields {
+		if !seen[p] {
+			delete(e.bodyFields, p)
+		}
+	}
+	return changed
 }
 
 // subKey is a header laid out for a page width and side margins
@@ -206,28 +273,30 @@ func (e *Engine) sub(hf *model.HeaderFooter) *hfSub {
 	doc := e.Doc.SubDocument(hf.Blocks)
 	doc.Page = bandSetup(pg)
 	s := &hfSub{eng: New(doc, e.m.shaper), fields: model.HasPageFields(hf.Blocks), bands: map[string]*bandLayout{}}
+	s.eng.showCodes = e.showCodes
 	e.hf.subs[key] = s
 	return s
 }
 
 // band lays out hf for page (1-based) of n.
 func (e *Engine) band(hf *model.HeaderFooter, page, n int) *bandLayout {
-	return e.bandFmt(hf, page, n, "")
+	return e.bandFmt(hf, model.FieldContext{Page: page, Pages: n, Section: 1, SectionPages: n})
 }
 
-// bandFmt lays out hf for page number page of n, PAGE fields showing the
-// number in format.
-func (e *Engine) bandFmt(hf *model.HeaderFooter, page, n int, format string) *bandLayout {
+// bandFmt lays out hf for a page whose page fields take their values from
+// c.
+func (e *Engine) bandFmt(hf *model.HeaderFooter, c model.FieldContext) *bandLayout {
 	s := e.sub(hf)
 	key := ""
 	if s.fields {
-		key = strconv.Itoa(page) + "/" + strconv.Itoa(n) + "/" + format
+		key = strconv.Itoa(c.Page) + "/" + strconv.Itoa(c.Pages) + "/" + c.PageFormat + "/" +
+			strconv.Itoa(c.Section) + "/" + strconv.Itoa(c.SectionPages)
 	}
 	if b := s.bands[key]; b != nil {
 		return b
 	}
 	eng := s.eng
-	eng.FieldValue = func(instr string) (string, bool) { return FieldValueFmt(instr, page, n, format) }
+	eng.FieldValue = func(instr string) (string, bool) { return pageFieldValue(instr, &c) }
 	eng.all = true
 	eng.Layout()
 	b := &bandLayout{}
@@ -303,8 +372,7 @@ func (e *Engine) pageSetup(pg *Page) model.PageSetup {
 
 // placeHF puts every page's header and footer on it.
 func (e *Engine) placeHF() {
-	n := len(e.Pages)
-	for _, pg := range e.Pages {
+	for i, pg := range e.Pages {
 		e.page = pg
 		e.setup = e.pageSetup(pg)
 		e.notes.footH = 0
@@ -315,7 +383,7 @@ func (e *Engine) placeHF() {
 			if hf == nil {
 				continue
 			}
-			bl := e.bandFmt(hf, pg.Number, n, e.sectionOf(pg).PageNumFormat)
+			bl := e.bandFmt(hf, e.PageFieldContext(i))
 			off := e.bandOffset(footer, bl.height)
 			b := &Band{HF: hf, Kind: kind, Footer: footer, Top: off, Bottom: off + bl.height}
 			for _, pl := range bl.lines {
@@ -369,6 +437,7 @@ func (e *Engine) EditView(i int, footer bool, doc *model.Document) *Engine {
 	}
 	doc.Page = bandSetup(e.setup)
 	ed := New(doc, e.m.shaper)
+	ed.showCodes = e.showCodes
 	ed.FieldValue = func(instr string) (string, bool) { return e.PageFieldValue(i, instr) }
 	ed.Layout()
 	var lines []Placed

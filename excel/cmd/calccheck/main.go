@@ -12,6 +12,7 @@ import (
 	"sort"
 	"time"
 
+	"officelite/excel"
 	"officelite/excel/calc"
 	"officelite/excel/fileio"
 	"officelite/excel/formula"
@@ -99,8 +100,8 @@ func check(path string, verbose bool) bool {
 		fmt.Printf("  functions not implemented: %v\n", names)
 	}
 	for i, b := range bad {
-		if i == 20 && !verbose {
-			fmt.Printf("  ... %d more (use -v)\n", len(bad)-20)
+		if i == excel.CalcCheckMaxListed && !verbose {
+			fmt.Printf("  ... %d more (use -v)\n", len(bad)-excel.CalcCheckMaxListed)
 			break
 		}
 		fmt.Println(b)
@@ -115,7 +116,7 @@ func same(want saved, got *model.Cell) bool {
 		return false
 	}
 	if want.kind == model.KindNumber {
-		return math.Abs(want.num-got.Num) <= 1e-9*math.Max(1, math.Abs(want.num))
+		return math.Abs(want.num-got.Num) <= excel.CalcCheckTol*math.Max(1, math.Abs(want.num))
 	}
 	return want.text == got.Text
 }

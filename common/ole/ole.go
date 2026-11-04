@@ -90,6 +90,13 @@ func ReadStream(data []byte, names ...string) (name string, content []byte, err 
 	for e, err := r.Next(); err == nil; e, err = r.Next() {
 		for _, n := range names {
 			if strings.EqualFold(e.Name, n) && found[n] == nil {
+				// mscfb follows a stream's sector chain without cycle
+				// checks for as long as its directory entry's size says,
+				// so a looped chain under a huge size would read
+				// gigabytes; no real stream outgrows its file.
+				if e.Size < 0 || e.Size > int64(len(data)) {
+					return "", nil, fmt.Errorf("stream %q: size %d exceeds the file", e.Name, e.Size)
+				}
 				b, err := io.ReadAll(e)
 				if err != nil {
 					return "", nil, err

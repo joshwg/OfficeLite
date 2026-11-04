@@ -3,6 +3,7 @@ package edit
 import (
 	"slices"
 
+	"officelite/excel"
 	"officelite/excel/calc"
 	"officelite/excel/formula"
 	"officelite/excel/model"
@@ -16,7 +17,7 @@ import (
 // when that would go past the sheet's edge.
 func MoveTarget(src model.Range, dRow, dCol int) (model.Range, bool) {
 	d := model.Range{R1: src.R1 + dRow, C1: src.C1 + dCol, R2: src.R2 + dRow, C2: src.C2 + dCol}
-	return d, d.R1 >= 0 && d.C1 >= 0 && d.R2 < model.MaxRows && d.C2 < model.MaxCols
+	return d, d.R1 >= 0 && d.C1 >= 0 && d.R2 < excel.MaxRows && d.C2 < excel.MaxCols
 }
 
 // MoveOverwrites reports whether moving (or copying) src by dRow, dCol
@@ -61,18 +62,8 @@ func (b *Book) MoveCells(sheet int, src model.Range, dRow, dCol int, copy bool) 
 	}
 	sh := b.WB.Sheets[sheet]
 	child := spillChildren(sh)
-	cells := map[[3]int]*cellChange{}
-	var order [][3]int
-	set := func(s, r, c int, v model.Cell) {
-		k := [3]int{s, r, c}
-		if ch, ok := cells[k]; ok {
-			ch.after = v
-			return
-		}
-		ws := b.WB.Sheets[s]
-		cells[k] = &cellChange{s, r, c, snapshot(ws, spillChildren(ws), r, c), v}
-		order = append(order, k)
-	}
+	ed := b.newCellEdits()
+	cells, set := ed.cells, ed.set
 
 	// Read the source first: the destination may overlap it. Past the
 	// used area every cell is empty, so only the used part (and the
@@ -121,7 +112,7 @@ func (b *Book) MoveCells(sheet int, src model.Range, dRow, dCol int, copy bool) 
 		// Formulas anywhere that point into the moved block follow it:
 		// the cells already changed, then the rest.
 		move := func(f, home string) string { return formula.MoveRefs(f, home, sh.Name, src, dRow, dCol) }
-		for _, k := range order {
+		for _, k := range ed.order {
 			ch := cells[k]
 			if ch.after.Formula != "" {
 				ch.after.Formula = move(ch.after.Formula, b.WB.Sheets[k[0]].Name)
@@ -150,10 +141,7 @@ func (b *Book) MoveCells(sheet int, src model.Range, dRow, dCol int, copy bool) 
 	ch.after.merges = moveMerges(sh.Merges, src, dest, dRow, dCol, copy)
 	ch.after.valids = model.MoveValidations(sh.Validations, src, dRow, dCol, copy)
 
-	list := make([]cellChange, 0, len(order))
-	for _, k := range order {
-		list = append(list, *cells[k])
-	}
+	list := ed.list()
 	var names *namesChange
 	if !copy {
 		names = b.moveNames(sh.Name, src, dRow, dCol)
@@ -167,6 +155,42 @@ func (b *Book) MoveCells(sheet int, src model.Range, dRow, dCol int, copy bool) 
 	}
 	b.record(&change{where: Where{sheet, dest}, cells: list, annots: annots, sheet: ch, names: names})
 	return dest, res, nil
+}
+
+// cellEdits collects cell changes by position for a command that may
+// write a cell more than once (a cut's source emptied, then pasted over):
+// each cell keeps its first before and its last after, in the order the
+// cells were first written.
+type cellEdits struct {
+	b     *Book
+	cells map[[3]int]*cellChange // by sheet, row, column
+	order [][3]int
+}
+
+// newCellEdits starts an empty set of cell changes.
+func (b *Book) newCellEdits() *cellEdits {
+	return &cellEdits{b: b, cells: map[[3]int]*cellChange{}}
+}
+
+// set makes v the cell at r, c of sheet s after the command.
+func (e *cellEdits) set(s, r, c int, v model.Cell) {
+	k := [3]int{s, r, c}
+	if ch, ok := e.cells[k]; ok {
+		ch.after = v
+		return
+	}
+	ws := e.b.WB.Sheets[s]
+	e.cells[k] = &cellChange{s, r, c, snapshot(ws, spillChildren(ws), r, c), v}
+	e.order = append(e.order, k)
+}
+
+// list is the changes in the order the cells were first written.
+func (e *cellEdits) list() []cellChange {
+	out := make([]cellChange, 0, len(e.order))
+	for _, k := range e.order {
+		out = append(out, *e.cells[k])
+	}
+	return out
 }
 
 // namesChange is a change of the workbook's defined names.

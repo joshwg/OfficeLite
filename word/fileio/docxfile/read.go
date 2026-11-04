@@ -113,6 +113,7 @@ type reader struct {
 	warned map[string]bool
 
 	fields   []fieldState // open complex fields that span paragraphs
+	inCode   int          // how many of fields are still in their code (not result)
 	markers  []model.Run  // range markers waiting for the next paragraph
 	before   []*model.Opaque
 	lastPara *model.Paragraph
@@ -754,12 +755,7 @@ func (r *reader) fieldRuns(toks []token) []model.Run {
 	var out []model.Run
 	for i := 0; i < len(toks); i++ {
 		t := toks[i]
-		hidden := false
-		for _, f := range r.fields {
-			if !f.result {
-				hidden = true
-			}
-		}
+		hidden := r.inCode > 0 // inside some open field's code
 		if t.fld == fldBegin && !hidden {
 			if j := matchField(toks, i); j > 0 {
 				out = append(out, fieldUnit(toks[i:j+1]))
@@ -770,14 +766,19 @@ func (r *reader) fieldRuns(toks []token) []model.Run {
 		switch t.fld {
 		case fldBegin:
 			r.fields = append(r.fields, fieldState{})
+			r.inCode++
 			hidden = true
 		case fldSeparate:
-			if n := len(r.fields); n > 0 {
+			if n := len(r.fields); n > 0 && !r.fields[n-1].result {
 				r.fields[n-1].result = true
+				r.inCode--
 			}
 			hidden = true
 		case fldEnd:
 			if n := len(r.fields); n > 0 {
+				if !r.fields[n-1].result {
+					r.inCode--
+				}
 				r.fields = r.fields[:n-1]
 			}
 			hidden = true

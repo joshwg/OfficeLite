@@ -57,3 +57,25 @@ func TestCorruptHeaderRejected(t *testing.T) {
 		t.Error("truncated header accepted")
 	}
 }
+
+// TestLoopedStreamChain checks that a stream whose sector chain loops back
+// on itself under a size far beyond the file is refused: mscfb follows
+// the loop for as long as the size says, so a few patched bytes once made
+// ReadStream read (and allocate) gigabytes.
+func TestLoopedStreamChain(t *testing.T) {
+	var buf bytes.Buffer
+	big := bytes.Repeat([]byte("x"), 4096) // 8 sectors, in the FAT (not the mini stream)
+	if err := Write(&buf, []Stream{{Name: "WordDocument", Data: big}}); err != nil {
+		t.Fatal(err)
+	}
+	data := buf.Bytes()
+	le := binary.LittleEndian
+	sectorAt := func(n uint32) int { return int(n+1) * 512 }
+	fat := sectorAt(le.Uint32(data[0x4C:]))
+	le.PutUint32(data[fat+7*4:], 0) // the stream's last sector → its first
+	dir := sectorAt(le.Uint32(data[0x30:]))
+	le.PutUint32(data[dir+128+0x78:], 64<<20) // entry 1's size: 64 MiB
+	if _, b, err := ReadStream(data, "WordDocument"); err == nil {
+		t.Errorf("read %d bytes of a looped chain from a %d-byte file", len(b), len(data))
+	}
+}

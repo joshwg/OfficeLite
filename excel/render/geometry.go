@@ -8,6 +8,7 @@ import (
 	"gioui.org/text"
 	"golang.org/x/image/math/fixed"
 
+	"officelite/excel"
 	"officelite/excel/model"
 )
 
@@ -73,8 +74,8 @@ func NewGeometry(sh *model.Sheet, mdw float64) *Geometry {
 		}
 	}
 	return &Geometry{
-		Rows: NewAxis(model.MaxRows, sh.DefaultRowHeight, heights),
-		Cols: NewAxis(model.MaxCols, sh.DefaultColWidthPx(mdw), widths),
+		Rows: NewAxis(excel.MaxRows, sh.DefaultRowHeight, heights),
+		Cols: NewAxis(excel.MaxCols, sh.DefaultColWidthPx(mdw), widths),
 	}
 }
 

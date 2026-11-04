@@ -16,6 +16,7 @@ import (
 
 	"officelite/common/colors"
 	"officelite/common/gui"
+	"officelite/excel"
 	"officelite/excel/model"
 	"officelite/excel/numfmt"
 )
@@ -200,6 +201,18 @@ func paintPrims(gtx layout.Context, sh *text.Shaper, prims []prim, ox, oy, s flo
 // dashed splits a polyline into its dashes (in unscaled units).
 func dashed(pts []chartPt, dash []float32, s float32) [][]chartPt {
 	if len(dash) == 0 {
+		return [][]chartPt{pts}
+	}
+	// A line millions of dashes long would take forever, and past 2²⁴
+	// dash lengths the float32 position stops advancing at all.
+	var period, total float64
+	for _, d := range dash {
+		period += float64(d)
+	}
+	for i := 0; i+1 < len(pts); i++ {
+		total += math.Hypot(float64(pts[i+1].X-pts[i].X), float64(pts[i+1].Y-pts[i].Y))
+	}
+	if !(period > 0) || total/period*float64(len(dash)) > excel.ChartMaxDashes {
 		return [][]chartPt{pts}
 	}
 	var out [][]chartPt
@@ -513,7 +526,7 @@ func (v *View) elementRect(c *model.Chart, e ChartElem, rc image.Rectangle) (ima
 					pts = append(pts, to(q.X, q.Y))
 				}
 			}
-			if len(pts) > 200 {
+			if len(pts) > excel.ChartOutlineMaxPoints {
 				break
 			}
 		}

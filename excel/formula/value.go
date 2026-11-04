@@ -4,6 +4,8 @@ import (
 	"math"
 	"strconv"
 	"strings"
+
+	"officelite/excel"
 )
 
 // Value is a formula value: Number, String, Bool, Error, Blank, Missing,
@@ -255,7 +257,7 @@ func NumberText(f float64) string {
 		return string(ErrNum)
 	}
 	a := math.Abs(f)
-	if a >= 1e15 || a < 1e-9 {
+	if a >= excel.FormulaSciFrom || a < excel.FormulaSciBelow {
 		s := strconv.FormatFloat(f, 'E', 14, 64)
 		mant, exp, _ := strings.Cut(s, "E")
 		mant = strings.TrimSuffix(strings.TrimRight(mant, "0"), ".")

@@ -3,6 +3,7 @@ package mathtrig
 import (
 	"math"
 
+	"officelite/excel"
 	f "officelite/excel/formula"
 )
 
@@ -174,9 +175,10 @@ func munit(e *f.Env, a []f.Value) f.Value {
 	if err != nil {
 		return err
 	}
-	n := int(math.Trunc(x))
-	if x < 1 || n > maxCols {
+	// Compare before converting: int(1e300) is undefined (negative on amd64).
+	if x < 1 || x >= excel.MaxCols+1 {
 		return f.ErrValue
 	}
+	n := int(math.Trunc(x))
 	return toArray(identity(n))
 }

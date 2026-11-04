@@ -5,7 +5,11 @@
 
 package model
 
-import "slices"
+import (
+	"slices"
+
+	"officelite/excel"
+)
 
 // ValidationType is what a rule allows, numbered as BIFF8's valType
 // (OOXML names them none, whole, decimal, list, date, time, textLength
@@ -208,9 +212,9 @@ func (s *Sheet) shiftStripValidations(strip Range, vertical bool, at, n int) {
 		for _, r := range v.Ranges {
 			// The part across the strip's columns (rows) shifts; the
 			// parts beside it stay.
-			band := Range{R1: 0, C1: strip.C1, R2: MaxRows - 1, C2: strip.C2}
+			band := Range{R1: 0, C1: strip.C1, R2: excel.MaxRows - 1, C2: strip.C2}
 			if !vertical {
-				band = Range{R1: strip.R1, C1: 0, R2: strip.R2, C2: MaxCols - 1}
+				band = Range{R1: strip.R1, C1: 0, R2: strip.R2, C2: excel.MaxCols - 1}
 			}
 			in, ok := Intersect(r, band)
 			if !ok {
@@ -219,7 +223,7 @@ func (s *Sheet) shiftStripValidations(strip Range, vertical bool, at, n int) {
 			}
 			ranges = append(ranges, Subtract(r, band)...)
 			if moved, ok := shiftRange(in, vertical, at, n); ok {
-				moved.R2, moved.C2 = min(moved.R2, MaxRows-1), min(moved.C2, MaxCols-1)
+				moved.R2, moved.C2 = min(moved.R2, excel.MaxRows-1), min(moved.C2, excel.MaxCols-1)
 				if moved.R1 <= moved.R2 && moved.C1 <= moved.C2 {
 					ranges = append(ranges, moved)
 				}

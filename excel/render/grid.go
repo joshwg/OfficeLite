@@ -18,6 +18,7 @@ import (
 
 	"officelite/common/colors"
 	"officelite/common/gui"
+	"officelite/excel"
 	"officelite/excel/model"
 	"officelite/excel/numfmt"
 )
@@ -33,10 +34,6 @@ var (
 	freezeLine     = colors.RGB(0xA6A6A6)
 	headerFontSize = float32(11)
 )
-
-// overflowScan is how many columns beyond the viewport are checked for
-// text that overflows into view.
-const overflowScan = 32
 
 // Pos is a zero-based cell position.
 type Pos struct{ Row, Col int }
@@ -168,10 +165,10 @@ func (v *View) layoutGeometry(gtx layout.Context) {
 	v.pxPerDp = gtx.Metric.PxPerDp
 	v.scale = float64(gtx.Metric.PxPerDp * v.Zoom)
 	v.size = gtx.Constraints.Max
-	v.fr = min(v.Sheet.FreezeRows, model.MaxRows-1)
-	v.fc = min(v.Sheet.FreezeCols, model.MaxCols-1)
-	v.TopRow = min(max(v.TopRow, v.fr), model.MaxRows-1)
-	v.LeftCol = min(max(v.LeftCol, v.fc), model.MaxCols-1)
+	v.fr = min(v.Sheet.FreezeRows, excel.MaxRows-1)
+	v.fc = min(v.Sheet.FreezeCols, excel.MaxCols-1)
+	v.TopRow = min(max(v.TopRow, v.fr), excel.MaxRows-1)
+	v.LeftCol = min(max(v.LeftCol, v.fc), excel.MaxCols-1)
 
 	// Row header wide enough for the largest visible row number.
 	last := v.Geo.Rows.Index(v.Geo.Rows.Start(v.TopRow)+float64(v.size.Y)/v.scale) + 1
@@ -343,11 +340,11 @@ func (v *View) drawPane(gtx layout.Context, p *pane) {
 	}
 
 	// 4. Text, scanning a little beyond the pane for overflowing text.
-	lo := max(p.c0-overflowScan, 0)
+	lo := max(p.c0-excel.GridOverflowScan, 0)
 	if p.c0 >= v.fc {
 		lo = max(lo, v.fc)
 	}
-	hi := min(p.c1+overflowScan, g.Cols.Len())
+	hi := min(p.c1+excel.GridOverflowScan, g.Cols.Len())
 	if p.c0 < v.fc {
 		hi = p.c1
 	}
@@ -546,7 +543,7 @@ func (v *View) overflowSpan(gtx layout.Context, p *pane, at *Pos, rc image.Recta
 	span := rc
 	for span.Dx() < need {
 		grew := false
-		if align != model.HAlignRight && free(r+1) && r+1 < at.Col+overflowScan {
+		if align != model.HAlignRight && free(r+1) && r+1 < at.Col+excel.GridOverflowScan {
 			r++
 			span.Max.X = v.cellRect(p, at.Row, r).Max.X
 			grew = true
@@ -554,7 +551,7 @@ func (v *View) overflowSpan(gtx layout.Context, p *pane, at *Pos, rc image.Recta
 		if span.Dx() >= need {
 			break
 		}
-		if align != model.HAlignLeft && free(l-1) && l-1 > at.Col-overflowScan {
+		if align != model.HAlignLeft && free(l-1) && l-1 > at.Col-excel.GridOverflowScan {
 			l--
 			span.Min.X = v.cellRect(p, at.Row, l).Min.X
 			grew = true

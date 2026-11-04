@@ -1,6 +1,10 @@
 package mathtrig
 
-import "math"
+import (
+	"math"
+
+	"officelite/excel"
+)
 
 // Special functions behind the statistical distributions: the normal
 // distribution and its inverse, the regularized incomplete gamma and beta
@@ -59,11 +63,9 @@ func lgamma(x float64) float64 {
 // lbeta is ln B(a, b).
 func lbeta(a, b float64) float64 { return lgamma(a) + lgamma(b) - lgamma(a+b) }
 
-const (
-	cfTiny  = 1e-300
-	cfEps   = 1e-16
-	cfIters = 100000
-)
+// cfTiny stands in for a zero denominator in the modified Lentz
+// continued-fraction evaluation, which would otherwise divide by zero.
+const cfTiny = 1e-300
 
 // gammaPQ returns the regularized incomplete gamma functions P(a, x) and
 // Q(a, x) = 1 - P(a, x), each computed directly where it is the smaller,
@@ -79,11 +81,11 @@ func gammaPQ(a, x float64) (p, q float64) {
 	if x < a+1 {
 		// Series: P = pre · Σ x^n / (a (a+1) ... (a+n)).
 		ap, del, sum := a, 1/a, 1/a
-		for range cfIters {
+		for range excel.DistCFMaxIter {
 			ap++
 			del *= x / ap
 			sum += del
-			if math.Abs(del) < math.Abs(sum)*cfEps {
+			if math.Abs(del) < math.Abs(sum)*excel.DistCFEps {
 				break
 			}
 		}
@@ -94,7 +96,7 @@ func gammaPQ(a, x float64) (p, q float64) {
 	b := x + 1 - a
 	c, d := 1/cfTiny, 1/b
 	h := d
-	for i := 1; i < cfIters; i++ {
+	for i := 1; i < excel.DistCFMaxIter; i++ {
 		an := -float64(i) * (float64(i) - a)
 		b += 2
 		d = an*d + b
@@ -108,7 +110,7 @@ func gammaPQ(a, x float64) (p, q float64) {
 		d = 1 / d
 		del := d * c
 		h *= del
-		if math.Abs(del-1) < cfEps {
+		if math.Abs(del-1) < excel.DistCFEps {
 			break
 		}
 	}
@@ -156,12 +158,12 @@ func betaCF(a, b, x float64) float64 {
 		d = 1 / d
 		return d * c
 	}
-	for m := 1.0; m < cfIters; m++ {
+	for m := 1.0; m < excel.DistCFMaxIter; m++ {
 		m2 := 2 * m
 		h *= step(m * (b - m) * x / ((qam + m2) * (a + m2)))
 		del := step(-(a + m) * (qab + m) * x / ((a + m2) * (qap + m2)))
 		h *= del
-		if math.Abs(del-1) < cfEps {
+		if math.Abs(del-1) < excel.DistCFEps {
 			break
 		}
 	}
@@ -262,7 +264,7 @@ func invert(lower, upper, pdf func(float64) float64, p, q, lo, hi, x0 float64) f
 		hi = math.Max(2*x0, 1)
 		for h(hi) < 0 {
 			lo, hi = hi, hi*2
-			if hi > 1e300 {
+			if hi > excel.DistInvertMaxBracket {
 				return math.Inf(1)
 			}
 		}
@@ -271,7 +273,7 @@ func invert(lower, upper, pdf func(float64) float64, p, q, lo, hi, x0 float64) f
 	if !(x > lo && x < hi) {
 		x = lo + (hi-lo)/2
 	}
-	for range 2000 {
+	for range excel.DistInvertMaxIter {
 		v := h(x)
 		if v == 0 {
 			return x
@@ -286,7 +288,7 @@ func invert(lower, upper, pdf func(float64) float64, p, q, lo, hi, x0 float64) f
 		if !(d > 0) || math.IsInf(d, 0) || !(nx > lo && nx < hi) {
 			nx = lo + (hi-lo)/2 // bisect
 		}
-		if math.Abs(nx-x) <= 1e-15*math.Abs(nx) || hi-lo <= 1e-15*math.Abs(hi) {
+		if math.Abs(nx-x) <= excel.DistInvertTol*math.Abs(nx) || hi-lo <= excel.DistInvertTol*math.Abs(hi) {
 			return nx
 		}
 		x = nx

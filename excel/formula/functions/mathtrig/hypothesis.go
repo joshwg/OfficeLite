@@ -3,6 +3,7 @@ package mathtrig
 import (
 	"math"
 
+	"officelite/excel"
 	f "officelite/excel/formula"
 )
 
@@ -213,7 +214,7 @@ func probFn(e *f.Env, a []f.Value) f.Value {
 			s += p
 		}
 	}
-	if math.Abs(total-1) > 1e-12 {
+	if math.Abs(total-1) > excel.DistProbSumTol {
 		return f.ErrNum
 	}
 	return f.NumberOrErr(s)

@@ -5,9 +5,11 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"path"
 	"strings"
 
 	"officelite/common/opc"
+	"officelite/word"
 )
 
 // Relationship types (matched by suffix so transitional and strict both work).
@@ -59,6 +61,7 @@ func (p *pkg) find(name string) *zip.File {
 	return nil
 }
 
+// read returns the contents of part name, at most word.DocxMaxPartSize bytes.
 func (p *pkg) read(name string) (b []byte, err error) {
 	f := p.find(name)
 	if f == nil {
@@ -73,7 +76,7 @@ func (p *pkg) read(name string) (b []byte, err error) {
 			err = closeErr
 		}
 	}()
-	return io.ReadAll(io.LimitReader(rc, 1<<30))
+	return io.ReadAll(io.LimitReader(rc, word.DocxMaxPartSize))
 }
 
 type rel struct {
@@ -173,6 +176,24 @@ func (ct *contentTypes) setOverride(part, typ string) {
 	ct.overrides = append(ct.overrides, [2]string{name, typ})
 }
 
+// typeOf is part's content type: its Override's, else the Default for
+// its extension, else "".
+func (ct *contentTypes) typeOf(part string) string {
+	name := "/" + part
+	for _, o := range ct.overrides {
+		if strings.EqualFold(o[0], name) {
+			return o[1]
+		}
+	}
+	ext := path.Ext(part)
+	for _, d := range ct.defaults {
+		if ext != "" && strings.EqualFold(d[0], ext[1:]) {
+			return d[1]
+		}
+	}
+	return ""
+}
+
 func (ct *contentTypes) removeOverride(part string) {
 	name := "/" + part
 	out := ct.overrides[:0]
@@ -186,6 +207,7 @@ func (ct *contentTypes) removeOverride(part string) {
 
 const (
 	ctMain      = "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"
+	ctTemplate  = "application/vnd.openxmlformats-officedocument.wordprocessingml.template.main+xml"
 	ctStyles    = "application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"
 	ctNumbering = "application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"
 	ctSettings  = "application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"

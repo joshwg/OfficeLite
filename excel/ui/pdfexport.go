@@ -101,6 +101,7 @@ func (a *App) pdfDone(notice, errMsg string) {
 		return
 	}
 	a.back.Hide()
+	a.closing = false // leaving the backstage abandons a close waiting for Save As
 	a.grid.focusPending = true
 	a.notice = notice
 }

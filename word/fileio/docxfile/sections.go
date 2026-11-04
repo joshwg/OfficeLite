@@ -263,14 +263,14 @@ func (r *reader) note(k *node, endnote bool) *model.Note {
 // the reading of the paragraph in progress.
 func (r *reader) partBlocks(part string, container *node) []model.Block {
 	rels, main := r.rels, r.main
-	markers, before, lastPara, fields := r.markers, r.before, r.lastPara, r.fields
+	markers, before, lastPara, fields, inCode := r.markers, r.before, r.lastPara, r.fields, r.inCode
 	if part != "" && part != r.main {
 		r.rels, r.main = map[string]rel{}, part
 		for _, rl := range r.pkg.rels(part) {
 			r.rels[rl.ID] = rl
 		}
 	}
-	r.markers, r.before, r.lastPara, r.fields = nil, nil, nil, nil
+	r.markers, r.before, r.lastPara, r.fields, r.inCode = nil, nil, nil, nil, 0
 	blocks := r.blocks(container, nil, false)
 	if len(blocks) == 0 {
 		p := &model.Paragraph{}
@@ -279,7 +279,7 @@ func (r *reader) partBlocks(part string, container *node) []model.Block {
 	}
 	r.flushTrailing(blocks)
 	r.rels, r.main = rels, main
-	r.markers, r.before, r.lastPara, r.fields = markers, before, lastPara, fields
+	r.markers, r.before, r.lastPara, r.fields, r.inCode = markers, before, lastPara, fields, inCode
 	return blocks
 }
 

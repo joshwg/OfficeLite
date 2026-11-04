@@ -8,6 +8,7 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"officelite/common/limits"
 	"os"
 	"strconv"
 	"sync"
@@ -68,10 +69,6 @@ const (
 	dwriteMeasuringModeNatural          = 0
 	dwriteGridFitModeEnabled            = 2
 	dwriteTextAntialiasModeGrayscale    = 1
-
-	// cacheGen is how many run images a cache generation holds; images
-	// unused for a whole generation are dropped.
-	cacheGen = 4000
 )
 
 // IDWriteFactory2 {0439fc60-ca44-4994-8dee-3a9af7b732ec} (Windows 8.1+),
@@ -290,7 +287,7 @@ func paintRun(ops *op.Ops, face unsafe.Pointer, ppem fixed.Int26_6, gs []text.Gl
 				return false
 			}
 		}
-		if len(dw.cur) >= cacheGen {
+		if len(dw.cur) >= limits.TextRunCacheGen {
 			dw.old, dw.cur = dw.cur, map[string]*runImage{}
 		}
 		dw.cur[k] = ri

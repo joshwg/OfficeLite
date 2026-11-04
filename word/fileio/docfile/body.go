@@ -7,6 +7,7 @@ import (
 	"strings"
 	"unicode/utf16"
 
+	"officelite/word"
 	"officelite/word/model"
 )
 
@@ -99,17 +100,20 @@ func (r *reader) readFields() {
 	}
 	flattened := 0
 	var flat, kept []fld
+	// Fields nest properly and each list below holds fields none of which
+	// is inside another, added in CP order: a field (coming later in CP
+	// order) can only be inside a list's last entry, so checking that one
+	// keeps a file with many fields from taking quadratic time.
 	inside := func(f fld, list []fld, code bool) bool {
-		for _, t := range list {
-			end := t.e
-			if code && t.s >= 0 {
-				end = t.s
-			}
-			if f.b > t.b && f.e <= end {
-				return true
-			}
+		if len(list) == 0 {
+			return false
 		}
-		return false
+		t := list[len(list)-1]
+		end := t.e
+		if code && t.s >= 0 {
+			end = t.s
+		}
+		return f.b > t.b && f.e <= end
 	}
 	var units []fld
 	for _, f := range all {
@@ -135,26 +139,32 @@ func (r *reader) readFields() {
 		kept = append(kept, f)
 	}
 	// Flatten: hide codes of the field and of every field nested in it.
+	// The flattened fields are disjoint and in CP order, like all, so one
+	// pass finds each field's; the code ranges (nested ones overlap) are
+	// summed in a difference array so marking them takes linear time.
+	cover := make([]int32, len(r.text)+1)
+	j := 0
 	for _, f := range all {
-		inFlat := false
-		for _, t := range flat {
-			if f.b >= t.b && f.e <= t.e {
-				inFlat = true
-			}
+		for j < len(flat) && flat[j].e < f.b {
+			j++
 		}
-		if !inFlat {
+		if j == len(flat) || f.b < flat[j].b || f.e > flat[j].e {
 			continue
 		}
 		end := f.s
 		if end < 0 {
 			end = f.e
 		}
-		for cp := f.b; cp <= end; cp++ {
-			if c := r.text[cp]; c != 0x0D && c != 0x07 {
-				r.skip[cp] = true
-			}
-		}
+		cover[f.b]++
+		cover[end+1]--
 		r.skip[f.e] = true
+	}
+	depth := int32(0)
+	for cp, c := range r.text {
+		depth += cover[cp]
+		if depth > 0 && c != 0x0D && c != 0x07 {
+			r.skip[cp] = true
+		}
 	}
 	if flattened > 0 {
 		r.warn(fmt.Sprintf("%d field(s) spanning several paragraphs (such as a table of contents) were converted to plain text.", flattened))
@@ -273,7 +283,7 @@ func (r *reader) blocks(start, end int, main bool) []model.Block {
 			itap = 1
 		}
 		if pi.hasItap {
-			itap = pi.itap
+			itap = min(pi.itap, word.DocMaxTableDepth) // a damaged depth could be billions
 		}
 		para := r.paragraph(ps, cp, istd, &pi)
 		if section {

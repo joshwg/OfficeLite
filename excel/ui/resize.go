@@ -10,6 +10,7 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op/clip"
 
+	"officelite/excel"
 	"officelite/excel/calc"
 	"officelite/excel/model"
 	"officelite/excel/render"
@@ -73,7 +74,7 @@ func (a *App) beginResize(st *sheetState, p f32.Point) bool {
 		d.cols, d.edge = true, c
 		d.start, _, _ = v.ColSpan(c)
 		d.targets = []int{c}
-		if sel.R1 == 0 && sel.R2 == model.MaxRows-1 && c >= sel.C1 && c <= sel.C2 {
+		if sel.R1 == 0 && sel.R2 == excel.MaxRows-1 && c >= sel.C1 && c <= sel.C2 {
 			d.targets = span(sel.C1, sel.C2)
 		}
 	case p.X < float32(hw) && p.Y >= float32(hh):
@@ -84,7 +85,7 @@ func (a *App) beginResize(st *sheetState, p f32.Point) bool {
 		d.edge = r
 		d.start, _, _ = v.RowSpan(r)
 		d.targets = []int{r}
-		if sel.C1 == 0 && sel.C2 == model.MaxCols-1 && r >= sel.R1 && r <= sel.R2 {
+		if sel.C1 == 0 && sel.C2 == excel.MaxCols-1 && r >= sel.R1 && r <= sel.R2 {
 			d.targets = span(sel.R1, sel.R2)
 		}
 	default:

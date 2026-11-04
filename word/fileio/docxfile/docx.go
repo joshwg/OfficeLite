@@ -1,5 +1,5 @@
 // Package docxfile reads and writes .docx documents (Office Open XML
-// WordprocessingML), including .docm and .dotx on read.
+// WordprocessingML), including .docm and .dotx on read and .dotx on write.
 //
 // Reading maps document.xml, styles.xml, numbering.xml, settings.xml and the
 // theme onto the model. Content the model doesn't cover (pictures, fields,
@@ -30,13 +30,24 @@ import (
 
 // Warnings recorded in Document.Warnings while saving.
 const (
-	warnMacrosRemoved = "Macros were removed: a .docx document can't contain them."
+	warnMacrosRemoved = "Macros were removed: a .docx document or .dotx template can't contain them."
 	warnLostContent   = "Some content from the original file (pictures, objects) can't be saved as .docx; a placeholder in brackets was written instead."
 )
 
 // Write encodes doc as .docx.
 func Write(doc *model.Document, w io.Writer) error {
-	wr := &writer{doc: doc}
+	return writePackage(doc, w, false)
+}
+
+// WriteTemplate encodes doc as a Word template (.dotx): a .docx whose
+// main part has the template content type.
+func WriteTemplate(doc *model.Document, w io.Writer) error {
+	return writePackage(doc, w, true)
+}
+
+// writePackage encodes doc as .docx, or as .dotx when template is set.
+func writePackage(doc *model.Document, w io.Writer, template bool) error {
+	wr := &writer{doc: doc, template: template}
 	if doc.SourceFormat == "docx" && len(doc.Source) > 0 {
 		if err := wr.loadSource(); err != nil {
 			wr.src, wr.srcRoot, wr.srcStyles, wr.srcNum, wr.th = nil, nil, nil, nil, nil
@@ -63,8 +74,9 @@ func Write(doc *model.Document, w io.Writer) error {
 }
 
 type writer struct {
-	doc *model.Document
-	th  *theme
+	doc      *model.Document
+	th       *theme
+	template bool // write a .dotx: the template main-part content type
 
 	// source package (nil when writing from scratch)
 	src       *pkg
@@ -836,6 +848,15 @@ func deflate(zw *zip.Writer, name string, data []byte) error {
 	return err
 }
 
+// mainType is the content type of the main document part: a document's,
+// or a template's for a .dotx.
+func (w *writer) mainType() string {
+	if w.template {
+		return ctTemplate
+	}
+	return ctMain
+}
+
 // writeInto writes the document into a copy of its source package.
 func (w *writer) writeInto(out io.Writer, docXML, styles, numbering []byte) error {
 	p := w.src
@@ -880,11 +901,11 @@ func (w *writer) writeInto(out io.Writer, docXML, styles, numbering []byte) erro
 		ct.defaults = defs
 		ctDirty = true
 	}
-	for i, o := range ct.overrides {
-		if strings.EqualFold(o[0], "/"+w.main) && o[1] != ctMain {
-			ct.overrides[i][1] = ctMain
-			ctDirty = true
-		}
+	if ct.typeOf(w.main) != w.mainType() {
+		// Also when the main part's type came from a Default rather than
+		// an Override: the Override added takes precedence over it.
+		ct.setOverride(w.main, w.mainType())
+		ctDirty = true
 	}
 
 	stylesPart, numPart := "", ""
@@ -981,7 +1002,7 @@ func (w *writer) writeInto(out io.Writer, docXML, styles, numbering []byte) erro
 // writeNew writes a new minimal package.
 func (w *writer) writeNew(out io.Writer, docXML, styles, numbering []byte) error {
 	ct := &contentTypes{defaults: [][2]string{{"rels", ctRels}, {"xml", "application/xml"}}}
-	ct.setOverride("word/document.xml", ctMain)
+	ct.setOverride("word/document.xml", w.mainType())
 	ct.setOverride("word/styles.xml", ctStyles)
 	ct.setOverride("word/settings.xml", ctSettings)
 	if numbering != nil {

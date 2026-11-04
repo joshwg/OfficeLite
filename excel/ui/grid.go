@@ -11,6 +11,7 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op/clip"
 
+	"officelite/excel"
 	"officelite/excel/model"
 	"officelite/excel/render"
 )
@@ -31,9 +32,6 @@ type gridInput struct {
 	move         *moveDrag // the selection being dragged by its border (mouse.go)
 	pointing     bool      // dragging out a reference for a formula (mouse.go)
 }
-
-// doubleClick is the longest time between the presses of a double-click.
-const doubleClick = 500 * time.Millisecond
 
 var navKeys = []key.Name{
 	key.NameUpArrow, key.NameDownArrow, key.NameLeftArrow, key.NameRightArrow,
@@ -145,7 +143,7 @@ func (a *App) gridPointer(gtx layout.Context, st *sheetState) {
 				// contents, as in Excel.
 				d := a.grid.resize
 				id := dividerID{d.cols, d.edge}
-				if a.grid.lastDivider != 0 && e.Time-a.grid.lastDivider < doubleClick && a.grid.lastEdge == id {
+				if a.grid.lastDivider != 0 && e.Time-a.grid.lastDivider < excel.UIDoubleClick && a.grid.lastEdge == id {
 					a.endResize(st, false)
 					a.autoFit(gtx, st, d)
 					a.grid.lastDivider = 0
@@ -182,7 +180,7 @@ func (a *App) gridPointer(gtx layout.Context, st *sheetState) {
 			if ctrl && a.followLinkAt(v, hit) {
 				continue // Ctrl+click on a hyperlink (notes.go)
 			}
-			double := e.Time-a.grid.lastPress < doubleClick && hit == a.grid.lastHit
+			double := e.Time-a.grid.lastPress < excel.UIDoubleClick && hit == a.grid.lastHit
 			a.grid.lastPress, a.grid.lastHit = e.Time, hit
 			if double && hit.Area == render.AreaCell && !e.Modifiers.Contain(key.ModShift) {
 				a.grid.lastPress = 0
@@ -282,7 +280,7 @@ func (a *App) pointAt(st *sheetState, hit render.Hit, extend bool) {
 	}
 	switch hit.Area {
 	case render.AreaCorner:
-		v.Sel.Range = model.Range{R2: model.MaxRows - 1, C2: model.MaxCols - 1}
+		v.Sel.Range = model.Range{R2: excel.MaxRows - 1, C2: excel.MaxCols - 1}
 		v.Sel.Extra = nil
 		return
 	case render.AreaColHeader:
@@ -293,8 +291,8 @@ func (a *App) pointAt(st *sheetState, hit render.Hit, extend bool) {
 		if !extend {
 			v.Sel.Active = render.Pos{Row: top, Col: hit.Col}
 		}
-		st.selEnd = render.Pos{Row: model.MaxRows - 1, Col: hit.Col}
-		v.Sel.Range = model.Range{R1: 0, C1: min(v.Sel.Active.Col, hit.Col), R2: model.MaxRows - 1, C2: max(v.Sel.Active.Col, hit.Col)}
+		st.selEnd = render.Pos{Row: excel.MaxRows - 1, Col: hit.Col}
+		v.Sel.Range = model.Range{R1: 0, C1: min(v.Sel.Active.Col, hit.Col), R2: excel.MaxRows - 1, C2: max(v.Sel.Active.Col, hit.Col)}
 		return
 	case render.AreaRowHeader:
 		left := max(v.LeftCol, 0)
@@ -304,8 +302,8 @@ func (a *App) pointAt(st *sheetState, hit render.Hit, extend bool) {
 		if !extend {
 			v.Sel.Active = render.Pos{Row: hit.Row, Col: left}
 		}
-		st.selEnd = render.Pos{Row: hit.Row, Col: model.MaxCols - 1}
-		v.Sel.Range = model.Range{R1: min(v.Sel.Active.Row, hit.Row), C1: 0, R2: max(v.Sel.Active.Row, hit.Row), C2: model.MaxCols - 1}
+		st.selEnd = render.Pos{Row: hit.Row, Col: excel.MaxCols - 1}
+		v.Sel.Range = model.Range{R1: min(v.Sel.Active.Row, hit.Row), C1: 0, R2: max(v.Sel.Active.Row, hit.Row), C2: excel.MaxCols - 1}
 		return
 	case render.AreaCell:
 		p := render.Pos{Row: hit.Row, Col: hit.Col}
@@ -446,7 +444,7 @@ func (a *App) gridKeys(gtx layout.Context, st *sheetState) {
 				continue
 			}
 			if r := e.Open(); r != nil {
-				data, err := io.ReadAll(io.LimitReader(r, 64<<20))
+				data, err := io.ReadAll(io.LimitReader(r, excel.UIDropMaxBytes))
 				if closeErr := r.Close(); err == nil {
 					err = closeErr
 				}
@@ -569,8 +567,8 @@ func (a *App) move(st *sheetState, dr, dc int, extend, jump bool) {
 
 func (a *App) goTo(st *sheetState, to render.Pos, extend bool) {
 	v := &st.view
-	to.Row = min(max(to.Row, 0), model.MaxRows-1)
-	to.Col = min(max(to.Col, 0), model.MaxCols-1)
+	to.Row = min(max(to.Row, 0), excel.MaxRows-1)
+	to.Col = min(max(to.Col, 0), excel.MaxCols-1)
 	if extend {
 		st.selEnd = to
 	} else {
@@ -590,7 +588,7 @@ func (a *App) goTo(st *sheetState, to render.Pos, extend bool) {
 func jumpTarget(sh *model.Sheet, p render.Pos, dr, dc int) render.Pos {
 	filled := func(q render.Pos) bool { return sh.Get(q.Row, q.Col).Text != "" }
 	in := func(q render.Pos) bool {
-		return q.Row >= 0 && q.Col >= 0 && q.Row < model.MaxRows && q.Col < model.MaxCols
+		return q.Row >= 0 && q.Col >= 0 && q.Row < excel.MaxRows && q.Col < excel.MaxCols
 	}
 	next := func(q render.Pos) render.Pos { return render.Pos{Row: q.Row + dr, Col: q.Col + dc} }
 	// Past the used area every cell is empty: go straight to the edge.
@@ -598,11 +596,11 @@ func jumpTarget(sh *model.Sheet, p render.Pos, dr, dc int) render.Pos {
 	edge := func(q render.Pos) render.Pos {
 		switch {
 		case dr > 0:
-			q.Row = model.MaxRows - 1
+			q.Row = excel.MaxRows - 1
 		case dr < 0:
 			q.Row = 0
 		case dc > 0:
-			q.Col = model.MaxCols - 1
+			q.Col = excel.MaxCols - 1
 		case dc < 0:
 			q.Col = 0
 		}
@@ -633,5 +631,5 @@ func jumpTarget(sh *model.Sheet, p render.Pos, dr, dc int) render.Pos {
 // selectAll selects the whole sheet.
 func selectAll(v *render.View) {
 	v.Sel.Extra = nil
-	v.Sel.Range = model.Range{R2: model.MaxRows - 1, C2: model.MaxCols - 1}
+	v.Sel.Range = model.Range{R2: excel.MaxRows - 1, C2: excel.MaxCols - 1}
 }

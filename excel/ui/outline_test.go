@@ -8,6 +8,7 @@ import (
 
 	"gioui.org/io/key"
 
+	"officelite/excel"
 	"officelite/excel/edit"
 	"officelite/excel/model"
 	"officelite/excel/render"
@@ -45,7 +46,7 @@ func TestOutlineGroupUI(t *testing.T) {
 	hw0, hh0 := v.HeaderSize()
 
 	// Whole rows 2:4: Group groups them at once.
-	a.selectRange(0, model.Range{R1: 1, R2: 3, C2: model.MaxCols - 1})
+	a.selectRange(0, model.Range{R1: 1, R2: 3, C2: excel.MaxCols - 1})
 	h.dataTab()
 	p := h.locate(&a.data.group, ribbonArea, 6)
 	h.click(p.X, p.Y)
@@ -135,7 +136,7 @@ func TestOutlineGroupUI(t *testing.T) {
 	}
 
 	// Shift+Alt+Left on whole rows ungroups them.
-	a.selectRange(0, model.Range{R1: 1, R2: 3, C2: model.MaxCols - 1})
+	a.selectRange(0, model.Range{R1: 1, R2: 3, C2: excel.MaxCols - 1})
 	h.frame()
 	h.press(key.NameLeftArrow, key.ModShift|key.ModAlt)
 	if sh.MaxLevel(true) != 0 {

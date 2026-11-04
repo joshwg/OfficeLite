@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+
+	"officelite/common/limits"
 )
 
 func testAdd(t *testing.T, l *List, path string, kind Kind) {
@@ -47,7 +49,7 @@ func TestRemoveRelative(t *testing.T) {
 
 // TestList checks that Add moves a file to the top without duplicates, the
 // list reloads from its file, Remove drops a file, and the list stays
-// within Max.
+// within limits.RecentFiles.
 func TestList(t *testing.T) {
 	store := filepath.Join(t.TempDir(), "sub", "recent.json")
 	l := Open(store)
@@ -67,11 +69,11 @@ func TestList(t *testing.T) {
 	if e := reloaded.Entries(); len(e) != 1 || e[0].Name() != "two.docx" {
 		t.Fatalf("after remove = %+v", e)
 	}
-	for i := 0; i < Max+5; i++ {
+	for i := 0; i < limits.RecentFiles+5; i++ {
 		testAdd(t, l, filepath.Join("/f", string(rune('a'+i%26)), "x.csv"), Spreadsheet)
 	}
-	if n := len(l.Entries()); n > Max {
-		t.Errorf("len = %d, want <= %d", n, Max)
+	if n := len(l.Entries()); n > limits.RecentFiles {
+		t.Errorf("len = %d, want <= %d", n, limits.RecentFiles)
 	}
 }
 

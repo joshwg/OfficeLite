@@ -20,11 +20,9 @@ import (
 	"unicode/utf16"
 
 	"officelite/common/textenc"
+	"officelite/excel"
 	f "officelite/excel/formula"
 )
-
-// maxText is the longest text a cell can hold; longer results are #VALUE!.
-const maxText = 32767
 
 // Register adds the text functions to r.
 func Register(r *f.Registry) {
@@ -96,21 +94,11 @@ func units(s string) []uint16 { return utf16.Encode([]rune(s)) }
 func fromUnits(u []uint16) string { return string(utf16.Decode(u)) }
 
 // ulen is the length of s in UTF-16 code units.
-func ulen(s string) int {
-	n := 0
-	for _, r := range s {
-		if r >= 0x10000 {
-			n += 2
-		} else {
-			n++
-		}
-	}
-	return n
-}
+func ulen(s string) int { return f.UTF16Len(s) }
 
 // result returns s, or #VALUE! when it is too long for a cell.
 func result(s string) f.Value {
-	if len(s) > maxText && ulen(s) > maxText {
+	if len(s) > excel.FormulaMaxText && ulen(s) > excel.FormulaMaxText {
 		return f.ErrValue
 	}
 	return f.String(s)
@@ -127,7 +115,7 @@ func intArg(v f.Value, def int) (int, f.Value) {
 	if err != nil {
 		return 0, err
 	}
-	x = math.Max(-1e12, math.Min(1e12, math.Trunc(x)))
+	x = math.Max(-excel.TextMaxIntArg, math.Min(excel.TextMaxIntArg, math.Trunc(x)))
 	return int(x), nil
 }
 
@@ -441,7 +429,7 @@ func rept(_ *f.Env, a []f.Value) f.Value {
 	if s == "" || n == 0 {
 		return f.String("")
 	}
-	if ulen(s)*n > maxText {
+	if ulen(s)*n > excel.FormulaMaxText {
 		return f.ErrValue
 	}
 	return f.String(strings.Repeat(s, n))
@@ -583,7 +571,7 @@ func textJoin(e *f.Env, a []f.Value) f.Value {
 		}
 		b.WriteString(p)
 		n++
-		if b.Len() > 4*maxText {
+		if b.Len() > excel.TextMaxJoinBytes {
 			return f.ErrValue
 		}
 	}

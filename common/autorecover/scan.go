@@ -11,15 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"officelite/common/limits"
 	"officelite/common/lockfile"
 )
-
-// MaxAge is how long a recovery copy nobody dealt with is kept.
-const MaxAge = 30 * 24 * time.Hour
-
-// strayAge is how old a copy without a sidecar (or a temporary file) must
-// be to be cleaned up: a writer may be between the two files.
-const strayAge = 24 * time.Hour
 
 // now is the clock, which tests move.
 var now = time.Now
@@ -43,9 +37,9 @@ var selfStart, _ = processStart(os.Getpid())
 
 // Orphans lists the recovery copies in dir ("" for Dir()) that no running
 // OfficeLite keeps (it crashed, or a Document Recovery window let them
-// go), newest first. Copies older than MaxAge, sidecars without a copy
-// and stray files are deleted; copies of running processes are left
-// alone.
+// go), newest first. Copies older than limits.RecoveryMaxAge, sidecars
+// without a copy and stray files are deleted; copies of running processes
+// are left alone.
 func Orphans(dir string) []Entry {
 	if dir == "" {
 		dir = Dir()
@@ -67,7 +61,7 @@ func Orphans(dir string) []Entry {
 		e, err := readEntry(filepath.Join(dir, name))
 		known[strings.TrimSuffix(name, ".json")] = true
 		if err != nil {
-			if old(e.Sidecar, strayAge) {
+			if old(e.Sidecar, limits.RecoveryStrayAge) {
 				if err := os.Remove(e.Sidecar); err != nil && !os.IsNotExist(err) {
 					log.Printf("remove damaged AutoRecover sidecar %s: %v", e.Sidecar, err)
 				}
@@ -77,7 +71,7 @@ func Orphans(dir string) []Entry {
 		if alive(e.PID, e.Started) {
 			continue
 		}
-		if _, err := os.Stat(e.Copy); err != nil || now().Sub(e.Saved) > MaxAge {
+		if _, err := os.Stat(e.Copy); err != nil || now().Sub(e.Saved) > limits.RecoveryMaxAge {
 			Discard(e)
 			continue
 		}
@@ -89,7 +83,7 @@ func Orphans(dir string) []Entry {
 		name := de.Name()
 		ext := filepath.Ext(name)
 		stray := ext == ".tmp" || ((ext == ".xlsx" || ext == ".docx") && !known[strings.TrimSuffix(name, ext)])
-		if p := filepath.Join(dir, name); stray && !de.IsDir() && old(p, strayAge) {
+		if p := filepath.Join(dir, name); stray && !de.IsDir() && old(p, limits.RecoveryStrayAge) {
 			if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
 				log.Printf("remove stale AutoRecover file %s: %v", p, err)
 			}

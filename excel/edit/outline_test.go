@@ -4,6 +4,7 @@ import (
 	"slices"
 	"testing"
 
+	"officelite/excel"
 	"officelite/excel/model"
 )
 
@@ -49,7 +50,7 @@ func TestGroupUngroup(t *testing.T) {
 	for range 10 {
 		b.Group(0, false, 3, 4)
 	}
-	if sh.MaxLevel(false) != model.MaxOutlineLevel || b.Group(0, false, 3, 4) {
+	if sh.MaxLevel(false) != excel.MaxOutlineLevel || b.Group(0, false, 3, 4) {
 		t.Fatalf("column levels %d", sh.MaxLevel(false))
 	}
 	// Collapse the outer row group, then expand the inner one's parent.
@@ -169,7 +170,7 @@ func TestShowHideDetail(t *testing.T) {
 		t.Fatalf("outer: %v", got)
 	}
 	// Show Detail on the summary row brings back the outer group only.
-	whole := model.Range{R1: 7, R2: 7, C2: model.MaxCols - 1}
+	whole := model.Range{R1: 7, R2: 7, C2: excel.MaxCols - 1}
 	if !b.ShowDetail(0, whole) {
 		t.Fatal("Show Detail")
 	}

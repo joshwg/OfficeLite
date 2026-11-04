@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"officelite/excel"
 	"officelite/excel/formula"
 	"officelite/excel/model"
 )
@@ -25,10 +26,6 @@ func (a Area) intersects(b Area) bool {
 }
 
 func (a Area) size() int { return (a.R2 - a.R1 + 1) * (a.C2 - a.C1 + 1) }
-
-// wideCols is the width above which a range is kept in a sheet's list of
-// wide ranges instead of under each of its columns.
-const wideCols = 16
 
 // Calculator recalculates a workbook as it is edited. It keeps every
 // formula's parsed form and the areas it reads, so Update recalculates
@@ -117,7 +114,7 @@ func (c *Calculator) add(k key, cell *model.Cell) {
 		case a.size() == 1:
 			p := key{a.Sheet, a.R1, a.C1}
 			c.points[p] = append(c.points[p], d)
-		case a.C2-a.C1 < wideCols:
+		case a.C2-a.C1 < excel.CalcWideCols:
 			for col := a.C1; col <= a.C2; col++ {
 				ck := [2]int{a.Sheet, col}
 				c.cols[ck] = append(c.cols[ck], d)
@@ -165,7 +162,7 @@ func (c *Calculator) resolve(home int, d formula.Deps, depth int, always *bool) 
 		if !ok {
 			continue // a LET or LAMBDA variable
 		}
-		if depth >= 8 {
+		if depth >= excel.CalcMaxNameDepth {
 			*always = true
 			continue
 		}
@@ -222,14 +219,14 @@ func (c *Calculator) refresh(a Area) {
 			}
 		}
 	}
-	if c.stale > 4096 && c.stale > 2*len(c.f) {
+	if c.stale > excel.CalcMaxStale && c.stale > 2*len(c.f) {
 		c.build()
 	}
 }
 
 // dependents calls fn for each formula that reads a cell of a.
 func (c *Calculator) dependents(a Area, fn func(key)) {
-	if a.size() <= 4096 {
+	if a.size() <= excel.CalcCellScanLimit {
 		for r := a.R1; r <= a.R2; r++ {
 			for col := a.C1; col <= a.C2; col++ {
 				for _, d := range c.points[key{a.Sheet, r, col}] {
@@ -250,7 +247,7 @@ func (c *Calculator) dependents(a Area, fn func(key)) {
 			}
 		}
 	}
-	for col := a.C1; col <= min(a.C2, model.MaxCols-1); col++ {
+	for col := a.C1; col <= min(a.C2, excel.MaxCols-1); col++ {
 		for _, d := range c.cols[[2]int{a.Sheet, col}] {
 			if d.area.intersects(a) && c.valid(d) {
 				fn(d.f)
@@ -266,7 +263,7 @@ func (c *Calculator) dependents(a Area, fn func(key)) {
 
 // formulasIn calls fn for each formula cell inside a.
 func (c *Calculator) formulasIn(a Area, fn func(key)) {
-	if a.size() <= 4096 {
+	if a.size() <= excel.CalcCellScanLimit {
 		for r := a.R1; r <= a.R2; r++ {
 			for col := a.C1; col <= a.C2; col++ {
 				if k := (key{a.Sheet, r, col}); c.f[k] != nil {

@@ -17,12 +17,16 @@ import (
 // shading, table borders, pictures (placeholders for those that can't be
 // decoded) and the headers and footers. Call Layout first.
 func (e *Engine) ExportPDF(d *pdf.Document) {
-	if e.showHidden {
-		// The PDF shows the document as printed: without hidden text.
+	if e.showHidden || e.showCodes {
+		// The PDF shows the document as printed: without hidden text, and
+		// with field results rather than codes.
+		hidden, codes := e.showHidden, e.showCodes
 		e.SetShowHidden(false)
+		e.SetShowFieldCodes(false)
 		e.Layout()
 		defer func() {
-			e.SetShowHidden(true)
+			e.SetShowHidden(hidden)
+			e.SetShowFieldCodes(codes)
 			e.Layout()
 		}()
 	}

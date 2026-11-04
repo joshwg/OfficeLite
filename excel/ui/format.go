@@ -10,6 +10,7 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 
+	"officelite/excel"
 	"officelite/excel/calc"
 	"officelite/excel/edit"
 	"officelite/excel/model"
@@ -286,6 +287,7 @@ func (a *App) startPainter(sticky bool) {
 	a.notice = "Click or drag over cells to paint the format"
 }
 
+// stopPainter puts the Format Painter down.
 func (a *App) stopPainter() {
 	a.home.painterClip = nil
 	a.home.painterDrag = false
@@ -400,7 +402,7 @@ func (a *App) formatMenu(gtx layout.Context, i int) {
 	case fmtRowHeight:
 		pt := float64(sh.RowHeightPx(v.Sel.Active.Row)) * 72 / 96
 		a.ask("Row Height", "Row height (points):", trimFloat(pt), func(x float64) bool {
-			if x < 0 || x > 409 {
+			if x < 0 || x > excel.ExcelMaxRowHeightPt {
 				return false
 			}
 			if x == 0 {
@@ -416,7 +418,7 @@ func (a *App) formatMenu(gtx layout.Context, i int) {
 	case fmtColWidth:
 		px := float64(sh.ColWidthPx(v.Sel.Active.Col, mdw))
 		a.ask("Column Width", "Column width (characters):", trimFloat(shownWidth(px, mdw)), func(x float64) bool {
-			if x < 0 || x > 255 {
+			if x < 0 || x > excel.ExcelMaxColWidth {
 				return false
 			}
 			if x == 0 {
@@ -435,7 +437,7 @@ func (a *App) formatMenu(gtx layout.Context, i int) {
 			cur = shownWidth(float64(sh.DefaultColWidthPx(mdw)), mdw)
 		}
 		a.ask("Standard Width", "Standard column width (characters):", trimFloat(cur), func(x float64) bool {
-			if x < 0 || x > 255 {
+			if x < 0 || x > excel.ExcelMaxColWidth {
 				return false
 			}
 			a.book.SetStandardWidth(a.active, float32(x))
@@ -544,7 +546,7 @@ func (a *App) autoSum(i int) {
 	sel := v.Sel.Range
 	fn := sumFuncs[i]
 	if sel.R1 != sel.R2 || sel.C1 != sel.C2 {
-		if sel.R2+1 >= model.MaxRows || wholeCols(sel) || wholeRows(sel) {
+		if sel.R2+1 >= excel.MaxRows || wholeCols(sel) || wholeRows(sel) {
 			return
 		}
 		text := fmt.Sprintf("=%s(%s:%s)", fn, model.CellName(sel.R1, sel.C1), model.CellName(sel.R2, sel.C2))
@@ -645,7 +647,7 @@ func (a *App) growRows() {
 	v := &a.state().view
 	sh := v.Sheet
 	r, ok := edit.FormatArea(sh, v.Sel.Range)
-	if !ok || r.R2-r.R1 > 2000 {
+	if !ok || r.R2-r.R1 > excel.UIGrowRowsMax {
 		return
 	}
 	var rows []int

@@ -3,6 +3,7 @@ package edit
 import (
 	"slices"
 
+	"officelite/excel"
 	"officelite/excel/model"
 )
 
@@ -66,7 +67,7 @@ func (b *Book) SetColWidths(sheet int, idx []int, widths []float32) {
 		return
 	}
 	b.resize(&dimChange{sheet: sheet, cols: true, idx: idx, after: widths},
-		Where{sheet, model.Range{C1: minOf(idx), C2: maxOf(idx), R2: model.MaxRows - 1}})
+		Where{sheet, model.Range{C1: minOf(idx), C2: maxOf(idx), R2: excel.MaxRows - 1}})
 }
 
 // SetRowHeights gives each row idx[i] its own height heights[i].
@@ -76,7 +77,7 @@ func (b *Book) SetRowHeights(sheet int, idx []int, heights []float32) {
 		return
 	}
 	b.resize(&dimChange{sheet: sheet, idx: idx, after: heights},
-		Where{sheet, model.Range{R1: minOf(idx), R2: maxOf(idx), C2: model.MaxCols - 1}})
+		Where{sheet, model.Range{R1: minOf(idx), R2: maxOf(idx), C2: excel.MaxCols - 1}})
 }
 
 // Hide hides rows (columns) idx (Format > Hide Rows, a divider dragged

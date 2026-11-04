@@ -27,6 +27,7 @@ import (
 	"officelite/common/gui"
 	"officelite/common/lockfile"
 	"officelite/common/recent"
+	"officelite/common/templates"
 	"officelite/word/fileio"
 	wl "officelite/word/layout"
 	"officelite/word/model"
@@ -39,25 +40,37 @@ var (
 	accentDark = colors.RGB(0x45289A)
 )
 
-var templates = []gui.Template{
+// blankTiles are the New page's first tiles, before the user's templates.
+var blankTiles = []gui.Template{
 	{Name: "Blank document", Kind: recent.Document},
 	{Name: "Blank workbook", Kind: recent.Spreadsheet},
 }
 
-// Extensions offered in the Open dialog.
-var openExtensions = []string{".docx", ".docm", ".doc", ".txt", ".pages", ".xlsx", ".xls", ".csv", ".numbers"}
+// templateExts are the template files the New page lists.
+var templateExts = []string{".dotx", ".dotm", ".dot"}
+
+// Extensions offered in the Open dialog. A template opened from it is
+// edited itself, not used to start a new document.
+var openExtensions = []string{".docx", ".docm", ".doc", ".dotx", ".dotm", ".dot", ".txt", ".pages", ".xlsx", ".xls", ".csv", ".numbers"}
 
 // docSeq numbers new documents (Document1, Document2, ...).
 var docSeq atomic.Int32
 
 // Config configures a document window.
 type Config struct {
-	Path  string           // file to open; empty for a blank document
-	Fonts *gui.FontLibrary // shared between windows; nil to create one
+	Path string // file to open; empty for a blank document
+	// Template is a template to start a new untitled document from,
+	// instead of Path (the template file itself is not edited).
+	Template string
+	Fonts    *gui.FontLibrary // shared between windows; nil to create one
 	// Launch opens a new window for a file (or a blank one for ""). Nil
 	// disables New and Open.
 	Launch func(kind doctype.Kind, path string)
-	Recent *recent.List // nil uses recent.Default()
+	// LaunchTemplate opens a new window with a new document based on the
+	// template at path. Nil disables templates on the New page, except in a
+	// window holding an untouched new document.
+	LaunchTemplate func(path string)
+	Recent         *recent.List // nil uses recent.Default()
 	// Recovered is a recovery copy to open (Document Recovery), instead
 	// of Path.
 	Recovered *autorecover.Entry
@@ -71,6 +84,9 @@ type loadResult struct {
 	err    error
 	lock   lockfile.Status    // what openPath found about the file (lock.go)
 	rec    *autorecover.Entry // the recovery copy loaded (recover.go)
+	// template is the template a new document was made from; the
+	// document is untitled and named name.
+	template, name string
 }
 
 type window struct {
@@ -130,6 +146,7 @@ type window struct {
 	pane       stylesPane
 	newStyle   newStyleDialog
 	showMarks  bool // Show/Hide ¶ (per window, not saved)
+	showCodes  bool // field codes shown in place of results (Alt+F9; per window, not saved)
 }
 
 // Run drives a document window until it is closed.
@@ -146,6 +163,8 @@ func Run(w *app.Window, cfg Config) error {
 	defer d.as.saver.Close()
 	if cfg.Recovered != nil {
 		d.openRecovered(*cfg.Recovered)
+	} else if cfg.Template != "" {
+		d.newFromTemplate(cfg.Template)
 	} else if cfg.Path != "" {
 		d.lk.closeOnCancel = true
 		d.setDoc(model.New(filepath.Base(cfg.Path)), d.th.Shaper, nil)
@@ -190,6 +209,9 @@ func newWindow(w *app.Window, cfg Config) *window {
 	if cfg.Launch == nil {
 		cfg.Launch = func(doctype.Kind, string) {}
 	}
+	if cfg.LaunchTemplate == nil {
+		cfg.LaunchTemplate = func(string) {}
+	}
 	d := &window{
 		win:     w,
 		th:      gui.NewTheme(cfg.Fonts, accent, accentDark),
@@ -197,6 +219,7 @@ func newWindow(w *app.Window, cfg Config) *window {
 		results: make(chan loadResult, 1),
 	}
 	d.calls = gui.NewCallQueue(d.invalidate)
+	d.bs.tmpl = templates.Lister{Dir: templates.Dir(), Exts: templateExts, Post: d.calls.Post}
 	if w != nil {
 		d.expl = explorer.NewExplorer(w)
 		d.drop.Window = w
@@ -206,23 +229,34 @@ func newWindow(w *app.Window, cfg Config) *window {
 	return d
 }
 
-// newBlank starts a new document; its fonts load in the background.
+// newBlank starts a new document; its fonts load in the background. The
+// families are listed here, on the UI goroutine: the user may type into
+// doc while the loader runs.
 func (d *window) newBlank() {
-	doc := model.New("Document" + strconv.Itoa(int(docSeq.Add(1))))
+	doc := model.New(newDocName())
 	d.setDoc(doc, d.th.Shaper, nil)
 	d.loading.Store(true)
+	fams := DocFonts(doc)
 	go func() {
-		fams := DocFonts(doc)
 		sh := d.cfg.Fonts.Shaper(fams...)
 		d.calls.Post(func() {
 			d.loading.Store(false)
 			if d.doc == doc {
+				picked := d.fams // fonts chosen while these loaded (ensureFont)
 				d.fams = fams
 				d.eng.SetShaper(sh)
 				d.laidOut = -1
+				for _, f := range picked {
+					d.ensureFont(f)
+				}
 			}
 		})
 	}()
+}
+
+// newDocName numbers the next new document: Document1, Document2, ...
+func newDocName() string {
+	return "Document" + strconv.Itoa(int(docSeq.Add(1)))
 }
 
 func (d *window) invalidate() {
@@ -357,7 +391,11 @@ func (d *window) takeResult() {
 	case r := <-d.results:
 		d.loading.Store(false)
 		if r.err != nil {
-			d.errMsg = "Can't open " + gui.OrNone(filepath.Base(r.path), "the file") + ": " + r.err.Error()
+			file := r.path
+			if r.template != "" {
+				file = r.template
+			}
+			d.errMsg = "Can't open " + gui.OrNone(filepath.Base(file), "the file") + ": " + r.err.Error()
 			d.lk.doc.Set(d.path, !d.lk.readOnly) // back to the file shown
 			return
 		}
@@ -381,7 +419,13 @@ func (d *window) applyLoad(r loadResult, readOnly bool) {
 			log.Printf("add %s to recent documents: %v", r.path, err)
 		}
 	}
+	if r.template != "" {
+		r.doc.Name = r.name
+	}
 	d.setDoc(r.doc, r.shaper, r.fams)
+	if r.template != "" {
+		d.adoptTemplate(r.template)
+	}
 	if r.rec != nil {
 		d.adoptRecovered(*r.rec) // recover.go
 	}
@@ -395,6 +439,7 @@ func (d *window) setDoc(doc *model.Document, shaper *text.Shaper, fams []string)
 	d.ed = model.NewEditor(doc)
 	d.eng = wl.New(doc, shaper)
 	d.eng.SetShowHidden(d.showMarks)
+	d.eng.SetShowFieldCodes(d.showCodes)
 	d.fams = fams
 	d.saved = d.ed.Version
 	d.laidOut = -1
@@ -425,9 +470,10 @@ func (d *window) updateTitle() {
 }
 
 // pristine reports whether the window holds an untouched new document,
-// which an opened file replaces.
+// which an opened file replaces. Not while a Save As or export runs: its
+// result would land on the document that replaced this one.
 func (d *window) pristine() bool {
-	return d.path == "" && !d.modified() && !d.loading.Load()
+	return d.path == "" && !d.modified() && !d.loading.Load() && !d.saving.Load()
 }
 
 // openFile opens path in this window if it is pristine, otherwise in a new

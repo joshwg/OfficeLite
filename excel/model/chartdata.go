@@ -8,6 +8,8 @@ package model
 import (
 	"strconv"
 	"strings"
+
+	"officelite/excel"
 )
 
 // SheetRange is a range on a sheet named in a reference.
@@ -81,10 +83,10 @@ func parseSheetRange(s, home string) (SheetRange, bool) {
 	}
 	// Whole columns (A:A) and rows (1:1).
 	if r1 < 0 && r2 < 0 {
-		r1, r2 = 0, MaxRows-1
+		r1, r2 = 0, excel.MaxRows-1
 	}
 	if c1 < 0 && c2 < 0 {
-		c1, c2 = 0, MaxCols-1
+		c1, c2 = 0, excel.MaxCols-1
 	}
 	if r1 < 0 || r2 < 0 || c1 < 0 || c2 < 0 {
 		return SheetRange{}, false

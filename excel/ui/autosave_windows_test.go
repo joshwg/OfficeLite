@@ -10,7 +10,7 @@ import (
 
 	"gioui.org/io/key"
 
-	"officelite/common/autosave"
+	"officelite/common/limits"
 )
 
 // TestAutoSaveLocked: when another program (Excel) holds the file open,
@@ -32,7 +32,7 @@ func TestAutoSaveLocked(t *testing.T) {
 	defer syscall.CloseHandle(hf)
 	h.typeText("42")
 	h.press(key.NameReturn, 0)
-	clock.Advance(autosave.Delay)
+	clock.Advance(limits.AutoSaveDelay)
 	h.settle()
 	if a.as.saver.On() || !strings.Contains(a.errMsg, "Budget.xlsx is open in another program") {
 		t.Errorf("on %v, error %q", a.as.saver.On(), a.errMsg)

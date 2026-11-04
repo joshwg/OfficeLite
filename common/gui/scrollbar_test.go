@@ -6,6 +6,7 @@ package gui
 import (
 	"image"
 	"math"
+	"officelite/common/limits"
 	"testing"
 	"time"
 
@@ -72,14 +73,14 @@ func TestScrollbarArrowsStepAndRepeat(t *testing.T) {
 		t.Fatalf("down arrow: pos %v, want 1", h.pos)
 	}
 	// Held: nothing until the delay, then a step every repeat interval.
-	h.now = h.now.Add(scrollRepeatDelay - time.Millisecond)
+	h.now = h.now.Add(limits.ScrollRepeatDelay - time.Millisecond)
 	h.frame()
 	if h.pos != 1 {
 		t.Fatalf("before the repeat delay: pos %v", h.pos)
 	}
 	h.now = h.now.Add(time.Millisecond)
 	h.frame()
-	h.now = h.now.Add(scrollRepeatEvery)
+	h.now = h.now.Add(limits.ScrollRepeatEvery)
 	h.frame()
 	if h.pos != 3 {
 		t.Fatalf("after repeating: pos %v, want 3", h.pos)
@@ -107,7 +108,7 @@ func TestScrollbarTrackPagesTowardPointer(t *testing.T) {
 		t.Fatalf("first page: pos %v, want 100", h.pos)
 	}
 	for range 20 {
-		h.now = h.now.Add(scrollRepeatDelay)
+		h.now = h.now.Add(limits.ScrollRepeatDelay)
 		h.frame()
 	}
 	// Thumb top at 14+pos/900*245 must now be past y=100-27 and no further

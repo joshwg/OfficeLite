@@ -10,14 +10,12 @@ import (
 	"strconv"
 	"time"
 
+	"officelite/excel"
 	"officelite/excel/calc"
 	"officelite/excel/formula/functions"
 	"officelite/excel/model"
 	"officelite/excel/numfmt"
 )
-
-// maxUndo is how many changes Undo can take back.
-const maxUndo = 100
 
 // Book is a workbook being edited.
 type Book struct {
@@ -190,8 +188,8 @@ func either(c bool, yes, no string) string {
 
 // typingLabel is Excel's Undo list name for typing text in a cell.
 func typingLabel(text string, row, col int) string {
-	if r := []rune(text); len(r) > 20 {
-		text = string(r[:20]) + "…"
+	if r := []rune(text); len(r) > excel.UndoLabelMaxText {
+		text = string(r[:excel.UndoLabelMaxText]) + "…"
 	}
 	return "Typing '" + text + "' in " + model.ColName(col) + strconv.Itoa(row+1)
 }
@@ -359,10 +357,10 @@ func (ch *change) kindLabel() string {
 	return "Edit"
 }
 
-// trim drops the oldest changes past maxUndo.
+// trim drops the oldest changes past excel.UndoHistory.
 func (b *Book) trim() {
-	if len(b.undo) > maxUndo {
-		b.undo = b.undo[len(b.undo)-maxUndo:]
+	if len(b.undo) > excel.UndoHistory {
+		b.undo = b.undo[len(b.undo)-excel.UndoHistory:]
 	}
 }
 

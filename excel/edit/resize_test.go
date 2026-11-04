@@ -3,6 +3,7 @@ package edit
 import (
 	"testing"
 
+	"officelite/excel"
 	"officelite/excel/model"
 )
 
@@ -58,7 +59,7 @@ func TestHideUnhideKeepsSizes(t *testing.T) {
 		t.Error("hiding a hidden row changed something")
 	}
 	// The whole sheet: rows and columns far below and right of the data.
-	if !b.Unhide(0, true, 0, model.MaxRows-1) || !b.Unhide(0, false, 0, model.MaxCols-1) {
+	if !b.Unhide(0, true, 0, excel.MaxRows-1) || !b.Unhide(0, false, 0, excel.MaxCols-1) {
 		t.Fatal("nothing shown")
 	}
 	if sh.RowHeight[2] != 40 || sh.ColWidth[700] != 22 || sh.RowHidden(3) || sh.RowHidden(5000) {
@@ -67,7 +68,7 @@ func TestHideUnhideKeepsSizes(t *testing.T) {
 	if _, ok := sh.RowHeight[3]; ok {
 		t.Errorf("row 4 got a height: %v", sh.RowHeight)
 	}
-	if b.Unhide(0, true, 0, model.MaxRows-1) {
+	if b.Unhide(0, true, 0, excel.MaxRows-1) {
 		t.Error("unhide with nothing hidden changed something")
 	}
 	b.Undo()

@@ -14,6 +14,7 @@ import (
 	"gioui.org/widget"
 
 	"officelite/common/gui"
+	"officelite/word"
 	wl "officelite/word/layout"
 	"officelite/word/model"
 )
@@ -67,7 +68,7 @@ func (d *window) openFind(mode findMode) {
 		return
 	}
 	if !d.ed.Sel.Empty() {
-		if t := d.ed.Copy().Text(); !strings.ContainsAny(t, "\r\n") && len([]rune(t)) <= 255 {
+		if t := d.ed.Copy().Text(); !strings.ContainsAny(t, "\r\n") && len([]rune(t)) <= word.UIMaxFindSeed {
 			f.what.SetText(t)
 		}
 	}

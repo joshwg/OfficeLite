@@ -8,13 +8,8 @@ import (
 	"strconv"
 	"strings"
 
+	"officelite/excel"
 	"officelite/excel/model"
-)
-
-// Excel's sheet limits, which bound references (wider than model's).
-const (
-	excelRows = 1048576
-	excelCols = 16384
 )
 
 // AdjustRows rewrites the references in formula f (without '=') after n
@@ -31,7 +26,7 @@ func AdjustRows(f, home, target string, at, n int) string {
 		}
 		r := t.r
 		var ok bool
-		r.r1, r.r2, ok = shiftSpan(r.r1, r.r2, at, n, excelRows)
+		r.r1, r.r2, ok = shiftSpan(r.r1, r.r2, at, n, excel.ExcelMaxRows)
 		return t.result(r, ok)
 	})
 }
@@ -44,7 +39,7 @@ func AdjustCols(f, home, target string, at, n int) string {
 		}
 		r := t.r
 		var ok bool
-		r.c1, r.c2, ok = shiftSpan(r.c1, r.c2, at, n, excelCols)
+		r.c1, r.c2, ok = shiftSpan(r.c1, r.c2, at, n, excel.ExcelMaxCols)
 		return t.result(r, ok)
 	})
 }
@@ -76,7 +71,7 @@ func MoveRefsTo(f, home, newHome, target, dest string, src model.Range, dRow, dC
 			return t.text
 		}
 		r.r1, r.r2, r.c1, r.c2 = r.r1+dRow, r.r2+dRow, r.c1+dCol, r.c2+dCol
-		if min(r.r1, r.r2, r.c1, r.c2) < 0 || max(r.r1, r.r2) >= excelRows || max(r.c1, r.c2) >= excelCols {
+		if min(r.r1, r.r2, r.c1, r.c2) < 0 || max(r.r1, r.r2) >= excel.ExcelMaxRows || max(r.c1, r.c2) >= excel.ExcelMaxCols {
 			return string(ErrRef)
 		}
 		prefix := t.prefix

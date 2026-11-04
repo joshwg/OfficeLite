@@ -7,14 +7,8 @@ package mathtrig
 import (
 	"math"
 
+	"officelite/excel"
 	f "officelite/excel/formula"
-	"officelite/excel/model"
-)
-
-// Sheet limits, for clamping references.
-const (
-	maxRows = model.MaxRows
-	maxCols = model.MaxCols
 )
 
 // Register adds the math, trig and statistical functions to r.
@@ -321,8 +315,8 @@ func (g *grid) at(i, j int) f.Value {
 func (g *grid) resize(rows, cols int) *grid {
 	if g.isRef {
 		r := g.ref
-		r.R2 = min(r.R1+rows-1, maxRows-1)
-		r.C2 = min(r.C1+cols-1, maxCols-1)
+		r.R2 = min(r.R1+rows-1, excel.MaxRows-1)
+		r.C2 = min(r.C1+cols-1, excel.MaxCols-1)
 		ng, _ := newGrid(g.e, r)
 		g = ng
 	} else {

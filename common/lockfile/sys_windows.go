@@ -6,6 +6,7 @@ package lockfile
 
 import (
 	"errors"
+	"officelite/common/limits"
 	"os"
 	"path/filepath"
 	"strings"
@@ -146,7 +147,7 @@ func allowForeground(pid int) {
 // displayName is the Windows user's full name (GetUserNameEx NameDisplay),
 // which a domain or Microsoft account has.
 func displayName() (string, error) {
-	buf := make([]uint16, 256)
+	buf := make([]uint16, limits.WindowsDisplayNameChars)
 	n := uint32(len(buf))
 	r, _, err := getUserNameEx.Call(nameDisplay, uintptr(unsafe.Pointer(&buf[0])), uintptr(unsafe.Pointer(&n)))
 	if r == 0 {

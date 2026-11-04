@@ -477,3 +477,31 @@ func TestCaretSkipsMergedCells(t *testing.T) {
 		t.Fatalf("found hidden text: %v", ms)
 	}
 }
+
+// TestOnlyEmptyTables checks that a document holding only tables without
+// rows or cells (as a file may) gets a paragraph for the caret instead of
+// panicking on the first edit.
+func TestOnlyEmptyTables(t *testing.T) {
+	for _, body := range [][]Block{{&Table{}}, {&Table{Rows: []*TableRow{{}}}}} {
+		d := New("x")
+		d.Body = body
+		e := NewEditor(d)
+		e.SetCaret(Pos{0, 0}, false)
+		e.InsertText("a")
+		if e.NumParas() != 1 || e.Para(0).Text() != "a" {
+			t.Errorf("%d paragraphs, text %q", e.NumParas(), e.Para(0).Text())
+		}
+	}
+}
+
+// TestCloneSectionColumns checks that a clone (written by a background
+// save) shares no column widths with the document.
+func TestCloneSectionColumns(t *testing.T) {
+	d := New("a")
+	d.Columns = Columns{Count: 2, Widths: []float64{100, 200}, Spaces: []float64{10}}
+	c := d.Clone()
+	d.Columns.Widths[0], d.Columns.Spaces[0] = 1, 1
+	if c.Columns.Widths[0] != 100 || c.Columns.Spaces[0] != 10 {
+		t.Errorf("clone's columns changed with the document's: %+v", c.Columns)
+	}
+}

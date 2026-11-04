@@ -3,6 +3,7 @@ package financial
 import (
 	"math"
 
+	"officelite/excel"
 	f "officelite/excel/formula"
 )
 
@@ -105,7 +106,7 @@ func irr(e *f.Env, a []f.Value) f.Value {
 	if !mixed(vs) {
 		return f.ErrNum
 	}
-	r, ok := newton(guess, 20, 1e-7, func(r float64) (y, dy float64) {
+	r, ok := newton(guess, excel.FinancialRateMaxIter, excel.FinancialRateTol, func(r float64) (y, dy float64) {
 		d := 1.0 // (1+r)^-i
 		for i, v := range vs {
 			y += v * d
@@ -215,7 +216,7 @@ func xirr(e *f.Env, a []f.Value) f.Value {
 	if !mixed(vs) || guess <= -1 {
 		return f.ErrNum
 	}
-	r, ok := newton(guess, 100, 1e-8, func(r float64) (float64, float64) { return xnpvOf(r, vs, ts) })
+	r, ok := newton(guess, excel.FinancialXIRRMaxIter, excel.FinancialXIRRTol, func(r float64) (float64, float64) { return xnpvOf(r, vs, ts) })
 	if !ok {
 		return f.ErrNum
 	}

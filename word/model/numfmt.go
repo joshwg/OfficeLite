@@ -3,6 +3,8 @@ package model
 import (
 	"strconv"
 	"strings"
+
+	"officelite/word"
 )
 
 // FormatNumber formats n in a Word number format ("decimal",
@@ -33,9 +35,9 @@ func FormatNumber(n int, format string) string {
 	return strconv.Itoa(n)
 }
 
-// Roman is n in upper-case roman numerals (decimal unless 1..3999).
+// Roman is n in upper-case roman numerals (decimal outside 1..MaxRoman).
 func Roman(n int) string {
-	if n <= 0 || n >= 4000 {
+	if n <= 0 || n > word.MaxRoman {
 		return strconv.Itoa(n)
 	}
 	vals := []int{1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1}
@@ -50,14 +52,10 @@ func Roman(n int) string {
 	return b.String()
 }
 
-// maxAlpha is the largest number Alpha spells in letters: z thirty times,
-// Word's limit.
-const maxAlpha = 780
-
 // Alpha is Word's lower-case alphabetic numbering: a..z, aa..zz, aaa...
-// (decimal outside 1..maxAlpha).
+// (decimal outside 1..MaxAlpha).
 func Alpha(n int) string {
-	if n <= 0 || n > maxAlpha {
+	if n <= 0 || n > word.MaxAlpha {
 		return strconv.Itoa(n)
 	}
 	return strings.Repeat(string(rune('a'+(n-1)%26)), (n-1)/26+1)

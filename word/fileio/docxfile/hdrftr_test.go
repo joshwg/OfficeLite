@@ -168,3 +168,32 @@ func TestCustomStylesRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// TestCopiedHeaderGetsOwnPart writes a copy of a header read from the
+// file (as unlinking a section or an undo makes) in another slot: the copy
+// is given a new part rather than overwriting the original's, and both
+// read back.
+func TestCopiedHeaderGetsOwnPart(t *testing.T) {
+	doc, _ := readFile(t, "word.docx")
+	hf := &doc.HF
+	orig := hf.Headers[model.HFDefault]
+	if orig == nil || orig.Part == "" {
+		t.Fatalf("default header %+v has no source part", orig)
+	}
+	cp := *orig
+	cp.Blocks = model.CopyBlocks(orig.Blocks)
+	cp.Blocks[0].(*model.Paragraph).Runs = []model.Run{{Text: "Copied header"}}
+	hf.Headers[model.HFEven] = &cp // same Part as the default header
+	hf.EvenOdd = true
+	out := write(t, doc)
+	back := mustRead(t, out)
+	if got := hfText(back.HF.Headers[model.HFDefault]); got != "Header text" {
+		t.Errorf("default header %q", got)
+	}
+	if got := hfText(back.HF.Headers[model.HFEven]); got != "Copied header" {
+		t.Errorf("even header %q", got)
+	}
+	if a, b := back.HF.Headers[model.HFDefault].Part, back.HF.Headers[model.HFEven].Part; a == b {
+		t.Errorf("both headers in part %q", a)
+	}
+}

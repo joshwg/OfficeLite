@@ -3,10 +3,13 @@ package docxfile
 import (
 	"bytes"
 	"encoding/xml"
+	"errors"
 	"io"
 	"regexp"
 	"sort"
 	"strings"
+
+	"officelite/word"
 )
 
 // Namespaces. Elements and attributes are named "prefix:local" with the
@@ -107,6 +110,14 @@ func parseXML(data []byte) (*node, error) {
 	var root *node
 	var stack []*node
 	scope := map[string]string{"xml": nsXML}
+	var textNode *node // the element textBuf collects text for
+	var textBuf strings.Builder
+	flush := func() {
+		if textNode != nil {
+			textNode.text = textBuf.String()
+			textNode, textBuf = nil, strings.Builder{}
+		}
+	}
 	for {
 		off := int(d.InputOffset())
 		tok, err := d.Token()
@@ -115,6 +126,10 @@ func parseXML(data []byte) (*node, error) {
 		}
 		if err != nil {
 			return nil, err
+		}
+		switch tok.(type) {
+		case xml.StartElement, xml.EndElement:
+			flush()
 		}
 		switch t := tok.(type) {
 		case xml.StartElement:
@@ -152,6 +167,9 @@ func parseXML(data []byte) (*node, error) {
 				root = n
 			}
 			stack = append(stack, n)
+			if len(stack) > word.DocxMaxXMLDepth {
+				return nil, errors.New("elements nested too deeply")
+			}
 		case xml.EndElement:
 			if len(stack) == 0 {
 				continue
@@ -167,11 +185,20 @@ func parseXML(data []byte) (*node, error) {
 		case xml.CharData:
 			// Only leaf text matters (w:t, w:instrText, m:t); skipping
 			// mixed content keeps whitespace between elements from piling up.
+			// Text split by comments or processing instructions arrives
+			// in pieces; collect them in a builder so many pieces don't
+			// cost quadratic time.
 			if n := len(stack); n > 0 && len(stack[n-1].kids) == 0 {
-				stack[n-1].text += string(t)
+				if textNode != stack[n-1] {
+					flush()
+					textNode = stack[n-1]
+					textBuf.WriteString(textNode.text)
+				}
+				textBuf.Write(t)
 			}
 		}
 	}
+	flush()
 	if root == nil {
 		return nil, io.ErrUnexpectedEOF
 	}

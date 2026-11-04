@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"officelite/common/atomicfile"
+	"officelite/common/limits"
 )
 
 // Doc is the document a window has open. It registers the file in this
@@ -234,7 +235,7 @@ func others(k string) []entry {
 		if e.PID == os.Getpid() {
 			continue
 		}
-		if !pidAlive(e.PID) {
+		if !PIDAlive(e.PID) { // (a pid of 0 would signal our own process group)
 			if err := os.Remove(name); err != nil && !os.IsNotExist(err) {
 				log.Printf("remove stale open-document entry %s: %v", name, err)
 			}
@@ -268,7 +269,6 @@ func listen() (int, string) {
 // The hand-off protocol: the sender writes the token and the path, a line
 // each; the receiver raises the file's window and answers "ok", or "no"
 // when it hasn't got the file open.
-const handOffTimeout = 2 * time.Second
 
 // serve answers hand-off requests on ln that carry token until ln is
 // closed.
@@ -280,10 +280,10 @@ func serve(ln net.Listener, token string) {
 		}
 		go func() {
 			defer func() { _ = c.Close() }()
-			if err := c.SetDeadline(time.Now().Add(handOffTimeout)); err != nil {
+			if err := c.SetDeadline(time.Now().Add(limits.HandOffTimeout)); err != nil {
 				return
 			}
-			r := bufio.NewReader(&limitedConn{c, 8 << 10})
+			r := bufio.NewReader(&limitedConn{c, limits.HandOffRequestMax})
 			tok, err1 := r.ReadString('\n')
 			path, err2 := r.ReadString('\n')
 			if err1 != nil || err2 != nil || strings.TrimSuffix(tok, "\n") != token {
@@ -332,12 +332,12 @@ func handOff(e entry, path string) bool {
 		return false
 	}
 	allowForeground(e.PID)
-	c, err := net.DialTimeout("tcp", "127.0.0.1:"+strconv.Itoa(e.Port), handOffTimeout)
+	c, err := net.DialTimeout("tcp", "127.0.0.1:"+strconv.Itoa(e.Port), limits.HandOffTimeout)
 	if err != nil {
 		return false
 	}
 	defer func() { _ = c.Close() }()
-	if err := c.SetDeadline(time.Now().Add(handOffTimeout)); err != nil {
+	if err := c.SetDeadline(time.Now().Add(limits.HandOffTimeout)); err != nil {
 		return false
 	}
 	if _, err := c.Write([]byte(e.Token + "\n" + path + "\n")); err != nil {

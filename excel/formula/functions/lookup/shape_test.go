@@ -3,10 +3,10 @@ package lookup
 import (
 	"testing"
 
+	"officelite/excel"
 	f "officelite/excel/formula"
 	"officelite/excel/formula/functions/internal/ftest"
 	"officelite/excel/formula/functions/mathtrig"
-	"officelite/excel/model"
 )
 
 func shapeSetup(ctx *f.TestContext) {
@@ -64,7 +64,7 @@ func TestShape(t *testing.T) {
 		{"=TAKE(A1:C3,\"x\")", f.ErrValue},
 		{"=SUM(TAKE(A:A,2))", 5},
 		{"=ROWS(TAKE(A:A,-1))", 1},
-		{"=ROW(TAKE(A:A,-1))", float64(model.MaxRows)}, // a reference: the sheet's last row
+		{"=ROW(TAKE(A:A,-1))", float64(excel.MaxRows)}, // a reference: the sheet's last row
 
 		// DROP (Microsoft's examples).
 		{"=DROP(A1:C3,2)", ftest.Arr{{7, 8, 9}}},

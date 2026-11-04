@@ -1,8 +1,10 @@
 // Command officelite opens spreadsheets (ExcelLite) and documents
 // (WordLite). Each file gets its own window; all windows share one process
 // and one font library, and the program exits when the last one closes.
+// A Word template (.dotx, .dot) starts a new document based on it, as
+// double-clicking one in Explorer does in Word; --edit opens it instead.
 //
-//	officelite [--excel | --word] [file ...]
+//	officelite [--excel | --word] [--edit] [file ...]
 //	officelite --version
 package main
 
@@ -14,7 +16,6 @@ import (
 	"slices"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"gioui.org/app"
 
@@ -22,6 +23,7 @@ import (
 	"officelite/common/autosave"
 	"officelite/common/doctype"
 	"officelite/common/gui"
+	"officelite/common/limits"
 	"officelite/common/lockfile"
 	"officelite/common/version"
 	excelui "officelite/excel/ui"
@@ -34,9 +36,10 @@ import (
 func main() {
 	excel := flag.Bool("excel", false, "open files as spreadsheets; with no files, start a blank workbook")
 	word := flag.Bool("word", false, "open files as documents; with no files, start a blank document")
+	editTemplate := flag.Bool("edit", false, "open Word templates (.dotx, .dot) for editing instead of starting a new document from them")
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Usage = func() {
-		if _, err := fmt.Fprintf(flag.CommandLine.Output(), "usage: officelite [--excel | --word] [file ...]\n"); err != nil {
+		if _, err := fmt.Fprintf(flag.CommandLine.Output(), "usage: officelite [--excel | --word] [--edit] [file ...]\n"); err != nil {
 			log.Print(err)
 		}
 		flag.PrintDefaults()
@@ -66,8 +69,12 @@ func main() {
 	// A file already open in a window (of this process or another
 	// OfficeLite's) brings that window to the front instead.
 	var open func(kind doctype.Kind, path string)
-	// start opens a window for a file or, with rec, a recovered copy.
-	start := func(kind doctype.Kind, path string, rec *autorecover.Entry) {
+	// openTemplate starts a WordLite window with a new document based on
+	// a template, which may be open for editing elsewhere.
+	var openTemplate func(path string)
+	// start opens a window for a file or, with rec, a recovered copy, or
+	// for a new document from template.
+	start := func(kind doctype.Kind, path, template string, rec *autorecover.Entry) {
 		started.Add(1)
 		windows.Add(1)
 		go func() {
@@ -75,7 +82,8 @@ func main() {
 			w := new(app.Window)
 			var err error
 			if kind == doctype.Document {
-				err = wordui.Run(w, wordui.Config{Path: path, Fonts: fonts, Launch: open, Recovered: rec})
+				err = wordui.Run(w, wordui.Config{Path: path, Template: template, Fonts: fonts,
+					Launch: open, LaunchTemplate: openTemplate, Recovered: rec})
 			} else {
 				err = excelui.Run(w, excelui.Config{Path: path, Fonts: fonts, Launch: open, Recovered: rec})
 			}
@@ -88,8 +96,9 @@ func main() {
 		if path != "" && lockfile.Activate(path) {
 			return
 		}
-		start(kind, path, nil)
+		start(kind, path, "", nil)
 	}
+	openTemplate = func(path string) { start(doctype.Document, "", path, nil) }
 	forced := doctype.Unknown
 	switch {
 	case *excel:
@@ -120,6 +129,11 @@ func main() {
 			// which reports load errors and tries unknown text as CSV.
 			kind, _ = doctype.DetectFile(path)
 		}
+		if kind == doctype.Document && doctype.IsTemplate(path) && !*editTemplate {
+			// As Word does from Explorer: a template opens a new document.
+			openTemplate(path)
+			continue
+		}
 		open(kind, path)
 	}
 
@@ -141,7 +155,7 @@ func main() {
 				if e.App == autorecover.Word {
 					kind = doctype.Document
 				}
-				start(kind, "", &e)
+				start(kind, "", "", &e)
 			})
 		}()
 	}
@@ -150,8 +164,8 @@ func main() {
 	// no window and the program ends here.
 	go func() {
 		windows.Wait()
-		autorecover.Flush(10 * time.Second) // the closed windows' copies deleted
-		autosave.Flush(10 * time.Second)    // and their AutoSaves written
+		autorecover.Flush(limits.ExitFlushTimeout) // the closed windows' copies deleted
+		autosave.Flush(limits.ExitFlushTimeout)    // and their AutoSaves written
 		os.Exit(0)
 	}()
 	app.Main()

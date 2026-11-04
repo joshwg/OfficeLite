@@ -2,7 +2,9 @@ package edit
 
 import (
 	"testing"
+	"time"
 
+	"officelite/excel"
 	"officelite/excel/model"
 )
 
@@ -228,8 +230,8 @@ func TestResolveRef(t *testing.T) {
 		{"B12", 0, rng("B12", "B12")},
 		{"data!a1:c5", 1, rng("A1", "C5")},
 		{"'Data'!$C$3", 1, rng("C3", "C3")},
-		{"C:D", 0, model.Range{C1: 2, C2: 3, R2: model.MaxRows - 1}},
-		{"3:4", 0, model.Range{R1: 2, R2: 3, C2: model.MaxCols - 1}},
+		{"C:D", 0, model.Range{C1: 2, C2: 3, R2: excel.MaxRows - 1}},
+		{"3:4", 0, model.Range{R1: 2, R2: 3, C2: excel.MaxCols - 1}},
 		{"tax", 1, rng("B2", "B4")},
 	} {
 		s, r, err := b.ResolveRef(tc.in, 0)
@@ -287,5 +289,35 @@ func TestNotesAndLinksUndo(t *testing.T) {
 	b.Undo()
 	if len(sh.Notes) != 1 {
 		t.Error("undo clear notes")
+	}
+}
+
+// TestCurrentRegionShapes checks CurrentRegion on a ragged block (it
+// reaches cells joined only diagonally) and on a 100,000-row table,
+// which once took minutes because each pass grew one row and rescanned
+// the whole height of the sides.
+func TestCurrentRegionShapes(t *testing.T) {
+	sh := model.NewSheet("S")
+	num := model.Cell{Kind: model.KindNumber, Num: 1, Text: "1"}
+	for _, ref := range []string{"B2", "C3", "D4", "D5", "F5"} {
+		r, c := pos(ref)
+		sh.Set(r, c, num)
+	}
+	if got := CurrentRegion(sh, 1, 1); got != rng("B2", "D5") {
+		t.Errorf("ragged region = %v, want B2:D5", got)
+	}
+	big := model.NewSheet("Big")
+	const n = 100000
+	for r := 0; r < n; r++ {
+		for c := 0; c < 6; c++ {
+			big.Set(r, c, num)
+		}
+	}
+	start := time.Now()
+	if got := CurrentRegion(big, 0, 0); got != (model.Range{R2: n - 1, C2: 5}) {
+		t.Errorf("big region = %v", got)
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Errorf("CurrentRegion of %d rows took %v", n, d)
 	}
 }

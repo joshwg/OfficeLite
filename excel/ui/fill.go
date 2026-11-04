@@ -9,6 +9,7 @@ import (
 	"gioui.org/op/clip"
 
 	"officelite/common/gui"
+	"officelite/excel"
 	"officelite/excel/model"
 	"officelite/excel/render"
 )
@@ -46,7 +47,7 @@ type fillDrag struct {
 // fillHandleRect is where the fill handle is drawn, in grid coordinates.
 func (a *App) fillHandleRect(gtx layout.Context, v *render.View) (image.Rectangle, bool) {
 	r := v.Sel.Range
-	if r.R2 == model.MaxRows-1 && r.C2 == model.MaxCols-1 || v.Sel.Multiple() {
+	if r.R2 == excel.MaxRows-1 && r.C2 == excel.MaxCols-1 || v.Sel.Multiple() {
 		return image.Rectangle{}, false // none on the whole sheet or several ranges
 	}
 	rc, pane, ok := v.CellRect(r.R2, r.C2)
@@ -69,10 +70,10 @@ func (a *App) fillPress(v *render.View, pos image.Point) bool {
 	}
 	sel := v.Sel.Range
 	// Whole rows or columns fill only their used part.
-	if sel.R2 == model.MaxRows-1 {
+	if sel.R2 == excel.MaxRows-1 {
 		sel.R2 = max(v.Sheet.UsedRows()-1, sel.R1)
 	}
-	if sel.C2 == model.MaxCols-1 {
+	if sel.C2 == excel.MaxCols-1 {
 		sel.C2 = max(v.Sheet.UsedCols()-1, sel.C1)
 	}
 	a.ins.fill = fillDrag{active: true, src: sel, to: sel}
@@ -117,9 +118,9 @@ func (a *App) fillMove(v *render.View, pos image.Point) {
 	hit := v.HitTest(float32(pos.X), float32(pos.Y))
 	to := fillTarget(a.ins.fill.src, hit)
 	to.R1, to.C1 = max(to.R1, 0), max(to.C1, 0)
-	to.R2, to.C2 = min(to.R2, model.MaxRows-1), min(to.C2, model.MaxCols-1)
+	to.R2, to.C2 = min(to.R2, excel.MaxRows-1), min(to.C2, excel.MaxCols-1)
 	a.ins.fill.to = to
-	v.EnsureVisible(min(max(hit.Row, 0), model.MaxRows-1), min(max(hit.Col, 0), model.MaxCols-1))
+	v.EnsureVisible(min(max(hit.Row, 0), excel.MaxRows-1), min(max(hit.Col, 0), excel.MaxCols-1))
 	a.notice = fmt.Sprintf("Fill %s", rangeName(to))
 }
 

@@ -3,6 +3,7 @@ package mathtrig
 import (
 	"math"
 
+	"officelite/excel"
 	f "officelite/excel/formula"
 )
 
@@ -54,7 +55,7 @@ func rounder(mode f.RoundMode) func(*f.Env, []f.Value) f.Value {
 		if err != nil {
 			return err
 		}
-		d := int(math.Trunc(math.Max(-400, math.Min(400, dv))))
+		d := int(math.Trunc(math.Max(-excel.MathMaxRoundDigits, math.Min(excel.MathMaxRoundDigits, dv))))
 		return f.NumberOrErr(f.RoundDigits(x, d, mode))
 	}
 }

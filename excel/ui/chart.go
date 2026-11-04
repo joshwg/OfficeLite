@@ -25,6 +25,7 @@ import (
 
 	"officelite/common/colors"
 	"officelite/common/gui"
+	"officelite/excel"
 	"officelite/excel/calc"
 	"officelite/excel/edit"
 	"officelite/excel/model"
@@ -213,7 +214,7 @@ func (a *App) chartPress(v *render.View, e pointer.Event) bool {
 		return a.onChartSheet()
 	}
 	elem := v.ChartElementAt(c, pos.X, pos.Y)
-	double := v.SelChart == c && a.ch.lastPress != 0 && e.Time-a.ch.lastPress < doubleClick && elem == a.ch.lastElem
+	double := v.SelChart == c && a.ch.lastPress != 0 && e.Time-a.ch.lastPress < excel.UIDoubleClick && elem == a.ch.lastElem
 	a.ch.lastPress, a.ch.lastElem = e.Time, elem
 	v.SelChart, v.SelElem = c, elem
 	if double && elem.Kind == render.ElemTitle {

@@ -65,6 +65,7 @@ func (e *Editor) SelectedPicture() *Run {
 // ResizePicture sets the size of the picture just after p (undoable).
 func (e *Editor) ResizePicture(p Pos, w, h float64) {
 	defer e.Op("Picture Size")()
+	p = e.clamp(p) // as PictureAt sees it
 	if e.PictureAt(p) == nil || w <= 0 || h <= 0 {
 		return
 	}

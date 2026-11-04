@@ -19,24 +19,20 @@ import (
 	"gioui.org/op/clip"
 
 	"officelite/common/colors"
+	"officelite/common/limits"
 )
 
 // Tooltips, as in Office: resting the pointer on a ribbon button for
-// tipDelay shows a box under it with the command's name and shortcut in
-// bold and a one-line description below. Moving to another button while
-// one shows switches at once; leaving, pressing or tipTimeout hides it.
+// limits.TipDelay shows a box under it with the command's name and
+// shortcut in bold and a one-line description below. Moving to another
+// button while one shows switches at once; leaving, pressing or
+// limits.TipTimeout hides it.
 // Menu items show their MenuItem.Tip beside the item the same way.
 //
 // Callers attach text once, keyed by the button's *widget.Clickable (or
 // the *DropDown of a drop or split button's arrow):
 //
 //	gui.SetTip(&h.bold, "Bold", "Ctrl+B", "Make your text bold.")
-
-const (
-	tipDelay   = 500 * time.Millisecond
-	tipTimeout = 10 * time.Second
-	tipWarm    = 300 * time.Millisecond // switch without delay within this of a shown tip
-)
 
 // Tip is the text of a tooltip.
 type Tip struct {
@@ -202,8 +198,8 @@ func (t *tipper) hover(gtx layout.Context, key any, tip Tip, rect image.Rectangl
 		return
 	}
 	t.key, t.pressed, t.since = key, false, gtx.Now
-	if gtx.Now.Sub(t.lastShow) < tipWarm {
-		t.since = gtx.Now.Add(-tipDelay)
+	if gtx.Now.Sub(t.lastShow) < limits.TipWarm {
+		t.since = gtx.Now.Add(-limits.TipDelay)
 	}
 }
 
@@ -223,9 +219,9 @@ func (t *tipper) layout(gtx layout.Context, th *Theme, bounds image.Rectangle, b
 	}
 	now := gtx.Now
 	if t.force {
-		t.since = now.Add(-tipDelay)
+		t.since = now.Add(-limits.TipDelay)
 	}
-	show, hide := t.since.Add(tipDelay), t.since.Add(tipDelay+tipTimeout)
+	show, hide := t.since.Add(limits.TipDelay), t.since.Add(limits.TipDelay+limits.TipTimeout)
 	switch {
 	case now.Before(show):
 		gtx.Execute(op.InvalidateCmd{At: show})
@@ -237,7 +233,7 @@ func (t *tipper) layout(gtx layout.Context, th *Theme, bounds image.Rectangle, b
 	if !t.force {
 		gtx.Execute(op.InvalidateCmd{At: hide})
 	}
-	gtx.Execute(op.InvalidateCmd{At: now.Add(tipWarm)}) // let the warm window lapse
+	gtx.Execute(op.InvalidateCmd{At: now.Add(limits.TipWarm)}) // let the warm window lapse
 
 	// The box: the bold name (and shortcut) over the description.
 	pad := gtx.Dp(6)

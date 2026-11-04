@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"officelite/excel"
 	"officelite/excel/model"
 )
 
@@ -48,15 +49,15 @@ func parseCell(s string) (row, col int, ok bool) {
 	for i < len(s) && (s[i] >= 'A' && s[i] <= 'Z' || s[i] >= 'a' && s[i] <= 'z') {
 		i++
 	}
-	if i == 0 || i == len(s) || i > 3 {
+	if i == 0 || i == len(s) || i > excel.ExcelMaxColLetters {
 		return 0, 0, false
 	}
 	n, err := strconv.Atoi(s[i:])
-	if err != nil || n < 1 || n > model.MaxRows {
+	if err != nil || n < 1 || n > excel.MaxRows {
 		return 0, 0, false
 	}
 	c := model.ParseColName(s[:i])
-	if c < 0 || c >= model.MaxCols {
+	if c < 0 || c >= excel.MaxCols {
 		return 0, 0, false
 	}
 	return n - 1, c, true
@@ -66,7 +67,7 @@ func parseCell(s string) (row, col int, ok bool) {
 // readers and writers that have no calculator: a reference, or a defined
 // name referring to one. home is the report's sheet.
 func ResolveSource(wb *model.Workbook, home int, src string) (int, model.Range, bool) {
-	for depth := 0; depth < 4; depth++ {
+	for depth := 0; depth < excel.PivotMaxSourceHops; depth++ {
 		if name, r, ok := SplitSource(src); ok {
 			if name == "" {
 				return home, r, home >= 0 && home < len(wb.Sheets)

@@ -14,11 +14,8 @@ import (
 	"gioui.org/io/event"
 
 	"officelite/common/doctype"
+	"officelite/common/limits"
 )
-
-// MaxDrop is how many files one drop opens; Office asks before opening
-// many, OfficeLite opens the first ones and says so.
-const MaxDrop = 20
 
 // FileDrop takes files dragged onto a window from Explorer, which Gio
 // doesn't pass on: on Windows the window accepts dropped files
@@ -88,22 +85,22 @@ func (f *FileDrop) Take(ready func() bool, open func(path string), busy func() b
 
 // OpenDropped opens dropped files as File ▸ Open does, calling open (the
 // window's openFile, which routes each file to the right app) for each
-// document or workbook, the first MaxDrop of them. It returns the message
-// for the files left out ("" when there are none); it never runs
-// anything.
+// document or workbook, the first limits.DropFiles of them. It returns
+// the message for the files left out ("" when there are none); it never
+// runs anything.
 func OpenDropped(paths []string, open func(path string)) (errMsg string) {
 	files, bad := sortDrop(paths)
 	var msgs []string
 	if len(bad) > 0 {
 		names := bad
-		if len(names) > 3 {
-			names = append(names[:3:3], fmt.Sprintf("%d more", len(bad)-3))
+		if len(names) > limits.DropBadNamed {
+			names = append(names[:limits.DropBadNamed:limits.DropBadNamed], fmt.Sprintf("%d more", len(bad)-limits.DropBadNamed))
 		}
 		msgs = append(msgs, "OfficeLite can't open "+strings.Join(names, ", "))
 	}
-	if len(files) > MaxDrop {
-		msgs = append(msgs, fmt.Sprintf("Opened the first %d of %d files dropped", MaxDrop, len(files)))
-		files = files[:MaxDrop]
+	if len(files) > limits.DropFiles {
+		msgs = append(msgs, fmt.Sprintf("Opened the first %d of %d files dropped", limits.DropFiles, len(files)))
+		files = files[:limits.DropFiles]
 	}
 	for _, p := range files {
 		open(p)

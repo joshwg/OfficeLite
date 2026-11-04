@@ -3,6 +3,7 @@ package lookup
 import (
 	"strconv"
 
+	"officelite/excel"
 	f "officelite/excel/formula"
 	"officelite/excel/model"
 )
@@ -199,16 +200,11 @@ func count(v f.Value, rows bool) f.Value {
 	return f.Number(c)
 }
 
-// Excel's sheet size, which ADDRESS validates against (it only makes
-// text, so it is not limited to this program's smaller grid).
-const (
-	excelRows = 1048576
-	excelCols = 16384
-)
-
 // ADDRESS(row_num, column_num, [abs_num], [a1], [sheet_text]). abs_num 1
 // is $A$1, 2 A$1, 3 $A1, 4 A1; a1 FALSE gives R1C1 notation with relative
-// parts in brackets (R2C[3]).
+// parts in brackets (R2C[3]). row and column are validated against Excel's
+// sheet size (excel.ExcelMaxRows × excel.ExcelMaxCols): ADDRESS only makes text, so it
+// is not limited to this program's smaller grid.
 func address(e *f.Env, a []f.Value) f.Value {
 	row, err := f.Int(a[0])
 	if err != nil {
@@ -226,7 +222,7 @@ func address(e *f.Env, a []f.Value) f.Value {
 	if err != nil {
 		return err
 	}
-	if row < 1 || col < 1 || row > excelRows || col > excelCols || abs < 1 || abs > 4 {
+	if row < 1 || col < 1 || row > excel.ExcelMaxRows || col > excel.ExcelMaxCols || abs < 1 || abs > 4 {
 		return f.ErrValue
 	}
 	absRow, absCol := abs == 1 || abs == 2, abs == 1 || abs == 3
@@ -312,7 +308,7 @@ func offset(e *f.Env, a []f.Value) f.Value {
 	if w < 0 {
 		r.C1, r.C2 = r.C1+w+1, r.C1
 	}
-	if r.R1 < 0 || r.C1 < 0 || r.R2 >= model.MaxRows || r.C2 >= model.MaxCols {
+	if r.R1 < 0 || r.C1 < 0 || r.R2 >= excel.MaxRows || r.C2 >= excel.MaxCols {
 		return f.ErrRef
 	}
 	return r

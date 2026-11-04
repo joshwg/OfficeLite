@@ -1,6 +1,10 @@
 package model
 
-import "testing"
+import (
+	"strconv"
+	"strings"
+	"testing"
+)
 
 func TestSectionsAndBreaks(t *testing.T) {
 	d, e := newDoc("one two", "three")
@@ -149,5 +153,88 @@ func TestNoteUndoRenumbers(t *testing.T) {
 	e.Redo()
 	if got := marks(); got != "12" {
 		t.Errorf("after redo marks = %q, want 12", got)
+	}
+}
+
+// TestChangeSectionsUndoesStyles checks that undoing a header change
+// that added the "header" style (the document's first header) takes the
+// style out again.
+func TestChangeSectionsUndoesStyles(t *testing.T) {
+	d, e := newDoc("abc")
+	n := len(d.Styles.Styles)
+	e.ChangeSections("Header", func() { d.UnlinkHeader(0, HFDefault, false) })
+	if d.HF.Headers[HFDefault] == nil || len(d.Styles.Styles) != n+1 {
+		t.Fatalf("header %v, %d styles (had %d)", d.HF.Headers[HFDefault], len(d.Styles.Styles), n)
+	}
+	e.Undo()
+	if d.HF.Headers[HFDefault] != nil || len(d.Styles.Styles) != n {
+		t.Errorf("after undo: header %v, %d styles; want none, %d", d.HF.Headers[HFDefault], len(d.Styles.Styles), n)
+	}
+	e.Redo()
+	if d.HF.Headers[HFDefault] == nil || len(d.Styles.Styles) != n+1 {
+		t.Errorf("after redo: header %v, %d styles", d.HF.Headers[HFDefault], len(d.Styles.Styles))
+	}
+}
+
+// TestPasteNoteTwice checks that each paste of a copied note reference
+// gets a note of its own: shared, editing one note's text would change
+// the others, and numbering would give them all the last number.
+func TestPasteNoteTwice(t *testing.T) {
+	d, e := newDoc("abc")
+	e.SetCaret(Pos{0, 1}, false)
+	orig := e.InsertNote(false)
+	e.Select(Pos{0, 1}, Pos{0, 2})
+	f := e.Copy()
+	e.SetCaret(Pos{0, 0}, false)
+	e.Paste(f)
+	e.Paste(f)
+	refs := NoteRefs(d.Body)
+	if len(refs) != 3 {
+		t.Fatalf("%d note references", len(refs))
+	}
+	for i := range refs {
+		for j := i + 1; j < len(refs); j++ {
+			if refs[i].Note == refs[j].Note {
+				t.Errorf("references %d and %d share a note", i, j)
+			}
+		}
+	}
+	orig.Blocks[0].(*Paragraph).Runs = append(orig.Blocks[0].(*Paragraph).Runs, Run{Text: "edited"})
+	if strings.Contains(f.Paras[0].Runs[0].Opaque.Note.Blocks[0].(*Paragraph).Text(), "edited") {
+		t.Error("editing the note changed the copied fragment")
+	}
+	d.NumberNotes()
+	for i, r := range NoteRefs(d.Body) {
+		if want := strconv.Itoa(i + 1); r.Para.Runs[r.Run].Text != want {
+			t.Errorf("reference %d shows %q; want %q", i, r.Para.Runs[r.Run].Text, want)
+		}
+	}
+}
+
+// TestResizePictureOutOfRange checks that resizing at a position past the
+// document's end (a stale position) resizes the picture there, as
+// PictureAt finds it, rather than panicking.
+func TestResizePictureOutOfRange(t *testing.T) {
+	d, e := newDoc("abc")
+	e.SetCaret(Pos{0, 3}, false)
+	e.InsertPicture(&Picture{}, 40, 30)
+	e.ResizePicture(Pos{5, 3}, 20, 15) // paragraph 5 doesn't exist: clamped, {0, 3}
+	if r := d.Body[0].(*Paragraph).Runs[1]; r.Opaque.Width != 20 || r.Opaque.Height != 15 {
+		t.Errorf("picture is %v × %v; want 20 × 15", r.Opaque.Width, r.Opaque.Height)
+	}
+}
+
+// TestHeaderLinkOutOfRange checks that linking or unlinking the header of
+// a section the document doesn't have (a stale index) does nothing.
+func TestHeaderLinkOutOfRange(t *testing.T) {
+	d, _ := newDoc("abc")
+	for _, i := range []int{-1, 1, 5} {
+		if h := d.UnlinkHeader(i, HFDefault, false); h != nil {
+			t.Errorf("UnlinkHeader(%d) = %v", i, h)
+		}
+		d.LinkHeader(i, HFDefault, true)
+		if d.HeaderLinked(i, HFDefault, false) {
+			t.Errorf("HeaderLinked(%d)", i)
+		}
 	}
 }

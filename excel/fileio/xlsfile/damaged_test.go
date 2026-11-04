@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"officelite/common/ole"
+	"officelite/excel"
 	"officelite/excel/model"
 )
 
@@ -80,8 +81,8 @@ func TestReversedMergeAndView(t *testing.T) {
 	if want := (model.Range{R1: 2, C1: 1, R2: 5, C2: 3}); len(sh.Merges) != 1 || sh.Merges[0] != want {
 		t.Errorf("merges = %v, want %v", sh.Merges, want)
 	}
-	if sh.LeftCol != model.MaxCols-1 || sh.FreezeCols != model.MaxCols-1 || sh.FreezeRows != 3 ||
-		sh.ActiveRow != 7 || sh.ActiveCol != model.MaxCols-1 {
+	if sh.LeftCol != excel.MaxCols-1 || sh.FreezeCols != excel.MaxCols-1 || sh.FreezeRows != 3 ||
+		sh.ActiveRow != 7 || sh.ActiveCol != excel.MaxCols-1 {
 		t.Errorf("view = left %d, freeze %d×%d, active %d,%d", sh.LeftCol, sh.FreezeRows, sh.FreezeCols, sh.ActiveRow, sh.ActiveCol)
 	}
 }

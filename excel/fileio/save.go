@@ -1,13 +1,15 @@
+// Saving workbooks: the formats a workbook can be written in, and SaveFile,
+// which replaces the target file only once the whole save has succeeded.
+
 package fileio
 
 import (
-	"bufio"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 
+	"officelite/common/atomicfile"
 	"officelite/excel/fileio/csvfile"
 	"officelite/excel/fileio/xlsfile"
 	"officelite/excel/fileio/xlsxfile"
@@ -95,50 +97,10 @@ func Write(wb *model.Workbook, w io.Writer, f Format, sheet int) error {
 
 // SaveFile writes wb to path. The data goes to a temporary file in the same
 // directory, which then replaces path, so a failed save never leaves a
-// half-written file behind. An existing file's permissions are kept.
-func SaveFile(wb *model.Workbook, path string, f Format, sheet int) (err error) {
-	dir, base := filepath.Split(path)
-	if dir == "" {
-		dir = "."
-	}
-	mode := os.FileMode(0o644)
-	if fi, err := os.Stat(path); err == nil {
-		if !fi.Mode().IsRegular() {
-			return fmt.Errorf("%s is not a regular file", path)
-		}
-		mode = fi.Mode().Perm()
-	}
-	tmp, err := os.CreateTemp(dir, "."+base+".*.tmp")
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err != nil {
-			if closeErr := tmp.Close(); closeErr != nil {
-				err = fmt.Errorf("%w (closing temporary file: %v)", err, closeErr)
-			}
-			if removeErr := os.Remove(tmp.Name()); removeErr != nil && !os.IsNotExist(removeErr) {
-				err = fmt.Errorf("%w (removing temporary file: %v)", err, removeErr)
-			}
-		}
-	}()
-	bw := bufio.NewWriterSize(tmp, 256<<10)
-	if err = Write(wb, bw, f, sheet); err != nil {
-		return err
-	}
-	if err = bw.Flush(); err != nil {
-		return err
-	}
-	if err = tmp.Sync(); err != nil {
-		return err
-	}
-	if err = tmp.Close(); err != nil {
-		return err
-	}
-	if err = os.Chmod(tmp.Name(), mode); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), path)
+// half-written file behind (see atomicfile.Write). An existing file's
+// permissions are kept.
+func SaveFile(wb *model.Workbook, path string, f Format, sheet int) error {
+	return atomicfile.Write(path, 0o644, func(w io.Writer) error { return Write(wb, w, f, sheet) })
 }
 
 // Fits lists what of wb format f cannot hold (rows, columns, styles,

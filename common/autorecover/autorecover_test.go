@@ -7,9 +7,11 @@ import (
 	"bufio"
 	"encoding/json"
 	"io"
+	"officelite/common/limits"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -214,7 +216,7 @@ func TestOrphans(t *testing.T) {
 		Format: ".xls", Saved: at.Add(-time.Hour), PID: dead})
 	released := writeFake(t, dir, "Document1~02", Entry{Name: "Document1", App: Word, Saved: at, PID: 0})
 	live := writeFake(t, dir, "Live~03", Entry{Name: "Live.docx", App: Word, Saved: at, PID: os.Getpid(), Started: selfStart})
-	expired := writeFake(t, dir, "Old~04", Entry{Name: "Old.xlsx", App: Excel, Saved: at.Add(-MaxAge - time.Hour), PID: dead})
+	expired := writeFake(t, dir, "Old~04", Entry{Name: "Old.xlsx", App: Excel, Saved: at.Add(-limits.RecoveryMaxAge - time.Hour), PID: dead})
 	noCopy := writeFake(t, dir, "Gone~05", Entry{Name: "Gone.xlsx", App: Excel, Saved: at, PID: dead})
 	if err := os.Remove(noCopy.Copy); err != nil {
 		t.Fatal(err)
@@ -228,7 +230,7 @@ func TestOrphans(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	day := at.Add(-strayAge - time.Hour)
+	day := at.Add(-limits.RecoveryStrayAge - time.Hour)
 	if err := os.Chtimes(stale, day, day); err != nil {
 		t.Fatal(err)
 	}
@@ -466,5 +468,43 @@ func TestCrashChild(t *testing.T) {
 	}
 	for f := range ui { // until killed
 		f()
+	}
+}
+
+// TestSaveSettingUnreadable checks that a settings file that is there but
+// can't be read is left alone rather than replaced by one holding only
+// the key being saved (which lost every other setting).
+func TestSaveSettingUnreadable(t *testing.T) {
+	if os.Geteuid() == 0 || runtime.GOOS == "windows" {
+		t.Skip("needs a file permission can deny reading")
+	}
+	path := filepath.Join(t.TempDir(), "settings.json")
+	old := SettingsPath
+	SettingsPath = func() string { return path }
+	t.Cleanup(func() { SettingsPath = old })
+	if err := os.WriteFile(path, []byte(`{"other": "kept"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveSetting("k", true); err == nil {
+		t.Error("no error saving over an unreadable settings file")
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(path); !strings.Contains(string(b), "kept") {
+		t.Errorf("settings file replaced: %s", b)
+	}
+	// A missing file is still created.
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveSetting("k", true); err != nil {
+		t.Fatal(err)
+	}
+	if Setting("k") != true {
+		t.Error("setting not saved to a new file")
 	}
 }

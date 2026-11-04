@@ -7,6 +7,7 @@ import (
 	"math"
 	"strings"
 
+	"officelite/excel"
 	f "officelite/excel/formula"
 )
 
@@ -75,7 +76,7 @@ func registerBasic(r *f.Registry) {
 			if n < -1 {
 				return f.ErrNum
 			}
-			if n > 300 {
+			if n > excel.MathMaxFactDouble {
 				return f.ErrNum
 			}
 			p := 1.0
@@ -156,7 +157,7 @@ func power(x, y float64) f.Value {
 
 // fact returns n! for a whole n, +Inf past 170!.
 func fact(n float64) float64 {
-	if n > 170 {
+	if n > excel.MathMaxFact {
 		return math.Inf(1)
 	}
 	p := 1.0
@@ -348,7 +349,8 @@ func arrayDims(a []f.Value) (rows, cols int, errv f.Value) {
 	if errv != nil {
 		return 0, 0, errv
 	}
-	if dims[0]*dims[1] > maxRows*maxCols {
+	// Each dimension first: their product can overflow (2^32 × 2^32 is 0).
+	if dims[0] > excel.FormulaMaxArrayCells || dims[1] > excel.FormulaMaxArrayCells || dims[0]*dims[1] > excel.FormulaMaxArrayCells {
 		return 0, 0, f.ErrNum
 	}
 	return dims[0], dims[1], nil
@@ -440,7 +442,7 @@ func roman(e *f.Env, a []f.Value) f.Value {
 			mode = int(m)
 		}
 	}
-	if x < 0 || x >= 4000 || mode < 0 || mode > 4 {
+	if x < 0 || x >= excel.MathRomanLimit || mode < 0 || mode > 4 {
 		return f.ErrValue
 	}
 	val := int(x)
@@ -488,7 +490,7 @@ func arabic(e *f.Env, a []f.Value) f.Value {
 		return err
 	}
 	s = strings.ToUpper(strings.TrimSpace(s))
-	if len(s) > 255 {
+	if len(s) > excel.MathMaxNumeralLen {
 		return f.ErrValue
 	}
 	neg := strings.HasPrefix(s, "-")
@@ -526,7 +528,7 @@ func base(e *f.Env, a []f.Value) f.Value {
 		return err
 	}
 	x, radix, minLen = math.Trunc(x), math.Trunc(radix), math.Trunc(minLen)
-	if x < 0 || x >= 1<<53 || radix < 2 || radix > 36 || minLen < 0 || minLen > 255 {
+	if x < 0 || x >= 1<<53 || radix < 2 || radix > 36 || minLen < 0 || minLen > excel.MathMaxNumeralLen {
 		return f.ErrNum
 	}
 	n, rb := uint64(x), uint64(radix)
@@ -558,7 +560,7 @@ func decimal(e *f.Env, a []f.Value) f.Value {
 		return err
 	}
 	radix := math.Trunc(r)
-	if radix < 2 || radix > 36 || len(s) > 255 {
+	if radix < 2 || radix > 36 || len(s) > excel.MathMaxNumeralLen {
 		return f.ErrNum
 	}
 	total := 0.0

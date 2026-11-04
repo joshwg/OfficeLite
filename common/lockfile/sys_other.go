@@ -7,14 +7,10 @@ package lockfile
 
 import (
 	"errors"
+	"officelite/common/limits"
 	"os"
 	"syscall"
-	"time"
 )
-
-// staleAfter is how old an owner file must be to count as left over where
-// the OS can't tell whether Office has it open.
-const staleAfter = 24 * time.Hour
 
 var errUnsupported = errors.New("owner files are written on Windows only")
 
@@ -22,7 +18,7 @@ var errUnsupported = errors.New("owner files are written on Windows only")
 // locks to ask.
 func ownerLive(path string) bool {
 	fi, err := os.Stat(path)
-	return err == nil && now().Sub(fi.ModTime()) < staleAfter
+	return err == nil && now().Sub(fi.ModTime()) < limits.OwnerFileStaleAfter
 }
 
 // inUse can't tell without Windows' share modes.

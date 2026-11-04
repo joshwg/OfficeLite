@@ -1,6 +1,10 @@
 package formula
 
-import "officelite/excel/model"
+import (
+	"officelite/excel/model"
+
+	"officelite/excel"
+)
 
 // RefSpan is a reference found in formula text, for colouring the
 // references of a formula being edited.
@@ -24,9 +28,9 @@ func RefSpans(f string) []RefSpan {
 		rg := model.Range{R1: min(r.r1, r.r2), C1: min(r.c1, r.c2), R2: max(r.r1, r.r2), C2: max(r.c1, r.c2)}
 		switch r.kind {
 		case refCols:
-			rg.R1, rg.R2 = 0, model.MaxRows-1
+			rg.R1, rg.R2 = 0, excel.MaxRows-1
 		case refRows:
-			rg.C1, rg.C2 = 0, model.MaxCols-1
+			rg.C1, rg.C2 = 0, excel.MaxCols-1
 		}
 		out = append(out, RefSpan{Start: start, End: pos, Sheet: t.sheet, Range: rg})
 		return t.text

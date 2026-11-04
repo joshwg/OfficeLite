@@ -3,6 +3,7 @@ package xlsfile
 import (
 	"strings"
 
+	"officelite/excel"
 	"officelite/excel/model"
 )
 
@@ -172,8 +173,8 @@ func (x *writer) validations(b []byte, si int, sh *model.Sheet) []byte {
 func (x *writer) dvRecord(si int, sh *model.Sheet, v model.Validation) ([]byte, bool) {
 	var ranges []model.Range
 	for _, r := range v.Ranges {
-		if r.R1 < xlsMaxRows && r.C1 < xlsMaxCols {
-			r.R2, r.C2 = min(r.R2, xlsMaxRows-1), min(r.C2, xlsMaxCols-1)
+		if r.R1 < excel.XlsMaxRows && r.C1 < excel.XlsMaxCols {
+			r.R2, r.C2 = min(r.R2, excel.XlsMaxRows-1), min(r.C2, excel.XlsMaxCols-1)
 			ranges = append(ranges, r)
 		}
 	}
@@ -227,10 +228,10 @@ func (x *writer) dvRecord(si int, sh *model.Sheet, v model.Validation) ([]byte, 
 		return appendString(b, truncUTF16(s, limit))
 	}
 	body := le32(flags)
-	body = str(body, v.PromptTitle, 32)
-	body = str(body, v.ErrorTitle, 32)
-	body = str(body, v.Prompt, 255)
-	body = str(body, v.Error, 225)
+	body = str(body, v.PromptTitle, excel.XlsDVMaxTitle)
+	body = str(body, v.ErrorTitle, excel.XlsDVMaxTitle)
+	body = str(body, v.Prompt, excel.XlsDVMaxPrompt)
+	body = str(body, v.Error, excel.XlsDVMaxError)
 	for _, f := range fs {
 		body = append(body, le(len(f), 0)...)
 		body = append(body, f...)

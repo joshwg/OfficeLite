@@ -1,8 +1,8 @@
 package lookup
 
 import (
+	"officelite/excel"
 	f "officelite/excel/formula"
-	"officelite/excel/model"
 )
 
 // The array-shaping functions: CHOOSECOLS, CHOOSEROWS, TAKE, DROP, EXPAND,
@@ -132,7 +132,7 @@ func expand(e *f.Env, a []f.Value) f.Value {
 	switch {
 	case rows < arr.Rows || cols < arr.Cols:
 		return f.ErrValue
-	case rows > model.MaxRows || cols > model.MaxCols:
+	case rows > excel.MaxRows || cols > excel.MaxCols || rows*cols > excel.FormulaMaxArrayCells:
 		return f.ErrNum
 	}
 	pad := padArg(a, 3)
@@ -166,7 +166,7 @@ func stack(e *f.Env, a []f.Value, vertical bool) f.Value {
 			rows, cols = max(rows, arrs[i].Rows), cols+arrs[i].Cols
 		}
 	}
-	if rows > model.MaxRows || cols > model.MaxCols {
+	if rows > excel.MaxRows || cols > excel.MaxCols || rows*cols > excel.FormulaMaxArrayCells {
 		return f.ErrNum
 	}
 	out := &f.Array{Rows: rows, Cols: cols, V: make([]f.Value, rows*cols)}
@@ -255,6 +255,11 @@ func wrap(e *f.Env, a []f.Value, rows bool) f.Value {
 		return f.ErrNum
 	}
 	pad := padArg(a, 2)
+	// A huge wrap count would allocate a line that long (padded with
+	// pad_with): bound it like EXPAND.
+	if n > excel.MaxRows || n > excel.FormulaMaxArrayCells/max(1, (len(vals)+n-1)/n) {
+		return f.ErrNum
+	}
 	lines := (len(vals) + n - 1) / n
 	out := &f.Array{Rows: lines, Cols: n, V: make([]f.Value, lines*n)}
 	for i := range out.V {

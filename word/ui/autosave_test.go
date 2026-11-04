@@ -13,6 +13,7 @@ import (
 
 	"officelite/common/autorecover"
 	"officelite/common/autosave"
+	"officelite/common/limits"
 	"officelite/word/fileio"
 	"officelite/word/model"
 )
@@ -150,7 +151,7 @@ func TestAutoSave(t *testing.T) {
 	if h.text() != "Dear" {
 		t.Fatalf("undo: %q", h.text())
 	}
-	clock.Advance(autosave.Delay)
+	clock.Advance(limits.AutoSaveDelay)
 	h.settle()
 	if got := fileText(t, path); got != "Dear" || d.modified() {
 		t.Errorf("undo saved: %q, modified %v", got, d.modified())
@@ -162,7 +163,7 @@ func TestAutoSave(t *testing.T) {
 	if got := fileText(t, path); got != "Dear Madam" || d.modified() {
 		t.Errorf("Ctrl+S: %q, modified %v", got, d.modified())
 	}
-	clock.Advance(autosave.Delay)
+	clock.Advance(limits.AutoSaveDelay)
 	h.settle()
 	if d.as.saver.Busy() || !d.as.saver.On() || d.errMsg != "" {
 		t.Errorf("after Ctrl+S: busy %v, on %v, %q", d.as.saver.Busy(), d.as.saver.On(), d.errMsg)
@@ -192,7 +193,7 @@ func TestAutoSaveError(t *testing.T) {
 	if err := os.RemoveAll(dir); err != nil {
 		t.Fatal(err)
 	}
-	clock.Advance(autosave.Delay)
+	clock.Advance(limits.AutoSaveDelay)
 	h.settle()
 	if d.as.saver.On() || !strings.HasPrefix(d.errMsg, "AutoSave turned off: Save failed") || !d.modified() || h.text() != "Dear" {
 		t.Errorf("on %v, error %q, modified %v", d.as.saver.On(), d.errMsg, d.modified())

@@ -3,6 +3,10 @@
 
 package formula
 
+import (
+	"officelite/excel"
+)
+
 // AdjustRowsIn is AdjustRows for cells inserted or deleted with a shift
 // down or up in columns c1..c2 only (Excel's Insert Cells, Shift cells
 // down): a reference moves when its columns lie within c1..c2; one that
@@ -16,7 +20,7 @@ func AdjustRowsIn(f, home, target string, at, n, c1, c2 int) string {
 			return t.text
 		}
 		var ok bool
-		r.r1, r.r2, ok = shiftSpan(r.r1, r.r2, at, n, excelRows)
+		r.r1, r.r2, ok = shiftSpan(r.r1, r.r2, at, n, excel.ExcelMaxRows)
 		return t.result(r, ok)
 	})
 }
@@ -30,7 +34,7 @@ func AdjustColsIn(f, home, target string, at, n, r1, r2 int) string {
 			return t.text
 		}
 		var ok bool
-		r.c1, r.c2, ok = shiftSpan(r.c1, r.c2, at, n, excelCols)
+		r.c1, r.c2, ok = shiftSpan(r.c1, r.c2, at, n, excel.ExcelMaxCols)
 		return t.result(r, ok)
 	})
 }

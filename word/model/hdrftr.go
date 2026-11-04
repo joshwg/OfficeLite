@@ -167,23 +167,27 @@ func FieldName(instr string) string {
 	return strings.ToUpper(f[0])
 }
 
-// HasPageFields reports whether blocks hold a PAGE, NUMPAGES or
-// SECTIONPAGES field, whose shown value depends on the page.
+// HasPageFields reports whether blocks hold a field whose shown value
+// depends on the page (IsPageField: PAGE, NUMPAGES, SECTIONPAGES,
+// SECTION).
 func HasPageFields(blocks []Block) bool {
 	found := false
 	WalkBlocks(blocks, func(p *Paragraph) bool {
-		for i := range p.Runs {
-			if o := p.Runs[i].Opaque; o != nil && o.Field != "" {
-				switch FieldName(o.Field) {
-				case FieldPage, FieldNumPages, "SECTIONPAGES":
-					found = true
-					return false
-				}
-			}
-		}
-		return true
+		found = p.HasPageFields()
+		return !found
 	})
 	return found
+}
+
+// HasPageFields reports whether the paragraph holds a field whose shown
+// value depends on the page.
+func (p *Paragraph) HasPageFields() bool {
+	for i := range p.Runs {
+		if o := p.Runs[i].Opaque; o != nil && o.Field != "" && o.FieldChar == FieldNone && IsPageField(FieldName(o.Field)) {
+			return true
+		}
+	}
+	return false
 }
 
 // InsertSimpleField inserts a field (e.g. `PAGE`) showing result at the caret,

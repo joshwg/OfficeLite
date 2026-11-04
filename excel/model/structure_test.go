@@ -6,6 +6,8 @@ package model
 import (
 	"reflect"
 	"testing"
+
+	"officelite/excel"
 )
 
 // TestShiftSpan checks ShiftSpan for insertions and deletions before,
@@ -74,5 +76,37 @@ func TestPxToColWidth(t *testing.T) {
 	}
 	if PxToColWidth(0, 7) != 0 {
 		t.Error("0px should hide")
+	}
+}
+
+// TestInsertRowsClipsAtSheetEnd checks that inserting rows clips merged
+// areas and validation ranges at the sheet's last row (a whole-column
+// rule stays whole-column) and drops those pushed entirely off it.
+func TestInsertRowsClipsAtSheetEnd(t *testing.T) {
+	s := NewSheet("S")
+	s.Merges = []Range{
+		{R1: excel.MaxRows - 3, C1: 0, R2: excel.MaxRows - 2, C2: 1}, // pushed off
+		{R1: excel.MaxRows - 6, C1: 2, R2: excel.MaxRows - 4, C2: 3}, // clipped
+	}
+	s.Validations = []Validation{{Ranges: []Range{{R1: 0, C1: 0, R2: excel.MaxRows - 1, C2: 0}}}}
+	s.Spills = map[[2]int]Range{{excel.MaxRows - 2, 4}: {R1: excel.MaxRows - 2, C1: 4, R2: excel.MaxRows - 1, C2: 4}}
+	s.InsertRows(0, 5)
+	if want := []Range{{R1: excel.MaxRows - 1, C1: 2, R2: excel.MaxRows - 1, C2: 3}}; !reflect.DeepEqual(s.Merges, want) {
+		t.Errorf("merges %v, want %v", s.Merges, want)
+	}
+	if got := s.Validations[0].Ranges; !reflect.DeepEqual(got, []Range{{R1: 5, C1: 0, R2: excel.MaxRows - 1, C2: 0}}) {
+		t.Errorf("validation ranges %v, want A6 to the last row", got)
+	}
+	if len(s.Spills) != 0 {
+		t.Errorf("spills %v, want none (anchor pushed off the sheet)", s.Spills)
+	}
+	s.InsertCols(0, 1)
+	if got := s.Validations[0].Ranges; got[0].C2 != 1 {
+		t.Errorf("validation after inserting a column: %v", got)
+	}
+	s.Validations = []Validation{{Ranges: []Range{{R1: 0, C1: excel.MaxCols - 2, R2: 0, C2: excel.MaxCols - 1}}}}
+	s.InsertCols(0, 1)
+	if got := s.Validations[0].Ranges; !reflect.DeepEqual(got, []Range{{R1: 0, C1: excel.MaxCols - 1, R2: 0, C2: excel.MaxCols - 1}}) {
+		t.Errorf("validation ranges %v, want clipped to the last column", got)
 	}
 }

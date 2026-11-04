@@ -1,3 +1,5 @@
+// drop.go opens files dragged onto the window.
+
 package ui
 
 // takeDrops opens the files dragged onto the window as File ▸ Open does:

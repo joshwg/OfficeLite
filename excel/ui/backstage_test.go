@@ -9,6 +9,7 @@ import (
 
 	"gioui.org/io/key"
 
+	"officelite/common/gui"
 	"officelite/excel/fileio"
 )
 
@@ -86,5 +87,43 @@ func TestSaveAsWriteFailureReenablesUIAndReportsError(t *testing.T) {
 	}
 	if !strings.Contains(a.errMsg, wantErr.Error()) {
 		t.Errorf("save error = %q, want it to contain %q", a.errMsg, wantErr)
+	}
+}
+
+// TestExportAbandonsClose: after "Save changes?" → Save sends an untitled
+// workbook to the Save As page, an export leaves the backstage without
+// saving; a later Save As must not close the window.
+func TestExportAbandonsClose(t *testing.T) {
+	h := newHarness(t)
+	a := h.a
+	h.typeText("x")
+	h.press(key.NameReturn, 0)
+	a.closing = true
+	a.save() // untitled: the Save As page
+	a.savedSnapshot(a.wb, a.wb, a.revision, a.active, fileio.CSV, "out.csv", true, nil)
+	if a.closing {
+		t.Error("closing still set after an export")
+	}
+	a.closing = true
+	a.handleBackstage(gui.BackstageEvent{Action: gui.ActNew, Template: len(templates)}) // out of range: ignored
+	if a.closing {
+		t.Error("closing still set after New")
+	}
+}
+
+// TestNotPristineWhileSaving checks that an untouched new workbook isn't
+// replaced by an opened file while its Save As or export runs, whose
+// result would otherwise go to the file that replaced it.
+func TestNotPristineWhileSaving(t *testing.T) {
+	h := newHarness(t)
+	a := h.a
+	a.path, a.modified = "", false
+	if !a.pristine() {
+		t.Fatal("a new workbook isn't pristine")
+	}
+	a.saving.Store(true)
+	defer a.saving.Store(false)
+	if a.pristine() {
+		t.Error("pristine while a Save As runs")
 	}
 }

@@ -18,6 +18,7 @@ import (
 
 	"officelite/common/colors"
 	"officelite/common/gui"
+	"officelite/excel"
 	"officelite/excel/calc"
 	"officelite/excel/edit"
 	"officelite/excel/model"
@@ -311,7 +312,7 @@ func (a *App) layoutCellEditor(gtx layout.Context, v *render.View) {
 		need := measure(1<<20, text)
 		for col := ed.col + 1; box.Dx() < need.Size.X+2*pad && box.Max.X < pane.Max.X; col++ {
 			next, _, ok := v.CellRect(ed.row, col)
-			if !ok || col >= model.MaxCols {
+			if !ok || col >= excel.MaxCols {
 				break
 			}
 			box.Max.X = next.Max.X

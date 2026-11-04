@@ -24,6 +24,7 @@ import (
 	"officelite/common/colors"
 	"officelite/common/doctype"
 	"officelite/common/gui"
+	"officelite/excel"
 	"officelite/excel/edit"
 	"officelite/excel/model"
 	"officelite/excel/render"
@@ -575,7 +576,7 @@ func (a *App) vScrollbar(gtx layout.Context) layout.Dimensions {
 	a.scrollHints()
 	pos := a.vbar.Layout(gtx, float64(v.TopRow-fr), visible, total)
 	if top := fr + int(pos+0.5); top != v.TopRow {
-		v.TopRow = min(top, model.MaxRows-1)
+		v.TopRow = min(top, excel.MaxRows-1)
 	}
 	return layout.Dimensions{Size: gtx.Constraints.Max}
 }
@@ -600,7 +601,7 @@ func (a *App) bottomBar(gtx layout.Context) layout.Dimensions {
 			return ins.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				pos := a.hbar.Layout(gtx, float64(v.LeftCol-fc), visible, total)
 				if left := fc + int(pos+0.5); left != v.LeftCol {
-					v.LeftCol = min(left, model.MaxCols-1)
+					v.LeftCol = min(left, excel.MaxCols-1)
 					gtx.Execute(op.InvalidateCmd{})
 				}
 				return layout.Dimensions{Size: gtx.Constraints.Max}

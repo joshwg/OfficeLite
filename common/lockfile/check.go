@@ -6,6 +6,7 @@ package lockfile
 
 import (
 	"io"
+	"officelite/common/limits"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -131,7 +132,7 @@ func readOwner(path string) (b []byte) {
 			b = nil
 		}
 	}()
-	b, err = io.ReadAll(io.LimitReader(f, 512))
+	b, err = io.ReadAll(io.LimitReader(f, limits.OwnerFileRead))
 	if err != nil {
 		return nil
 	}

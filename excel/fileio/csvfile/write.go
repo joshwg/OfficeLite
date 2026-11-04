@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"officelite/excel"
 	"officelite/excel/model"
 )
 
@@ -21,7 +22,7 @@ const utf8BOM = "\xEF\xBB\xBF"
 // starts at the used range's top-left, which differs only for sheets whose
 // first rows or columns are empty). Formulas are lost: only values are saved.
 func Write(sh *model.Sheet, w io.Writer, delim rune) error {
-	bw := bufio.NewWriterSize(w, 64<<10)
+	bw := bufio.NewWriterSize(w, excel.CSVWriteBufSize)
 	if _, err := bw.WriteString(utf8BOM); err != nil {
 		return err
 	}

@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"officelite/common/atomicfile"
+	"officelite/common/limits"
 )
 
 // Apps whose documents are recovered.
@@ -112,10 +113,6 @@ func NewSaver(app string, post func(func()), snapshot func() *Snapshot) *Saver {
 	return &Saver{App: app, post: post, snapshot: snapshot, done: make(chan struct{})}
 }
 
-// checkEvery is how often the timer looks at the interval setting, so
-// that a change to it takes effect soon.
-const checkEvery = 30 * time.Second
-
 // Start starts the timer: every interval it asks the UI goroutine (post)
 // to Tick.
 func (s *Saver) Start() {
@@ -133,9 +130,9 @@ func (s *Saver) Start() {
 	go func() {
 		last := time.Now()
 		for {
-			wait := checkEvery
+			wait := limits.RecoveryCheckEvery
 			if iv := interval(); iv > 0 {
-				wait = min(max(iv-time.Since(last), time.Millisecond), checkEvery)
+				wait = min(max(iv-time.Since(last), time.Millisecond), limits.RecoveryCheckEvery)
 			}
 			select {
 			case <-s.done:
@@ -245,7 +242,7 @@ func (s *Saver) Wait() {
 		if idle {
 			return
 		}
-		time.Sleep(5 * time.Millisecond)
+		time.Sleep(limits.RecoveryWaitPoll)
 	}
 }
 
@@ -314,8 +311,8 @@ func baseName(name string) string {
 		return r
 	}, stem)
 	stem = strings.Trim(stem, " .")
-	if r := []rune(stem); len(r) > 60 {
-		stem = string(r[:60])
+	if r := []rune(stem); len(r) > limits.RecoveryMaxStem {
+		stem = string(r[:limits.RecoveryMaxStem])
 	}
 	if stem == "" {
 		stem = "Document"

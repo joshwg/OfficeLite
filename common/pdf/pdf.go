@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"image/color"
 	"io"
+	"officelite/common/limits"
 	"slices"
 	"strconv"
 	"strings"
@@ -569,8 +570,8 @@ func (o *objWriter) bytes(b []byte) {
 	k, err := o.w.Write(b)
 	o.n += int64(k)
 	o.err = err
-	if len(o.hash) < 4096 {
-		o.hash = append(o.hash, b[:min(len(b), 4096-len(o.hash))]...)
+	if len(o.hash) < limits.PDFIDHashBytes {
+		o.hash = append(o.hash, b[:min(len(b), limits.PDFIDHashBytes-len(o.hash))]...)
 	}
 }
 

@@ -3,12 +3,9 @@ package mathtrig
 import (
 	"math"
 
+	"officelite/excel"
 	f "officelite/excel/formula"
 )
-
-// trigLimit is the magnitude from which Excel's SIN, COS, TAN (and their
-// reciprocals) return #NUM! because the argument has lost all precision.
-const trigLimit = 1 << 27
 
 func registerTrig(r *f.Registry) {
 	r.Add(
@@ -47,7 +44,7 @@ func registerTrig(r *f.Registry) {
 
 func periodic(g func(float64) float64) func(float64) f.Value {
 	return func(x float64) f.Value {
-		if math.Abs(x) >= trigLimit {
+		if math.Abs(x) >= excel.MathTrigLimit {
 			return f.ErrNum
 		}
 		return f.NumberOrErr(g(x))
@@ -57,7 +54,7 @@ func periodic(g func(float64) float64) func(float64) f.Value {
 // reciprocal builds 1/g(x); g(x) == 0 is #DIV/0!.
 func reciprocal(g func(float64) float64, limited bool) func(float64) f.Value {
 	return func(x float64) f.Value {
-		if limited && math.Abs(x) >= trigLimit {
+		if limited && math.Abs(x) >= excel.MathTrigLimit {
 			return f.ErrNum
 		}
 		d := g(x)

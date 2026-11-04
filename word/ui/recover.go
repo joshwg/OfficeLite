@@ -85,7 +85,7 @@ func (d *window) adoptRecovered(e autorecover.Entry) {
 	d.saved = -1 // modified
 	d.ar.saver.Adopt(e, d.recoveryRev())
 	f, ok := fileio.FormatFor(e.Path)
-	if i := slices.Index(saveFormats, f); ok && i >= 0 {
+	if i := slices.Index(saveFormats[:], f); ok && i >= 0 {
 		d.bs.saveFmt = i
 	} else {
 		d.bs.saveFmt = 0 // .docx (for .pages, .docm, new documents)

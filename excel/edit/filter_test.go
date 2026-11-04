@@ -5,6 +5,7 @@ import (
 	"slices"
 	"testing"
 
+	"officelite/excel"
 	"officelite/excel/model"
 )
 
@@ -54,7 +55,7 @@ func TestFilterRange(t *testing.T) {
 		{rng("B3", "B3"), rng("A1", "C8")},
 		{rng("A1", "C1"), rng("A1", "C8")},
 		{rng("A1", "B4"), rng("A1", "B4")},
-		{model.Range{C1: 0, C2: 2, R2: model.MaxRows - 1}, rng("A1", "C11")},
+		{model.Range{C1: 0, C2: 2, R2: excel.MaxRows - 1}, rng("A1", "C11")},
 	} {
 		if got, err := FilterRange(sh, tc.sel); err != nil || got != tc.want {
 			t.Errorf("FilterRange(%v) = %v, %v; want %v", tc.sel, got, err, tc.want)
@@ -278,7 +279,7 @@ func TestFilteredRowsLeftAlone(t *testing.T) {
 	b.Clear(0, rng("A2", "A8"))
 	b.expect(t, "clear", map[string]string{"A2": "apple", "A3": "", "A4": "cherry", "A5": "", "A7": "", "A8": "avocado"})
 	b.Undo()
-	b.Clear(0, model.Range{R1: 0, C1: 0, R2: model.MaxRows - 1, C2: 0})
+	b.Clear(0, model.Range{R1: 0, C1: 0, R2: excel.MaxRows - 1, C2: 0})
 	b.expect(t, "clear column", map[string]string{"A1": "", "A2": "apple", "A3": "", "A11": ""})
 	b.Undo()
 
@@ -318,4 +319,27 @@ func TestFilteredRowsLeftAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 	b.expect(t, "paste one", map[string]string{"E2": "", "E3": "after", "E4": "", "E5": "after", "E7": "after", "E8": ""})
+}
+
+// TestFilterNoOpNotRecorded checks that filter commands that change
+// nothing (no AutoFilter on the sheet, criteria already clear) leave no
+// empty step in the Undo list.
+func TestFilterNoOpNotRecorded(t *testing.T) {
+	b := filterBook(t)
+	n := len(b.UndoLabels())
+	b.ReapplyFilter(0)
+	b.ClearFilters(0)
+	b.FilterColumn(0, 1, &model.FilterColumn{Kind: model.FilterCustom})
+	if got := len(b.UndoLabels()); got != n {
+		t.Errorf("undo steps %d after no-op filter commands, want %d: %v", got, n, b.UndoLabels())
+	}
+	r := rng("A1", "C8")
+	b.SetAutoFilter(0, &r)
+	if got := len(b.UndoLabels()); got != n+1 {
+		t.Fatalf("undo steps %d after turning the filter on, want %d", got, n+1)
+	}
+	b.ClearFilters(0) // no criteria yet: nothing to clear
+	if got := len(b.UndoLabels()); got != n+1 {
+		t.Errorf("undo steps %d after a no-op Clear, want %d: %v", got, n+1, b.UndoLabels())
+	}
 }

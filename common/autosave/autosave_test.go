@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"officelite/common/autorecover"
+	"officelite/common/limits"
 )
 
 // rig is a window: a document whose rev counts edits, saved by a Saver.
@@ -108,7 +109,7 @@ func (r *rig) wantSaved(what string, revs ...int) {
 	}
 }
 
-// TestDebounce: a save comes Delay after the last edit, each edit
+// TestDebounce: a save comes limits.AutoSaveDelay after the last edit, each edit
 // putting it off.
 func TestDebounce(t *testing.T) {
 	r := newRig(t)
@@ -135,8 +136,8 @@ func TestDebounce(t *testing.T) {
 	r.wantSaved("no edits", 1, 3)
 }
 
-// TestPeriodic: edits that never pause for Delay are still saved every
-// MaxWait.
+// TestPeriodic: edits that never pause for limits.AutoSaveDelay are still saved every
+// limits.AutoSaveMaxWait.
 func TestPeriodic(t *testing.T) {
 	r := newRig(t)
 	r.s.SetOn(true) // nothing unsaved: no write
@@ -146,7 +147,7 @@ func TestPeriodic(t *testing.T) {
 		r.tick(time.Second)
 	}
 	r.wantSaved("continuous editing", 60)
-	r.tick(Delay)
+	r.tick(limits.AutoSaveDelay)
 	r.wantSaved("after the last edit", 60, 70)
 }
 
@@ -159,14 +160,14 @@ func TestEditWhileSaving(t *testing.T) {
 	b := make(chan struct{})
 	r.block = b
 	r.edit()
-	r.clock.Advance(Delay)
+	r.clock.Advance(limits.AutoSaveDelay)
 	waitPosted(r) // starts the save, which blocks
 	if !r.s.Busy() {
 		t.Fatal("not saving")
 	}
 	r.block = nil
 	r.edit() // rev 2, during the save: no timer yet
-	r.clock.Advance(Delay)
+	r.clock.Advance(limits.AutoSaveDelay)
 	close(b)
 	r.run() // the first save ends and the second is scheduled
 	r.wantSaved("first", 1)
@@ -176,7 +177,7 @@ func TestEditWhileSaving(t *testing.T) {
 	b = make(chan struct{})
 	r.block = b
 	r.edit() // rev 3
-	r.clock.Advance(Delay)
+	r.clock.Advance(limits.AutoSaveDelay)
 	waitPosted(r)
 	r.block = nil
 	for r.s.mu.TryLock() { // until the save holds the file
@@ -197,7 +198,7 @@ func TestEditWhileSaving(t *testing.T) {
 
 	r.s.written = r.s.seq + 2 // as if a later write had got in first
 	r.edit()
-	r.tick(Delay)
+	r.tick(limits.AutoSaveDelay)
 	r.wantSaved("older write skipped", 1, 2, 3, 30)
 }
 
@@ -208,7 +209,7 @@ func TestError(t *testing.T) {
 	r.s.SetOn(true)
 	r.fail = errors.New("locked")
 	r.edit()
-	r.tick(Delay)
+	r.tick(limits.AutoSaveDelay)
 	if r.s.On() || len(r.errs) != 1 || r.errs[0] == nil {
 		t.Fatalf("on %v, done %v", r.s.On(), r.errs)
 	}
@@ -227,7 +228,7 @@ func startBlocked(r *rig) chan struct{} {
 	b := make(chan struct{})
 	r.block = b
 	r.edit()
-	r.clock.Advance(Delay)
+	r.clock.Advance(limits.AutoSaveDelay)
 	waitPosted(r)
 	r.block = nil
 	for r.s.mu.TryLock() { // until the save holds the file

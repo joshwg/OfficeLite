@@ -13,6 +13,7 @@ import (
 
 	"officelite/common/colors"
 	"officelite/common/gui"
+	"officelite/excel"
 	"officelite/excel/calc"
 	"officelite/excel/edit"
 	"officelite/excel/formula/functions"
@@ -204,9 +205,9 @@ func (a *App) shiftCells(insert bool, how edit.Shift) {
 	a.changed(res)
 	switch how {
 	case edit.EntireRow:
-		r.C1, r.C2 = 0, model.MaxCols-1
+		r.C1, r.C2 = 0, excel.MaxCols-1
 	case edit.EntireCol:
-		r.R1, r.R2 = 0, model.MaxRows-1
+		r.R1, r.R2 = 0, excel.MaxRows-1
 	}
 	a.selectRange(a.active, r)
 }

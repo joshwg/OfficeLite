@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"officelite/common/colors"
+	"officelite/excel"
 	"officelite/excel/calc"
 	"officelite/excel/formula"
 	"officelite/excel/formula/functions"
@@ -121,7 +122,7 @@ func (b *Book) pivotCells(sheet int, pts []*model.PivotTable, i int, overwrite b
 	}
 	pivot.Sync(pt, src)
 	res := pivot.Compute(pt, src, b.nf)
-	if res.Out.Area.R2 >= model.MaxRows || res.Out.Area.C2 >= model.MaxCols {
+	if res.Out.Area.R2 >= excel.MaxRows || res.Out.Area.C2 >= excel.MaxCols {
 		return nil, errors.New("the PivotTable report doesn't fit on the sheet")
 	}
 	var old model.Range

@@ -15,6 +15,7 @@ import (
 
 	"officelite/common/colors"
 	"officelite/common/ole"
+	"officelite/excel"
 	"officelite/excel/formula"
 	"officelite/excel/model"
 )
@@ -78,12 +79,9 @@ const (
 	recStyle         = 0x0293
 	recWriteAccess   = 0x005C
 
-	maxRecord     = 8224 // largest record body; longer data goes in CONTINUE records
-	maxCellStyles = 4000
-	maxText       = 32767
-	defaultXF     = 15 // the cell XF of unformatted cells
-	firstCellXF   = 16
-	icvAutoFont   = 0x7FFF
+	defaultXF   = 15 // the cell XF of unformatted cells
+	firstCellXF = 16
+	icvAutoFont = 0x7FFF
 )
 
 type writer struct {
@@ -172,8 +170,8 @@ func (x *writer) sheetNames() []string {
 			return r
 		}, sh.Name)
 		n = strings.Trim(n, "'")
-		if utf8.RuneCountInString(n) > 31 {
-			n = string([]rune(n)[:31])
+		if utf8.RuneCountInString(n) > excel.MaxSheetName {
+			n = string([]rune(n)[:excel.MaxSheetName])
 		}
 		if n == "" {
 			n = fmt.Sprintf("Sheet%d", i+1)
@@ -366,9 +364,9 @@ func (x *writer) sheetRecords(si int, sh *model.Sheet) []byte {
 	b = x.autoFilter(b, sh)
 
 	// Extent of what is written.
-	rows := min(sh.UsedRows(), xlsMaxRows)
+	rows := min(sh.UsedRows(), excel.XlsMaxRows)
 	dropped := 0
-	for r := xlsMaxRows; r < sh.UsedRows(); r++ {
+	for r := excel.XlsMaxRows; r < sh.UsedRows(); r++ {
 		for c := 0; c < sh.RowLen(r); c++ {
 			if !sh.Get(r, c).IsBlank() {
 				dropped++
@@ -381,7 +379,7 @@ func (x *writer) sheetRecords(si int, sh *model.Sheet) []byte {
 			if sh.Get(r, c).IsBlank() && sh.Get(r, c).Style == 0 {
 				continue
 			}
-			if c >= xlsMaxCols {
+			if c >= excel.XlsMaxCols {
 				if !sh.Get(r, c).IsBlank() {
 					dropped++
 				}
@@ -409,20 +407,20 @@ func (x *writer) sheetRecords(si int, sh *model.Sheet) []byte {
 	// Rows in blocks of 32: the ROW records, then the block's cells.
 	lastRow := rows
 	for r := range sh.RowHeight {
-		if r < xlsMaxRows {
+		if r < excel.XlsMaxRows {
 			lastRow = max(lastRow, r+1)
 		}
 	}
 	for r := range sh.Filtered {
-		if r < xlsMaxRows {
+		if r < excel.XlsMaxRows {
 			lastRow = max(lastRow, r+1)
 		}
 	}
 	for r := range sh.Outline.RowLevel {
-		lastRow = max(lastRow, min(r+1, xlsMaxRows))
+		lastRow = max(lastRow, min(r+1, excel.XlsMaxRows))
 	}
 	for r := range sh.Outline.RowCollapsed {
-		lastRow = max(lastRow, min(r+1, xlsMaxRows))
+		lastRow = max(lastRow, min(r+1, excel.XlsMaxRows))
 	}
 	var fails []string
 	nFails, nDynamic := 0, 0
@@ -431,7 +429,7 @@ func (x *writer) sheetRecords(si int, sh *model.Sheet) []byte {
 		var cells []byte
 		for r := start; r < end; r++ {
 			first, last := -1, -1
-			for c := 0; c < min(sh.RowLen(r), xlsMaxCols); c++ {
+			for c := 0; c < min(sh.RowLen(r), excel.XlsMaxCols); c++ {
 				cell := sh.Get(r, c)
 				if cell.IsBlank() && cell.Style == 0 {
 					continue
@@ -468,11 +466,11 @@ func (x *writer) sheetRecords(si int, sh *model.Sheet) []byte {
 			case custom && h == 0:
 				flags |= 0x20 | 0x40
 				if show := sh.Outline.RowShowSize[r]; show > 0 {
-					height = min(pxToTwips(show), 8192) // its height when shown
+					height = min(pxToTwips(show), excel.XlsMaxRowHeightTwips) // its height when shown
 				}
 			case custom:
 				flags |= 0x40
-				height = min(pxToTwips(h), 8192)
+				height = min(pxToTwips(h), excel.XlsMaxRowHeightTwips)
 			}
 			if filtered {
 				flags |= 0x20 // hidden by the AutoFilter
@@ -520,7 +518,7 @@ func (x *writer) colInfo(b []byte, sh *model.Sheet) []byte {
 	}
 	var cols []int
 	for c := range set {
-		if c >= 0 && c < xlsMaxCols {
+		if c >= 0 && c < excel.XlsMaxCols {
 			cols = append(cols, c)
 		}
 	}
@@ -592,7 +590,7 @@ func (x *writer) cell(b []byte, si int, sh *model.Sheet, r, c int, cell *model.C
 	var ferr error
 	if cell.Formula != "" {
 		rgce, extra, err := compileFormula(x, cell.Formula, si, false)
-		if err == nil && 22+len(rgce)+len(extra) > maxRecord {
+		if err == nil && 22+len(rgce)+len(extra) > excel.XlsMaxRecord {
 			err = fmt.Errorf("formula is too long for .xls")
 		}
 		if err == nil {
@@ -621,13 +619,13 @@ func (x *writer) cell(b []byte, si int, sh *model.Sheet, r, c int, cell *model.C
 
 // text truncates s to the longest text a cell can hold.
 func (x *writer) text(sh *model.Sheet, s string) string {
-	if strLen(s) <= maxText {
+	if strLen(s) <= excel.XlsMaxText {
 		return s
 	}
 	x.issue("%s: text longer than 32,767 characters will be cut", sh.Name)
 	r := []rune(s)
-	for strLen(string(r)) > maxText {
-		r = r[:len(r)-max(1, (strLen(string(r))-maxText)/2)]
+	for strLen(string(r)) > excel.XlsMaxText {
+		r = r[:len(r)-max(1, (strLen(string(r))-excel.XlsMaxText)/2)]
 	}
 	return string(r)
 }
@@ -666,8 +664,8 @@ func (x *writer) formula(b, head []byte, cell *model.Cell, rgce, extra []byte) [
 	b = rec(b, recFormula, body)
 	if str {
 		s := cell.Text
-		if strLen(s) > maxText {
-			s = truncUTF16(s, maxText)
+		if strLen(s) > excel.XlsMaxText {
+			s = truncUTF16(s, excel.XlsMaxText)
 		}
 		b = stringRecords(b, recString, nil, []string{s}, nil)
 	}
@@ -680,7 +678,7 @@ func (x *writer) window(b []byte, si int, sh *model.Sheet) []byte {
 	if sh.ShowGridLines {
 		grbit |= 0x02
 	}
-	frows, fcols := min(sh.FreezeRows, xlsMaxRows-1), min(sh.FreezeCols, xlsMaxCols-1)
+	frows, fcols := min(sh.FreezeRows, excel.XlsMaxRows-1), min(sh.FreezeCols, excel.XlsMaxCols-1)
 	frozen := frows > 0 || fcols > 0
 	if frozen {
 		grbit |= 0x08 | 0x100
@@ -688,7 +686,7 @@ func (x *writer) window(b []byte, si int, sh *model.Sheet) []byte {
 	if si == x.active {
 		grbit |= 0x200 | 0x400
 	}
-	top, left := min(sh.TopRow, xlsMaxRows-1), min(sh.LeftCol, xlsMaxCols-1)
+	top, left := min(sh.TopRow, excel.XlsMaxRows-1), min(sh.LeftCol, excel.XlsMaxCols-1)
 	b = rec(b, recWindow2, append(le(grbit, top, left), append(le32(64), le(0, 0, 0, 0)...)...))
 	pane := 3
 	if frozen {
@@ -702,13 +700,14 @@ func (x *writer) window(b []byte, si int, sh *model.Sheet) []byte {
 		}
 		b = rec(b, recPane, append(le(fcols, frows, max(frows, top), max(fcols, left)), byte(pane), 0))
 	}
-	ar, ac := min(max(sh.ActiveRow, 0), xlsMaxRows-1), min(max(sh.ActiveCol, 0), xlsMaxCols-1)
+	ar, ac := min(max(sh.ActiveRow, 0), excel.XlsMaxRows-1), min(max(sh.ActiveCol, 0), excel.XlsMaxCols-1)
 	sel := append([]byte{byte(pane)}, le(ar, ac, 0, 1, ar, ar)...)
 	sel = append(sel, byte(ac), byte(ac))
 	return rec(b, recSelection, sel)
 }
 
-// merges writes MERGEDCELLS records, at most 1026 ranges each.
+// merges writes MERGEDCELLS records, at most excel.XlsMaxMergesPerRecord
+// ranges each.
 func (x *writer) merges(b []byte, sh *model.Sheet) []byte {
 	var body []byte
 	n := 0
@@ -719,15 +718,15 @@ func (x *writer) merges(b []byte, sh *model.Sheet) []byte {
 		body, n = nil, 0
 	}
 	for _, m := range sh.Merges {
-		if m.R1 >= xlsMaxRows || m.C1 >= xlsMaxCols {
+		if m.R1 >= excel.XlsMaxRows || m.C1 >= excel.XlsMaxCols {
 			continue
 		}
-		r2, c2 := min(m.R2, xlsMaxRows-1), min(m.C2, xlsMaxCols-1)
+		r2, c2 := min(m.R2, excel.XlsMaxRows-1), min(m.C2, excel.XlsMaxCols-1)
 		if m.R1 == r2 && m.C1 == c2 {
 			continue
 		}
 		body = append(body, le(m.R1, r2, m.C1, c2)...)
-		if n++; n == 1026 {
+		if n++; n == excel.XlsMaxMergesPerRecord {
 			flush()
 		}
 	}
@@ -755,8 +754,8 @@ func (x *writer) xf(style uint32) int {
 	if int(style) >= len(x.wb.Styles) {
 		return defaultXF
 	}
-	if len(x.styles) > maxCellStyles {
-		x.issue("more than %d cell styles: the rest will use the default style", maxCellStyles)
+	if len(x.styles) > excel.XlsMaxCellStyles {
+		x.issue("more than %d cell styles: the rest will use the default style", excel.XlsMaxCellStyles)
 		x.xfOf[style] = defaultXF
 		return defaultXF
 	}
@@ -822,8 +821,8 @@ func (x *writer) numFormat(st model.Style) int {
 	if strings.EqualFold(code, "General") {
 		return 0
 	}
-	if strLen(code) > 255 {
-		x.issue("a number format longer than 255 characters will be replaced by General")
+	if strLen(code) > excel.XlsMaxShortString {
+		x.issue("a number format longer than %d characters will be replaced by General", excel.XlsMaxShortString)
 		return 0
 	}
 	if i, ok := x.fmtOf[code]; ok {
@@ -865,7 +864,7 @@ func (x *writer) fontRecord(f model.Font) []byte {
 	}
 	b := le(min(int(math.Round(float64(size)*20)), 0x7FFF), grbit, icv, bls, 0)
 	b = append(b, uls, 0, 0, 0)
-	return appendShortString(b, truncUTF16(name, 255))
+	return appendShortString(b, truncUTF16(name, excel.XlsMaxShortString))
 }
 
 func truncUTF16(s string, n int) string {
@@ -1123,7 +1122,7 @@ func stringRecords(b []byte, id int, head []byte, strs []string, mark func(i, po
 	recStart := len(b)
 	b = append(b, byte(id), byte(id>>8), 0, 0)
 	b = append(b, head...)
-	room := func() int { return maxRecord - (len(b) - recStart - 4) }
+	room := func() int { return excel.XlsMaxRecord - (len(b) - recStart - 4) }
 	next := func() {
 		binary.LittleEndian.PutUint16(b[recStart+2:], uint16(len(b)-recStart-4))
 		recStart = len(b)
@@ -1178,7 +1177,7 @@ func stringRecords(b []byte, id int, head []byte, strs []string, mark func(i, po
 // CONTINUE records.
 func rec(b []byte, id int, body []byte) []byte {
 	for {
-		n := min(len(body), maxRecord)
+		n := min(len(body), excel.XlsMaxRecord)
 		b = binary.LittleEndian.AppendUint16(b, uint16(id))
 		b = binary.LittleEndian.AppendUint16(b, uint16(n))
 		b = append(b, body[:n]...)

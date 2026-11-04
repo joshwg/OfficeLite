@@ -20,12 +20,23 @@ import (
 
 	"officelite/common/colors"
 	"officelite/common/gui"
+	"officelite/word"
 	"officelite/word/model"
 )
 
 // measureScale is the pixels-per-point text is shaped at for measuring;
 // shaping is linear (no hinting), so a larger size only adds precision.
 const measureScale = 4
+
+// shapeScale returns the pixels per point to shape text of size pt at
+// when scale is wanted: scale, or less when that passes
+// word.LayoutMaxShapePx.
+func shapeScale(pt, scale float64) float64 {
+	if pt*scale > word.LayoutMaxShapePx {
+		return word.LayoutMaxShapePx / pt
+	}
+	return scale
+}
 
 // TextStyle is the display formatting of a piece of text.
 type TextStyle struct {
@@ -76,10 +87,19 @@ func (m *measurer) measure(st *TextStyle, s string) *measured {
 		n++
 	}
 	r := &measured{adv: make([]float32, n)}
+	if !(st.Size > 0) {
+		// A zero, negative (or NaN) size from a file: the text takes no room.
+		if m.cache == nil {
+			m.cache = map[measureKey]*measured{}
+		}
+		m.cache[k] = r
+		return r
+	}
+	sc := shapeScale(st.Size, measureScale) // shaping is linear: any scale measures the same
 	m.shaper.LayoutString(text.Parameters{
 		Font:             st.Font,
-		PxPerEm:          fixed.Int26_6(st.Size * measureScale * 64),
-		MaxWidth:         1 << 24,
+		PxPerEm:          fixed.Int26_6(st.Size * sc * 64),
+		MaxWidth:         word.LayoutUnwrappedWidth,
 		MaxLines:         1,
 		DisableSpaceTrim: true,
 	}, s)
@@ -92,14 +112,14 @@ func (m *measurer) measure(st *TextStyle, s string) *measured {
 			break
 		}
 		if first {
-			r.ascent = float64(g.Ascent) / 64 / measureScale
-			r.desc = float64(g.Descent) / 64 / measureScale
+			r.ascent = float64(g.Ascent) / 64 / sc
+			r.desc = float64(g.Descent) / 64 / sc
 			first = false
 		}
 		if a, d, ok := gui.WordMetrics(m.shaper, g.ID); ok {
 			r.wasc, r.wdesc = max(r.wasc, a*st.Size), max(r.wdesc, d*st.Size)
 		}
-		cluster += float64(g.Advance) / 64 / measureScale
+		cluster += float64(g.Advance) / 64 / sc
 		if g.Flags&text.FlagClusterBreak != 0 && g.Runes > 0 {
 			per := cluster / float64(g.Runes)
 			for j := 0; j < int(g.Runes) && i < n; j++ {
@@ -134,7 +154,7 @@ func (m *measurer) has(st *TextStyle, family string, s string) bool {
 	if v, ok := m.covers[k]; ok {
 		return v
 	}
-	m.shaper.LayoutString(text.Parameters{Font: st.Font, PxPerEm: fixed.I(16), MaxWidth: 1 << 24, MaxLines: 1}, s)
+	m.shaper.LayoutString(text.Parameters{Font: st.Font, PxPerEm: fixed.I(16), MaxWidth: word.LayoutUnwrappedWidth, MaxLines: 1}, s)
 	ok := true
 	for {
 		g, more := m.shaper.NextGlyph()

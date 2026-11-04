@@ -10,7 +10,9 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	"officelite/excel"
 	"officelite/excel/model"
 )
 
@@ -237,7 +239,7 @@ func TestStringRecordsContinue(t *testing.T) {
 	b := stringRecords(nil, recSST, make([]byte, 8), strs, nil)
 	var segs [][]byte
 	records(b, 0, func(r record) bool {
-		if len(r.body) > maxRecord {
+		if len(r.body) > excel.XlsMaxRecord {
 			t.Errorf("record of %d bytes", len(r.body))
 		}
 		if len(segs) == 0 {
@@ -252,5 +254,31 @@ func TestStringRecordsContinue(t *testing.T) {
 		if got := s.str(); got != want {
 			t.Errorf("string of %d chars read back as %d", len(want), len(got))
 		}
+	}
+}
+
+// TestFormulaTooLong checks that a token stream whose text would run far
+// past Excel's formula length is rejected quickly: 16,000 tAttrSpace
+// tokens of 255 spaces joined by + used to build megabytes of text, copied
+// at every operator, for seconds per formula.
+func TestFormulaTooLong(t *testing.T) {
+	rgce := []byte{ptgInt, 1, 0}
+	for len(rgce) < 65000 {
+		rgce = append(rgce, ptgAttr, attrSpace, 0, 255, ptgInt, 1, 0, ptgAdd)
+	}
+	start := time.Now()
+	if _, err := testParser().decodeFormula(rgce, nil, 0, 0, false); !errors.Is(err, errFormulaTooLong) {
+		t.Errorf("err = %v, want %v", err, errFormulaTooLong)
+	}
+	if d := time.Since(start); d > time.Second {
+		t.Errorf("took %v", d)
+	}
+	// A long formula within the limit still decodes.
+	rgce = []byte{ptgInt, 1, 0}
+	for range 1000 {
+		rgce = append(rgce, ptgAttr, attrSpace, 0, 1, ptgInt, 1, 0, ptgAdd)
+	}
+	if f, err := testParser().decodeFormula(rgce, nil, 0, 0, false); err != nil || len(f) != 1+1000*3 { // " 1+" each
+		t.Errorf("len %d, err %v", len(f), err)
 	}
 }

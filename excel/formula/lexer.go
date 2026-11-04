@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"officelite/excel"
 )
 
 // tokKind classifies a lexer token.
@@ -257,9 +259,6 @@ func scanNumber(s string) int {
 	return i
 }
 
-// maxLexCol is Excel's last column (XFD): longer letter runs are names.
-const maxLexCol = 16384
-
 // matchCol returns the length of a column part ($ and up to XFD) at the
 // start of s, or 0.
 func matchCol(s string) int {
@@ -269,29 +268,32 @@ func matchCol(s string) int {
 	}
 	j := i
 	col := 0
-	for j < len(s) && j-i < 3 && (s[j] >= 'A' && s[j] <= 'Z' || s[j] >= 'a' && s[j] <= 'z') {
+	for j < len(s) && j-i < excel.ExcelMaxColLetters && (s[j] >= 'A' && s[j] <= 'Z' || s[j] >= 'a' && s[j] <= 'z') {
 		col = col*26 + int(s[j]&^0x20-'A') + 1
 		j++
 	}
-	if j == i || col > maxLexCol {
+	if j == i || col > excel.ExcelMaxCols {
 		return 0 // not a column: none, or past XFD (xml1, yes1 are names)
 	}
 	return j
 }
 
 // matchRow returns the length of a row part ($ and digits not starting with
-// 0) at the start of s, or 0.
+// 0, at most Excel's last row) at the start of s, or 0.
 func matchRow(s string) int {
 	i := 0
 	if i < len(s) && s[i] == '$' {
 		i++
 	}
-	j := i
+	j, row := i, 0
 	for j < len(s) && s[j] >= '0' && s[j] <= '9' {
+		if row <= excel.ExcelMaxRows {
+			row = row*10 + int(s[j]-'0')
+		}
 		j++
 	}
-	if j == i || s[i] == '0' {
-		return 0
+	if j == i || s[i] == '0' || row > excel.ExcelMaxRows {
+		return 0 // not a row: none, or past 1048576 (A1048577 is a name)
 	}
 	return j
 }

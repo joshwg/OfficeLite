@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode"
 
+	"officelite/excel"
 	"officelite/excel/calc"
 	"officelite/excel/formula"
 	"officelite/excel/model"
@@ -215,7 +216,7 @@ func (b *Book) textToColsPlan(sheet int, src model.Range, row, col int, spec Tex
 			if f == ColSkip {
 				continue
 			}
-			if dc < model.MaxCols {
+			if dc < excel.MaxCols {
 				rr := row + r - src.R1
 				out[[2]int{rr, dc}] = b.textToColsCell(sh.Get(rr, dc).Style, field, f)
 			}

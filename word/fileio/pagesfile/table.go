@@ -4,11 +4,9 @@ import (
 	"fmt"
 
 	"officelite/common/iwork"
+	"officelite/word"
 	"officelite/word/model"
 )
-
-// maxTableRows bounds the rows of a table brought into a document.
-const maxTableRows = 5000
 
 // table converts a Numbers-style table to a Word table: cell text with
 // the cells' text styles, fills, merged cells and column widths.
@@ -33,9 +31,9 @@ func (r *reader) table(t *iwork.Table) *model.Table {
 		}
 	}
 	rows := t.Rows
-	if rows > maxTableRows {
-		rows = maxTableRows
-		r.out.Warnings = append(r.out.Warnings, fmt.Sprintf("Table %q: only its first %d rows were imported", t.Name, maxTableRows))
+	if rows > word.PagesMaxTableRows {
+		rows = word.PagesMaxTableRows
+		r.out.Warnings = append(r.out.Warnings, fmt.Sprintf("Table %q: only its first %d rows were imported", t.Name, word.PagesMaxTableRows))
 	}
 	for row := range rows {
 		tr := &model.TableRow{Header: row < t.HeaderRows}

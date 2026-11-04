@@ -4,6 +4,8 @@ import (
 	"encoding/binary"
 	"fmt"
 
+	"officelite/common/textenc"
+	"officelite/word"
 	"officelite/word/model"
 )
 
@@ -65,7 +67,7 @@ func (r *reader) readShapes() {
 			if main {
 				for _, rec := range records(rest[1 : 1+n]) {
 					if rec.typ == 0xF002 {
-						r.collectShapes(rec.data)
+						r.collectShapes(rec.data, 0)
 					}
 				}
 			}
@@ -100,12 +102,15 @@ func (r *reader) readShapes() {
 	}
 }
 
-// collectShapes finds the shape containers in a drawing container.
-func (r *reader) collectShapes(b []byte) {
+// collectShapes finds the shape containers in a drawing container, depth
+// groups down.
+func (r *reader) collectShapes(b []byte, depth int) {
 	for _, rec := range records(b) {
 		switch rec.typ {
 		case 0xF003: // group
-			r.collectShapes(rec.data)
+			if depth < word.DocMaxShapeDepth {
+				r.collectShapes(rec.data, depth+1)
+			}
 		case 0xF004: // shape
 			sh := &shape{props: map[uint16]uint32{}, cplx: map[uint16][]byte{}}
 			var spid uint32
@@ -292,7 +297,7 @@ func (r *reader) floating(fspa []byte, blips []*model.Picture) *model.Floating {
 	}
 	f.Inset = [4]float64{emu(0x0081, 7.2), emu(0x0082, 3.6), emu(0x0083, 7.2), emu(0x0084, 3.6)}
 	if name, ok := sh.cplx[0x0380]; ok {
-		f.Name = utf16z(name)
+		f.Name = textenc.UTF16Z(name) // surrogate pairs (emoji) decoded
 	}
 	if st, ok := r.txbx[spid]; ok {
 		f.Blocks = r.blocks(st[0], st[1], false)
@@ -310,19 +315,6 @@ func artColor(v uint32) string {
 		return "000000"
 	}
 	return fmt.Sprintf("%02X%02X%02X", v&0xFF, v>>8&0xFF, v>>16&0xFF)
-}
-
-// utf16z decodes a zero-terminated UTF-16LE string.
-func utf16z(b []byte) string {
-	var u []rune
-	for i := 0; i+1 < len(b); i += 2 {
-		c := u16(b[i:])
-		if c == 0 {
-			break
-		}
-		u = append(u, rune(c))
-	}
-	return string(u)
 }
 
 // floatAt returns the floating object anchored at CP cp, or nil.

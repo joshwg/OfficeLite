@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"officelite/excel/model"
+	"officelite/excel"
 )
 
 // Reference resolves reference text the way INDIRECT does: an A1 (a1
@@ -31,7 +31,7 @@ func (e *Env) Reference(text string, a1 bool) Value {
 		}
 	}
 	r, ok := v.(Ref)
-	if !ok || r.R1 < 0 || r.C1 < 0 || r.R2 >= model.MaxRows || r.C2 >= model.MaxCols {
+	if !ok || r.R1 < 0 || r.C1 < 0 || r.R2 >= excel.MaxRows || r.C2 >= excel.MaxCols {
 		return ErrRef
 	}
 	return r
@@ -87,9 +87,9 @@ func (e *Env) r1c1(s string) (Ref, bool) {
 	r := normRef(Ref{Sheet: sheet, R1: r1, C1: c1, R2: r2, C2: c2})
 	switch kind1 {
 	case 'R':
-		r.C1, r.C2 = 0, model.MaxCols-1
+		r.C1, r.C2 = 0, excel.MaxCols-1
 	case 'C':
-		r.R1, r.R2 = 0, model.MaxRows-1
+		r.R1, r.R2 = 0, excel.MaxRows-1
 	}
 	return r, true
 }

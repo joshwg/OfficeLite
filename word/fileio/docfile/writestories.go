@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"strings"
 
+	"officelite/word"
 	"officelite/word/model"
 )
 
@@ -215,20 +216,20 @@ func sepx(s *model.Section) []byte {
 	if s.HF.TitlePage {
 		g.b(sprmSFTitlePage, 1)
 	}
-	g.w(sprmSXaPage, uint16(clampTw(pg.Width, 144, 31680)))
-	g.w(sprmSYaPage, uint16(clampTw(pg.Height, 144, 31680)))
-	g.w(sprmSDxaLeft, uint16(clampTw(pg.MarginLeft, 0, 31680)))
-	g.w(sprmSDxaRight, uint16(clampTw(pg.MarginRight, 0, 31680)))
-	g.w(sprmSDyaTop, uint16(clampTw(pg.MarginTop, 0, 31680)))
-	g.w(sprmSDyaBottom, uint16(clampTw(pg.MarginBottom, 0, 31680)))
-	g.w(sprmSDyaHdrTop, uint16(clampTw(pg.Header, 0, 31680)))
-	g.w(sprmSDyaHdrBottom, uint16(clampTw(pg.Footer, 0, 31680)))
+	g.w(sprmSXaPage, uint16(clampTw(pg.Width, word.DocMinPageTw, word.DocMaxTw)))
+	g.w(sprmSYaPage, uint16(clampTw(pg.Height, word.DocMinPageTw, word.DocMaxTw)))
+	g.w(sprmSDxaLeft, uint16(clampTw(pg.MarginLeft, 0, word.DocMaxTw)))
+	g.w(sprmSDxaRight, uint16(clampTw(pg.MarginRight, 0, word.DocMaxTw)))
+	g.w(sprmSDyaTop, uint16(clampTw(pg.MarginTop, 0, word.DocMaxTw)))
+	g.w(sprmSDyaBottom, uint16(clampTw(pg.MarginBottom, 0, word.DocMaxTw)))
+	g.w(sprmSDyaHdrTop, uint16(clampTw(pg.Header, 0, word.DocMaxTw)))
+	g.w(sprmSDyaHdrBottom, uint16(clampTw(pg.Footer, 0, word.DocMaxTw)))
 	if pg.Landscape {
 		g.b(sprmSBOrientation, 2)
 	}
 	c := s.Columns
 	if c.Space > 0 && c.N() == 1 {
-		g.w(sprmSDxaColumns, uint16(clampTw(c.Space, 0, 31680)))
+		g.w(sprmSDxaColumns, uint16(clampTw(c.Space, 0, word.DocMaxTw)))
 	}
 	if n := c.N(); n > 1 {
 		g.w(sprmSCcolumns, uint16(n-1))
@@ -236,17 +237,17 @@ func sepx(s *model.Section) []byte {
 		if sp <= 0 {
 			sp = 36
 		}
-		g.w(sprmSDxaColumns, uint16(clampTw(sp, 0, 31680)))
+		g.w(sprmSDxaColumns, uint16(clampTw(sp, 0, word.DocMaxTw)))
 		if len(c.Widths) == n {
 			g.b(sprmSFEvenlySpaced, 0)
 			for i, cw := range c.Widths {
 				g.op(sprmSDxaColWidth)
 				g = append(g, byte(i))
-				g = binary.LittleEndian.AppendUint16(g, uint16(clampTw(cw, 0, 31680)))
+				g = binary.LittleEndian.AppendUint16(g, uint16(clampTw(cw, 0, word.DocMaxTw)))
 				if i < len(c.Spaces) {
 					g.op(sprmSDxaColSpacing)
 					g = append(g, byte(i))
-					g = binary.LittleEndian.AppendUint16(g, uint16(clampTw(c.Spaces[i], 0, 31680)))
+					g = binary.LittleEndian.AppendUint16(g, uint16(clampTw(c.Spaces[i], 0, word.DocMaxTw)))
 				}
 			}
 		}

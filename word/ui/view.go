@@ -21,6 +21,7 @@ import (
 
 	"officelite/common/colors"
 	"officelite/common/gui"
+	"officelite/word"
 	wl "officelite/word/layout"
 	"officelite/word/model"
 )
@@ -31,8 +32,6 @@ var (
 	selColor   = colors.RGB(0xDDD3F7)
 	caretColor = colors.RGB(0x000000)
 )
-
-const blinkPeriod = 530 * time.Millisecond
 
 // docView is the page view's state; its address is the input tag.
 type docView struct {
@@ -152,8 +151,8 @@ func (d *window) drawCaret(gtx layout.Context, px int) {
 		return
 	}
 	since := time.Since(v.blinkStart)
-	phase := since / blinkPeriod
-	gtx.Execute(op.InvalidateCmd{At: v.blinkStart.Add((phase + 1) * blinkPeriod)})
+	phase := since / word.UIBlinkInterval
+	gtx.Execute(op.InvalidateCmd{At: v.blinkStart.Add((phase + 1) * word.UIBlinkInterval)})
 	if phase%2 == 1 {
 		return
 	}
@@ -210,8 +209,8 @@ func (d *window) docPointer(gtx layout.Context) {
 		ev, ok := gtx.Event(pointer.Filter{
 			Target:  v,
 			Kinds:   pointer.Press | pointer.Drag | pointer.Release | pointer.Cancel | pointer.Scroll | pointer.Move | pointer.Enter | pointer.Leave,
-			ScrollX: pointer.ScrollRange{Min: -1 << 20, Max: 1 << 20},
-			ScrollY: pointer.ScrollRange{Min: -1 << 20, Max: 1 << 20},
+			ScrollX: pointer.ScrollRange{Min: -word.UIMaxScroll, Max: word.UIMaxScroll},
+			ScrollY: pointer.ScrollRange{Min: -word.UIMaxScroll, Max: word.UIMaxScroll},
 		})
 		if !ok {
 			break
@@ -233,7 +232,7 @@ func (d *window) docPointer(gtx layout.Context) {
 			}
 			gtx.Execute(key.FocusCmd{Tag: v})
 			now := time.Now()
-			if now.Sub(v.lastClick) < 500*time.Millisecond && e.Position.Sub(v.lastPos).X*e.Position.Sub(v.lastPos).X+e.Position.Sub(v.lastPos).Y*e.Position.Sub(v.lastPos).Y < 25 {
+			if now.Sub(v.lastClick) < word.UIDoubleClickTime && e.Position.Sub(v.lastPos).X*e.Position.Sub(v.lastPos).X+e.Position.Sub(v.lastPos).Y*e.Position.Sub(v.lastPos).Y < 25 {
 				v.clicks = v.clicks%3 + 1
 			} else {
 				v.clicks = 1

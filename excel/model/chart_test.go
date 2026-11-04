@@ -6,6 +6,8 @@ package model
 import (
 	"image/color"
 	"testing"
+
+	"officelite/excel"
 )
 
 // TestParseRefList checks parsing of qualified, quoted, union, external
@@ -21,7 +23,7 @@ func TestParseRefList(t *testing.T) {
 		{"(Data!$A$1,Data!$A$3:$A$4)", []SheetRange{{"Data", Range{}}, {"Data", Range{R1: 2, R2: 3}}}},
 		{"[0]Data!$C$5", []SheetRange{{"Data", Range{R1: 4, C1: 2, R2: 4, C2: 2}}}},
 		{"B3:B1", []SheetRange{{"Home", Range{R1: 0, C1: 1, R2: 2, C2: 1}}}}, // unqualified: home
-		{"Data!$C:$C", []SheetRange{{"Data", Range{C1: 2, R2: MaxRows - 1, C2: 2}}}},
+		{"Data!$C:$C", []SheetRange{{"Data", Range{C1: 2, R2: excel.MaxRows - 1, C2: 2}}}},
 	} {
 		got, ok := ParseRefList(c.in, "Home")
 		if !ok || len(got) != len(c.want) {

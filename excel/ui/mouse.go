@@ -18,6 +18,7 @@ import (
 
 	"officelite/common/colors"
 	"officelite/common/gui"
+	"officelite/excel"
 	"officelite/excel/edit"
 	"officelite/excel/formula"
 	"officelite/excel/model"
@@ -40,7 +41,7 @@ type moveDrag struct {
 // coordinates: the outline's rectangle and its thickness each side.
 func (a *App) borderBand(gtx layout.Context, v *render.View) (box image.Rectangle, band int, ok bool) {
 	r := v.Sel.Range
-	if a.ed.active || v.Sel.Multiple() || r == (model.Range{R2: model.MaxRows - 1, C2: model.MaxCols - 1}) || gtx.Ops == nil {
+	if a.ed.active || v.Sel.Multiple() || r == (model.Range{R2: excel.MaxRows - 1, C2: excel.MaxCols - 1}) || gtx.Ops == nil {
 		return box, 0, false
 	}
 	box, ok = v.RangeRect(r)
@@ -106,9 +107,9 @@ func (a *App) moveTo(v *render.View, pos f32.Point) {
 	if wholeRows(m.src) {
 		m.dCol = 0
 	}
-	m.dRow = min(max(m.dRow, -m.src.R1), model.MaxRows-1-m.src.R2)
-	m.dCol = min(max(m.dCol, -m.src.C1), model.MaxCols-1-m.src.C2)
-	v.EnsureVisible(min(max(hit.Row, 0), model.MaxRows-1), min(max(hit.Col, 0), model.MaxCols-1))
+	m.dRow = min(max(m.dRow, -m.src.R1), excel.MaxRows-1-m.src.R2)
+	m.dCol = min(max(m.dCol, -m.src.C1), excel.MaxCols-1-m.src.C2)
+	v.EnsureVisible(min(max(hit.Row, 0), excel.MaxRows-1), min(max(hit.Col, 0), excel.MaxCols-1))
 	if dest, ok := edit.MoveTarget(m.src, m.dRow, m.dCol); ok && (m.dRow != 0 || m.dCol != 0) {
 		a.notice = "Drag to " + rangeName(dest) + "; hold Ctrl to copy"
 	} else {
@@ -258,7 +259,7 @@ func (a *App) pointDrag(st *sheetState, pos f32.Point) {
 	pos.X, pos.Y = max(pos.X, float32(v.HdrW())), max(pos.Y, float32(v.HdrH()))
 	hit := v.HitTest(pos.X, pos.Y)
 	a.putRef(a.caretEditor(), p.start, p.end, hit)
-	v.EnsureVisible(min(max(hit.Row, 0), model.MaxRows-1), min(max(hit.Col, 0), model.MaxCols-1))
+	v.EnsureVisible(min(max(hit.Row, 0), excel.MaxRows-1), min(max(hit.Col, 0), excel.MaxCols-1))
 }
 
 // putRef replaces runes s..t of e with the reference from the pointing

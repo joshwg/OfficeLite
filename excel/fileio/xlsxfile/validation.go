@@ -6,6 +6,7 @@ import (
 
 	"github.com/xuri/excelize/v2"
 
+	"officelite/excel"
 	"officelite/excel/formula"
 	"officelite/excel/model"
 )
@@ -127,7 +128,7 @@ func parseSqref(s string) []model.Range {
 			}
 			r = model.Range{R1: row, C1: col, R2: row, C2: col}
 		}
-		r.R2, r.C2 = min(r.R2, model.MaxRows-1), min(r.C2, model.MaxCols-1)
+		r.R2, r.C2 = min(r.R2, excel.MaxRows-1), min(r.C2, excel.MaxCols-1)
 		if r.R1 <= r.R2 && r.C1 <= r.C2 {
 			out = append(out, r)
 		}

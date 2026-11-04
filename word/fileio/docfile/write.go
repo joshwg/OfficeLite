@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf16"
 
 	"officelite/common/ole"
+	"officelite/word"
 	"officelite/word/model"
 )
 
@@ -45,8 +47,10 @@ type writer struct {
 	flds    []wfld
 	data    []byte // Data stream
 	hasPic  bool
-	warns   []string
-	warned  map[string]bool
+	// template marks the file as a template (.dot) in the FIB.
+	template bool
+	warns    []string
+	warned   map[string]bool
 
 	// sections and subdocuments (writestories.go)
 	secs     []*model.Section
@@ -61,17 +65,24 @@ const textStart = 0x400
 // Write encodes doc as a Word 97-2003 .doc. Content the format can't
 // carry is dropped or simplified; Warnings lists what.
 func Write(doc *model.Document, w io.Writer) error {
-	wr, err := encode(doc)
+	return write(doc, w, false)
+}
+
+// WriteTemplate encodes doc as a Word 97-2003 template (.dot): a .doc
+// whose FIB marks it as a template (fDot).
+func WriteTemplate(doc *model.Document, w io.Writer) error {
+	return write(doc, w, true)
+}
+
+// write encodes doc as .doc, or as .dot when template is set.
+func write(doc *model.Document, w io.Writer, template bool) error {
+	wr, err := encode(doc, template)
 	if err != nil {
 		return err
 	}
 	_, err = w.Write(wr)
 	return err
 }
-
-// WarnHeadersLost is the warning for headers and footers, which the .doc
-// writer doesn't save.
-const WarnHeadersLost = "Headers and footers can't be saved in a .doc file by WordLite and are left out."
 
 // Warnings returns what saving doc as .doc loses (empty when nothing is).
 func Warnings(doc *model.Document) []string {
@@ -106,8 +117,9 @@ func (w *writer) font(name string) uint16 {
 	return uint16(len(w.fonts) - 1)
 }
 
-func encode(doc *model.Document) ([]byte, error) {
+func encode(doc *model.Document, template bool) ([]byte, error) {
 	w := newWriter(doc)
+	w.template = template
 	w.body()
 	stsh := w.stsh() // may add fonts
 	lst, lfo := w.listTables()
@@ -216,6 +228,9 @@ func writeFib(wd []byte, w *writer, fcl [][2]uint32, ccp, textEnd int) {
 	le.PutUint16(wd[2:], nFib97)
 	le.PutUint16(wd[6:], 0x0409)
 	flags := uint16(0x1000 | 0x0200) // fExtChar, fWhichTblStm (1Table)
+	if w.template {
+		flags |= 0x0001 // fDot
+	}
 	if w.hasPic {
 		flags |= 0x0008
 	}
@@ -276,7 +291,7 @@ func (w *writer) chpxFkps(textEnd int) ([][]byte, []uint32) {
 			end = w.runs[i+1].cp
 		}
 		g := r.grpprl
-		if len(g) > 255 { // a CHPX's length is one byte
+		if len(g) > word.DocMaxChpxGrpprl { // a CHPX's length is one byte
 			w.warn("Some character formatting is too complex for a .doc file and is left out.")
 			g = nil
 		}
@@ -347,7 +362,7 @@ func (w *writer) papxFkps() ([][]byte, []uint32) {
 	prev := 0
 	for _, p := range w.paras {
 		g := p.grpprl
-		if 2+len(g) > 400 {
+		if 2+len(g) > word.DocMaxFkpPapx {
 			// Too big for an FKP: store it in the Data stream.
 			fc := len(w.data)
 			w.data = binary.LittleEndian.AppendUint16(w.data, uint16(len(g)))
@@ -747,9 +762,9 @@ func (w *writer) table(t *model.Table, depth int) {
 	}
 	for _, row := range t.Rows {
 		cells := row.Cells
-		if len(cells) > 63 {
-			w.warn("Table rows with more than 63 cells are cut to 63 cells.")
-			cells = cells[:63]
+		if len(cells) > word.DocMaxRowCells {
+			w.warn("Table rows with more than " + strconv.Itoa(word.DocMaxRowCells) + " cells are cut to " + strconv.Itoa(word.DocMaxRowCells) + " cells.")
+			cells = cells[:word.DocMaxRowCells]
 		}
 		if len(cells) == 0 {
 			continue
@@ -927,11 +942,11 @@ func (w *writer) encRun(g *grpprl, p model.RunProps) {
 	}
 	if p.Size > 0 {
 		hps := int(p.Size*2 + 0.5)
-		if hps < 2 {
-			hps = 2
+		if hps < word.DocMinHps {
+			hps = word.DocMinHps
 		}
-		if hps > 3276 {
-			hps = 3276
+		if hps > word.DocMaxHps {
+			hps = word.DocMaxHps
 		}
 		g.w(sprmCHps, uint16(hps))
 	}
@@ -983,10 +998,10 @@ func (w *writer) encPap(p model.ParaProps) []byte {
 		g.b(sprmPJc, jc)
 	}
 	if p.SpaceBefore != nil {
-		g.w(sprmPDyaBefore, uint16(clampTw(*p.SpaceBefore, 0, 31680)))
+		g.w(sprmPDyaBefore, uint16(clampTw(*p.SpaceBefore, 0, word.DocMaxTw)))
 	}
 	if p.SpaceAfter != nil {
-		g.w(sprmPDyaAfter, uint16(clampTw(*p.SpaceAfter, 0, 31680)))
+		g.w(sprmPDyaAfter, uint16(clampTw(*p.SpaceAfter, 0, word.DocMaxTw)))
 	}
 	if p.LineRule != model.LineUnset {
 		var dya, mult int
@@ -997,15 +1012,15 @@ func (w *writer) encPap(p model.ParaProps) []byte {
 				dya = 240
 			}
 		case model.LineExact:
-			dya = -clampTw(p.Line, 1, 31680)
+			dya = -clampTw(p.Line, 1, word.DocMaxTw)
 		case model.LineAtLeast:
-			dya = clampTw(p.Line, 0, 31680)
+			dya = clampTw(p.Line, 0, word.DocMaxTw)
 		}
 		g.l(sprmPDyaLine, uint32(uint16(int16(dya)))|uint32(mult)<<16)
 	}
 	ind := func(v *float64, op80, op uint16) {
 		if v != nil {
-			x := uint16(int16(clampTw(*v, -31680, 31680)))
+			x := uint16(int16(clampTw(*v, -word.DocMaxTw, word.DocMaxTw)))
 			g.w(op80, x)
 			g.w(op, x)
 		}
@@ -1074,19 +1089,19 @@ func encTabs(tabs []model.TabStop) []byte {
 	}
 	sort.SliceStable(del, func(i, j int) bool { return del[i].Pos < del[j].Pos })
 	sort.SliceStable(add, func(i, j int) bool { return add[i].Pos < add[j].Pos })
-	if len(del) > 50 {
-		del = del[:50]
+	if len(del) > word.DocMaxTabChanges {
+		del = del[:word.DocMaxTabChanges]
 	}
-	if len(add) > 50 {
-		add = add[:50]
+	if len(add) > word.DocMaxTabChanges {
+		add = add[:word.DocMaxTabChanges]
 	}
 	b := []byte{byte(len(del))}
 	for _, t := range del {
-		b = binary.LittleEndian.AppendUint16(b, uint16(int16(clampTw(t.Pos, -31680, 31680))))
+		b = binary.LittleEndian.AppendUint16(b, uint16(int16(clampTw(t.Pos, -word.DocMaxTw, word.DocMaxTw))))
 	}
 	b = append(b, byte(len(add)))
 	for _, t := range add {
-		b = binary.LittleEndian.AppendUint16(b, uint16(int16(clampTw(t.Pos, -31680, 31680))))
+		b = binary.LittleEndian.AppendUint16(b, uint16(int16(clampTw(t.Pos, -word.DocMaxTw, word.DocMaxTw))))
 	}
 	for _, t := range add {
 		var jc, tlc byte
@@ -1117,8 +1132,8 @@ func (w *writer) sttbfFfn() []byte {
 	b = binary.LittleEndian.AppendUint16(b, 0)
 	for _, name := range w.fonts {
 		u := utf16.Encode([]rune(name))
-		if len(u) > 31 {
-			u = u[:31]
+		if len(u) > word.DocMaxFontName {
+			u = u[:word.DocMaxFontName]
 		}
 		ffn := make([]byte, 39)
 		ffid := byte(0x02 | 0x04) // variable pitch, TrueType
@@ -1162,7 +1177,7 @@ func dop(doc *model.Document) []byte {
 	le := binary.LittleEndian
 	tab := 720
 	if doc.DefaultTabStop > 0 {
-		tab = clampTw(doc.DefaultTabStop, 1, 31680)
+		tab = clampTw(doc.DefaultTabStop, 1, word.DocMaxTw)
 	}
 	le.PutUint16(d[0:], 0x0002) // fWidowControl
 	if doc.HF.EvenOdd {

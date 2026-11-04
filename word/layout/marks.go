@@ -67,6 +67,19 @@ func (e *Engine) SetShowHidden(on bool) {
 // ShowHidden reports whether hidden text is laid out.
 func (e *Engine) ShowHidden() bool { return e.showHidden }
 
+// SetShowFieldCodes shows each field's code ("{ PAGE \* roman }") in
+// place of its result (on, Word's Alt+F9) or its result (off, the default
+// and what PDF export uses).
+func (e *Engine) SetShowFieldCodes(on bool) {
+	if e.showCodes != on {
+		e.showCodes = on
+		e.all = true
+	}
+}
+
+// ShowFieldCodes reports whether fields show their codes.
+func (e *Engine) ShowFieldCodes() bool { return e.showCodes }
+
 // Marks lists the formatting marks of placed lines and of the table rows
 // among them (in page coordinates).
 func (e *Engine) Marks(lines []Placed, rows []TableRowBox) []Mark {

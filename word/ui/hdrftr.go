@@ -3,6 +3,7 @@ package ui
 import (
 	"image"
 	"math"
+	"strconv"
 
 	"gioui.org/f32"
 	"gioui.org/font"
@@ -35,7 +36,8 @@ type hfEdit struct {
 	synced int           // header editor version synced into the document
 	eds    map[*model.HeaderFooter]*model.Editor
 
-	pageNum, numPages, firstPg, oddEven, gotoOther, closeBtn widget.Clickable
+	pageNum, numPages, pageOf, fmtNums, firstPg, oddEven, linkPrev, gotoOther, closeBtn widget.Clickable
+	nums                                                                                pageNumDialog // Format Page Numbers (pagenum.go)
 }
 
 // bodyEd is the body's editor (d.ed unless a header is being edited).
@@ -172,7 +174,23 @@ func (d *window) hfPress(p f32.Point, clicks int) bool {
 	return false
 }
 
-// hfCommand runs a Header & Footer command.
+// hfInsertPageXofY inserts "Page X of Y" (PAGE and NUMPAGES fields) at
+// the caret in the header or footer being edited, entering the footer of
+// the caret's page when none is.
+func (d *window) hfInsertPageXofY() {
+	if !d.hf.on {
+		d.enterHF(d.eng.PageOfPos(d.ed.Sel.Caret), true)
+	}
+	defer d.ed.Op("Page X of Y")()
+	d.ed.InsertText("Page ")
+	d.hfInsertField(model.FieldPage)
+	d.ed.InsertText(" of ")
+	d.hfInsertField(model.FieldNumPages)
+}
+
+// hfInsertField inserts a field (PAGE, NUMPAGES) at the caret in the
+// header or footer being edited, entering the footer of the caret's page
+// when none is.
 func (d *window) hfInsertField(instr string) {
 	if !d.hf.on {
 		d.enterHF(d.eng.PageOfPos(d.ed.Sel.Caret), true)
@@ -182,45 +200,91 @@ func (d *window) hfInsertField(instr string) {
 	d.edited()
 }
 
-// setHFSwitch turns Different First Page or Different Odd & Even Pages
-// on or off (one change to the document; not on the undo stack).
-func (d *window) setHFSwitch(first bool, on bool) {
-	if first {
-		page := d.eng.PageOfPos(d.bodyEd().Sel.Caret)
-		if d.hf.on {
-			page = d.hf.page
-		}
-		hfs, _ := d.eng.PageHF(page) // per section
-		hfs.TitlePage = on
-	} else {
-		d.doc.HF.EvenOdd = on
-	}
-	d.bodyEd().Version++
+// hfStructure runs f, a change to the sections' headers and footers, as
+// one undoable step of the body named label, then lays the pages out
+// again; while a header is edited it is left first, and the header the
+// same page then shows is edited again.
+func (d *window) hfStructure(label string, f func()) {
+	editing, page, footer := d.hf.on, d.hf.page, d.hf.footer
+	d.exitHF()
+	d.ed.ChangeSections(label, f)
 	d.eng.InvalidateHF()
 	d.laidOut = -1
-	if d.hf.on {
-		// Edit the header that page now shows.
-		page, footer := d.hf.page, d.hf.footer
-		d.exitHF()
-		d.relayout()
+	d.relayout()
+	if editing {
 		d.enterHF(page, footer)
 	}
 	d.edited()
 }
 
-// removeHF deletes the header (or footer) of the kind the caret's page
-// shows.
-func (d *window) removeHF(footer bool) {
-	page := d.eng.PageOfPos(d.bodyEd().Sel.Caret)
+// hfPage is the page whose headers the Header & Footer commands work on:
+// the one being edited, else the caret's.
+func (d *window) hfPage() int {
 	if d.hf.on {
-		page = d.hf.page
-		d.exitHF()
+		return d.hf.page
 	}
+	return d.eng.PageOfPos(d.bodyEd().Sel.Caret)
+}
+
+// setHFSwitch turns Different First Page (for the page's section) or
+// Different Odd & Even Pages (for the document) on or off, undoably.
+func (d *window) setHFSwitch(first bool, on bool) {
+	if first {
+		hfs, _ := d.eng.PageHF(d.hfPage()) // per section
+		d.hfStructure("Different First Page", func() { hfs.TitlePage = on })
+	} else {
+		d.hfStructure("Different Odd & Even Pages", func() { d.doc.HF.EvenOdd = on })
+	}
+}
+
+// pageSection is the index of page i's section (model.Document.Sections).
+func (d *window) pageSection(i int) int {
+	if i < 0 || i >= len(d.eng.Pages) {
+		return 0
+	}
+	return d.eng.Pages[i].Section
+}
+
+// setLinkToPrevious links the header (or footer) being edited to the
+// previous section's, dropping the section's own, or unlinks it, giving
+// the section a copy of its own to change (Word's Link to Previous).
+func (d *window) setLinkToPrevious(link bool) {
+	if !d.hf.on {
+		return
+	}
+	sec, footer := d.pageSection(d.hf.page), d.hf.footer
+	_, kind := d.eng.PageHF(d.hf.page)
+	if sec == 0 || d.doc.HeaderLinked(sec, kind, footer) == link {
+		return
+	}
+	d.hfStructure("Link to Previous", func() {
+		if link {
+			d.doc.LinkHeader(sec, kind, footer)
+		} else {
+			d.doc.UnlinkHeader(sec, kind, footer)
+		}
+	})
+}
+
+// removeHF deletes the header (or footer) of the kind the caret's page
+// shows, undoably.
+func (d *window) removeHF(footer bool) {
+	page := d.hfPage()
 	hfs, kind := d.eng.PageHF(page)
-	slot := hfs.Slot(kind, footer)
-	if *slot != nil {
-		*slot = nil
-	} else if shown := d.eng.PageHeader(page, footer); shown != nil {
+	shown := d.eng.PageHeader(page, footer)
+	if shown == nil {
+		return
+	}
+	label := "Remove Header"
+	if footer {
+		label = "Remove Footer"
+	}
+	d.exitHF() // the header being edited goes
+	d.hfStructure(label, func() {
+		if slot := hfs.Slot(kind, footer); *slot != nil {
+			*slot = nil
+			return
+		}
 		// The page's section links to an earlier one's: remove it where it
 		// is defined, as Word does for linked sections.
 		for _, sec := range d.doc.Sections() {
@@ -230,13 +294,7 @@ func (d *window) removeHF(footer bool) {
 				}
 			}
 		}
-	} else {
-		return
-	}
-	d.ed.Version++
-	d.eng.InvalidateHF()
-	d.laidOut = -1
-	d.edited()
+	})
 }
 
 // hfBar is the Header & Footer bar shown while a header or footer is
@@ -252,6 +310,18 @@ func (d *window) hfBar(gtx layout.Context) layout.Dimensions {
 	}
 	for h.numPages.Clicked(gtx) {
 		d.hfInsertField(model.FieldNumPages)
+	}
+	for h.pageOf.Clicked(gtx) {
+		d.hfInsertPageXofY()
+	}
+	for h.fmtNums.Clicked(gtx) {
+		d.openPageNumbers() // pagenum.go
+	}
+	sec := d.pageSection(h.page)
+	_, kind := d.eng.PageHF(h.page)
+	linked := d.doc.HeaderLinked(sec, kind, h.footer)
+	for h.linkPrev.Clicked(gtx) {
+		d.setLinkToPrevious(!linked)
 	}
 	secHF, _ := d.eng.PageHF(h.page)
 	for h.firstPg.Clicked(gtx) {
@@ -289,6 +359,9 @@ func (d *window) hfBar(gtx layout.Context) layout.Dimensions {
 			what = "Odd Page " + what
 		}
 	}
+	if sec > 0 {
+		what += " - Section " + strconv.Itoa(sec+1)
+	}
 	k := &gui.RibbonKit{Th: th}
 	text := func(b *widget.Clickable, label string, checked bool) layout.FlexChild {
 		return layout.Rigid(k.Text(b, label, checked))
@@ -300,6 +373,10 @@ func (d *window) hfBar(gtx layout.Context) layout.Dimensions {
 		}
 		return text(b, mark+label, false)
 	}
+	linkCheck := layout.Rigid(layout.Spacer{}.Layout) // the first section has nothing to link to
+	if sec > 0 {
+		linkCheck = check(&h.linkPrev, "Link to Previous", linked)
+	}
 	return layout.Inset{Left: 10, Right: 10, Top: 3}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 			layout.Rigid(th.Label(13, "Header & Footer", th.AccentDark, font.SemiBold).Layout),
@@ -309,9 +386,12 @@ func (d *window) hfBar(gtx layout.Context) layout.Dimensions {
 			layout.Rigid(gui.ToolSeparator),
 			text(&h.pageNum, "# Page Number", false),
 			text(&h.numPages, "Number of Pages", false),
+			text(&h.pageOf, "Page X of Y", false),
+			text(&h.fmtNums, "Format Page Numbers…", false),
 			layout.Rigid(gui.ToolSeparator),
 			check(&h.firstPg, "Different First Page", secHF.TitlePage),
 			check(&h.oddEven, "Different Odd & Even Pages", d.doc.HF.EvenOdd),
+			linkCheck,
 			layout.Rigid(gui.ToolSeparator),
 			text(&h.gotoOther, other, false),
 			layout.Flexed(1, layout.Spacer{}.Layout),

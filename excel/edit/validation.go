@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"officelite/excel"
 	"officelite/excel/calc"
 	"officelite/excel/formula"
 	"officelite/excel/formula/functions"
@@ -18,10 +19,6 @@ import (
 // DefaultValidationError is Excel's error alert for a rule without a
 // message of its own.
 const DefaultValidationError = "This value doesn't match the data validation restrictions defined for this cell."
-
-// maxCircles is how many invalid cells Circle Invalid Data marks, as in
-// Excel.
-const maxCircles = 255
 
 // SetValidation applies rule v to the ranges rs of sheet, replacing the
 // rules their cells had; nil v removes validation from them (Clear All).
@@ -107,7 +104,7 @@ func (b *Book) InvalidCells(sheet int) [][2]int {
 					}
 					if !b.valid(sheet, row, col, v, calc.CellValue(c), c.Text) {
 						out = append(out, k)
-						if len(out) == maxCircles {
+						if len(out) == excel.MaxInvalidCircles {
 							return out
 						}
 					}

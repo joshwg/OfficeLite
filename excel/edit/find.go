@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"officelite/excel"
 	"officelite/excel/calc"
 	"officelite/excel/model"
 )
@@ -104,7 +105,7 @@ func (b *Book) FindAll(sheet int, o FindOptions) ([]Found, error) {
 			continue
 		}
 		child := spillChildren(sh)
-		r1, c1, r2, c2 := 0, 0, sh.UsedRows()-1, model.MaxCols-1
+		r1, c1, r2, c2 := 0, 0, sh.UsedRows()-1, excel.MaxCols-1
 		if o.Within != nil && !o.Workbook {
 			r1, c1, r2, c2 = o.Within.R1, o.Within.C1, min(o.Within.R2, r2), o.Within.C2
 		}
@@ -213,7 +214,7 @@ func (b *Book) ReplaceAll(sheet int, o FindOptions) (int, calc.Result, error) {
 		return 0, calc.Result{}, err
 	}
 	var cells []cellChange
-	bounds := model.Range{R1: model.MaxRows, C1: model.MaxCols, R2: -1, C2: -1}
+	bounds := model.Range{R1: excel.MaxRows, C1: excel.MaxCols, R2: -1, C2: -1}
 	for _, f := range all {
 		before, after, ok := b.replaced(f, re, o)
 		if !ok {
@@ -242,7 +243,7 @@ func (b *Book) ResolveRef(text string, sheet int) (int, model.Range, error) {
 
 func (b *Book) resolveRef(s string, sheet, depth int) (int, model.Range, error) {
 	s = strings.TrimPrefix(s, "=")
-	if s == "" || depth > 4 {
+	if s == "" || depth > excel.MaxNameDepth {
 		return 0, model.Range{}, ErrBadReference
 	}
 	// Sheet prefix.
@@ -289,7 +290,7 @@ func parseArea(s string) (model.Range, bool) {
 		}
 		var p part
 		if i > 0 {
-			if i > 3 {
+			if i > excel.ExcelMaxColLetters {
 				return p, false
 			}
 			p.col, p.hasCol = model.ParseColName(t[:i]), true
@@ -314,14 +315,14 @@ func parseArea(s string) (model.Range, bool) {
 		if !isRange {
 			return model.Range{}, false
 		}
-		r.R1, r.R2 = 0, model.MaxRows-1
+		r.R1, r.R2 = 0, excel.MaxRows-1
 	case !p.hasCol: // 1:3
 		if !isRange {
 			return model.Range{}, false
 		}
-		r.C1, r.C2 = 0, model.MaxCols-1
+		r.C1, r.C2 = 0, excel.MaxCols-1
 	}
-	if r.R2 >= model.MaxRows || r.C2 >= model.MaxCols {
+	if r.R2 >= excel.MaxRows || r.C2 >= excel.MaxCols {
 		return model.Range{}, false
 	}
 	return r, true

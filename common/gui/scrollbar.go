@@ -19,6 +19,7 @@ import (
 	"gioui.org/op/paint"
 
 	"officelite/common/colors"
+	"officelite/common/limits"
 )
 
 var (
@@ -27,12 +28,6 @@ var (
 	scrollHot     = color.NRGBA{R: 0xA8, G: 0xA8, B: 0xA8, A: 0xFF}
 	scrollPressed = color.NRGBA{R: 0x78, G: 0x78, B: 0x78, A: 0xFF}
 	scrollArrow   = color.NRGBA{R: 0x60, G: 0x60, B: 0x60, A: 0xFF}
-)
-
-// Auto-repeat while an arrow or the track is held, as Windows does.
-const (
-	scrollRepeatDelay = 400 * time.Millisecond
-	scrollRepeatEvery = 50 * time.Millisecond
 )
 
 // scrollPart is a part of a scrollbar.
@@ -178,7 +173,7 @@ func (s *Scrollbar) Layout(gtx layout.Context, pos, visible, total float64) floa
 			}
 			s.held, s.heldAt = p, at
 			act(p)
-			s.next = gtx.Now.Add(scrollRepeatDelay)
+			s.next = gtx.Now.Add(limits.ScrollRepeatDelay)
 		case pointer.Drag:
 			switch {
 			case s.dragging && travel > 0:
@@ -208,7 +203,7 @@ func (s *Scrollbar) Layout(gtx layout.Context, pos, visible, total float64) floa
 			if still {
 				act(s.held)
 			}
-			s.next = gtx.Now.Add(scrollRepeatEvery)
+			s.next = gtx.Now.Add(limits.ScrollRepeatEvery)
 		}
 		gtx.Execute(op.InvalidateCmd{At: s.next})
 	}

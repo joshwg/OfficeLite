@@ -3,6 +3,7 @@ package edit
 import (
 	"maps"
 
+	"officelite/excel"
 	"officelite/excel/model"
 )
 
@@ -63,9 +64,9 @@ func (b *Book) changeOutline(sheet int, where model.Range, f func(sh *model.Shee
 // axisWhere is the whole rows (columns) lo..hi.
 func axisWhere(rows bool, lo, hi int) model.Range {
 	if rows {
-		return model.Range{R1: lo, R2: hi, C2: model.MaxCols - 1}
+		return model.Range{R1: lo, R2: hi, C2: excel.MaxCols - 1}
 	}
-	return model.Range{C1: lo, C2: hi, R2: model.MaxRows - 1}
+	return model.Range{C1: lo, C2: hi, R2: excel.MaxRows - 1}
 }
 
 // Group puts rows (columns) lo..hi one outline level deeper (Data >
@@ -76,7 +77,7 @@ func (b *Book) Group(sheet int, rows bool, lo, hi int) bool {
 	return b.changeOutline(sheet, axisWhere(rows, lo, hi), func(sh *model.Sheet) bool {
 		changed := false
 		for i := lo; i <= hi; i++ {
-			if l := sh.Level(rows, i); l < model.MaxOutlineLevel {
+			if l := sh.Level(rows, i); l < excel.MaxOutlineLevel {
 				sh.SetLevel(rows, i, l+1)
 				changed = true
 			}
@@ -110,7 +111,7 @@ func (b *Book) Ungroup(sheet int, rows bool, lo, hi int) bool {
 // hidden.
 func (b *Book) ClearOutline(sheet int) bool {
 	defer b.Op("Clear Outline")()
-	where := model.Range{R2: model.MaxRows - 1, C2: model.MaxCols - 1}
+	where := model.Range{R2: excel.MaxRows - 1, C2: excel.MaxCols - 1}
 	return b.changeOutline(sheet, where, func(sh *model.Sheet) bool {
 		o := &sh.Outline
 		if len(o.RowLevel) == 0 && len(o.ColLevel) == 0 {
@@ -176,10 +177,10 @@ func (b *Book) detail(sheet int, r model.Range, hide bool) bool {
 			if !rows {
 				lo, hi = r.C1, r.C2
 			}
-			if rows && r.R1 == 0 && r.R2 == model.MaxRows-1 && (r.C1 > 0 || r.C2 < model.MaxCols-1) {
+			if rows && r.R1 == 0 && r.R2 == excel.MaxRows-1 && (r.C1 > 0 || r.C2 < excel.MaxCols-1) {
 				continue // whole columns
 			}
-			if !rows && r.C1 == 0 && r.C2 == model.MaxCols-1 && (r.R1 > 0 || r.R2 < model.MaxRows-1) {
+			if !rows && r.C1 == 0 && r.C2 == excel.MaxCols-1 && (r.R1 > 0 || r.R2 < excel.MaxRows-1) {
 				continue // whole rows
 			}
 			for _, g := range detailTargets(sh.Groups(rows), lo, hi, hide) {

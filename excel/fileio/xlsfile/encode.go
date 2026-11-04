@@ -13,16 +13,9 @@ import (
 	"unicode/utf16"
 
 	"officelite/common/textenc"
+	"officelite/excel"
 	"officelite/excel/formula"
 	"officelite/excel/model"
-)
-
-// BIFF8 sheet limits.
-const (
-	xlsMaxRows = 65536
-	xlsMaxCols = 256
-	// maxFormulaBytes is the longest parsed expression Excel accepts.
-	maxFormulaBytes = 1800
 )
 
 // Formula AST used by the encoder. Unlike excel/formula's evaluator AST it
@@ -405,7 +398,7 @@ func parseXRef(s string) (xref, error) {
 		c2, cr2, n2 := parseCol(b)
 		if n1 == len(a) && n2 == len(b) && n1 > 0 { // A:B
 			r.c1, r.c2, r.rel[1], r.rel[3] = c1, c2, cr1, cr2
-			r.r1, r.r2 = 0, xlsMaxRows-1
+			r.r1, r.r2 = 0, excel.XlsMaxRows-1
 			return r, nil
 		}
 		r1, rr1, ok1 := parseRow(a)
@@ -414,7 +407,7 @@ func parseXRef(s string) (xref, error) {
 			return r, fmt.Errorf("bad reference %q", s)
 		}
 		r.r1, r.r2, r.rel[0], r.rel[2] = r1, r2, rr1, rr2
-		r.c1, r.c2 = 0, xlsMaxCols-1
+		r.c1, r.c2 = 0, excel.XlsMaxCols-1
 		return r, nil
 	}
 	c, cr, n := parseCol(s)
@@ -508,7 +501,7 @@ func compileFormulaRoot(ctx fmlaContext, src string, sheet int, name bool, root 
 	if e.volatile {
 		e.out = append([]byte{ptgAttr, attrVolatile, 0, 0}, e.out...)
 	}
-	if len(e.out) > maxFormulaBytes {
+	if len(e.out) > excel.XlsMaxFormulaBytes {
 		return nil, nil, errors.New("formula is too long for .xls")
 	}
 	return e.out, e.extra, nil
@@ -579,8 +572,8 @@ func (e *encoder) emit(n *xnode, ctx byte) error {
 		}
 	case nStr:
 		u := utf16.Encode([]rune(n.str))
-		if len(u) > 255 {
-			return errors.New("text constant longer than 255 characters")
+		if len(u) > excel.XlsMaxShortString {
+			return fmt.Errorf("text constant longer than %d characters", excel.XlsMaxShortString)
 		}
 		e.space(n.ws, 0)
 		e.u8(ptgStr)
@@ -670,7 +663,7 @@ func (e *encoder) emit(n *xnode, ctx byte) error {
 // into other workbooks fail.
 func (e *encoder) emitRef(n *xnode, ctx byte) error {
 	r := n.ref
-	if r.r1 >= xlsMaxRows || r.r2 >= xlsMaxRows || r.c1 >= xlsMaxCols || r.c2 >= xlsMaxCols {
+	if r.r1 >= excel.XlsMaxRows || r.r2 >= excel.XlsMaxRows || r.c1 >= excel.XlsMaxCols || r.c2 >= excel.XlsMaxCols {
 		return errors.New("reference beyond row 65,536 or column IV")
 	}
 	threeD := e.name || r.sheet1 != ""
@@ -741,8 +734,8 @@ func (e *encoder) emitCall(n *xnode, ctx byte) error {
 	if f == nil {
 		// Add-in and Excel 2007+ functions: the name, then the arguments,
 		// then function 255.
-		if len(n.args)+1 > maxArgs {
-			return fmt.Errorf("%s has more than %d arguments", name, maxArgs-1)
+		if len(n.args)+1 > excel.XlsMaxArgs {
+			return fmt.Errorf("%s has more than %d arguments", name, excel.XlsMaxArgs-1)
 		}
 		ptg, data := e.ctx.funcNameRef(name)
 		e.u8(ptg)
@@ -800,7 +793,7 @@ func funcClass(ret, ctx byte) byte {
 // follows the formula).
 func arrayData(n *xnode) ([]byte, error) {
 	rows, cols := len(n.rows), len(n.rows[0])
-	if cols > xlsMaxCols || rows > xlsMaxRows {
+	if cols > excel.XlsMaxCols || rows > excel.XlsMaxRows {
 		return nil, errors.New("array constant too large")
 	}
 	b := []byte{byte(cols - 1)}

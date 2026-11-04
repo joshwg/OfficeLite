@@ -20,6 +20,12 @@ func TestOpenURLRefusesPrograms(t *testing.T) {
 			t.Errorf("OpenURL(%q) = %v, want refused", u, err)
 		}
 	}
+	// Taken as an option by open (macOS), which then starts the app.
+	for _, u := range []string{"-aTerminal", " -a Calculator", "--help"} {
+		if linkAllowed(u) {
+			t.Errorf("linkAllowed(%q) = true, want refused", u)
+		}
+	}
 	for _, u := range []string{
 		"https://example.com", "HTTP://x", " mailto:a@b.c", "ftp://h/f",
 		`C:\Users\josh\Documents\Budget.xlsx`, `\\server\share\Report.docx`, "Notes.pdf",

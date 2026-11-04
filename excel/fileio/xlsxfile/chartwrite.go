@@ -780,8 +780,10 @@ func (x *writer) plotXML(p *model.ChartPlot, th *model.Theme, home string, visib
 	case model.ChartLine, model.ChartArea:
 		fmt.Fprintf(&b, `<c:grouping val="%s"/>`, grouping)
 	case model.ChartScatter:
+		// The style comes from the file as read: only the schema's
+		// values are written, so a quote in it can't break the part.
 		st := p.ScatterStyle
-		if st == "" {
+		if !slices.Contains([]string{"none", "line", "lineMarker", "marker", "smooth", "smoothMarker"}, st) {
 			st = "lineMarker"
 		}
 		fmt.Fprintf(&b, `<c:scatterStyle val="%s"/>`, st)

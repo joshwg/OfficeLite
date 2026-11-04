@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"officelite/excel/model"
+	"officelite/excel"
 )
 
 // DepRef is a rectangle of cells a formula reads. Sheet is "" for the
@@ -92,10 +92,10 @@ func (d *Deps) walk(n Node) {
 func depRef(n refNode) DepRef {
 	r := DepRef{Sheet: n.sheet, R1: n.r1, C1: n.c1, R2: n.r2, C2: n.c2}
 	if n.wholeCols {
-		r.R1, r.R2 = 0, model.MaxRows-1
+		r.R1, r.R2 = 0, excel.MaxRows-1
 	}
 	if n.wholeRows {
-		r.C1, r.C2 = 0, model.MaxCols-1
+		r.C1, r.C2 = 0, excel.MaxCols-1
 	}
 	if r.R1 > r.R2 {
 		r.R1, r.R2 = r.R2, r.R1

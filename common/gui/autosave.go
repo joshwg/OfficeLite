@@ -1,5 +1,5 @@
 // AutoSave controls: the on/off Switch, the title bar's AutoSave switch and
-// the backstage Info page's AutoSave default setting.
+// status, and the backstage Info page's AutoSave default setting.
 
 package gui
 
@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"log"
+	"time"
 
 	"gioui.org/font"
 	"gioui.org/io/pointer"
@@ -17,7 +18,30 @@ import (
 	"gioui.org/widget"
 
 	"officelite/common/autosave"
+	"officelite/common/limits"
 )
+
+// AutoSaveStatus is what a window's title says after the document's name:
+// "Saving…" while s writes, "Saved" for limits.AutoSaveShown after the
+// last save that ended well (at savedAt; zero for none), else "". It asks
+// for a frame when "Saved" should go.
+func AutoSaveStatus(gtx layout.Context, s *autosave.Saver, savedAt time.Time) string {
+	switch {
+	case s.Busy():
+		return "Saving…"
+	case !s.On() || savedAt.IsZero():
+		return ""
+	}
+	now, end := gtx.Now, savedAt.Add(limits.AutoSaveShown)
+	if now.IsZero() {
+		now = time.Now() // a frame without a clock (wordshot, excelshot)
+	}
+	if !now.Before(end) {
+		return ""
+	}
+	gtx.Execute(op.InvalidateCmd{At: end})
+	return "Saved"
+}
 
 // Switch draws an on/off toggle, as Office's: a pill with a round knob
 // and "On" / "Off" in it. Off is an outline in fg with the knob at the

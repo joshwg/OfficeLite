@@ -6,13 +6,15 @@
 
 package model
 
+import "officelite/excel"
+
 // ShiftStrip is the part of the sheet that moves when block r is inserted
 // or deleted with cells shifted along rows (vertical) or columns.
 func ShiftStrip(r Range, vertical bool) Range {
 	if vertical {
-		return Range{R1: r.R1, C1: r.C1, R2: MaxRows - 1, C2: r.C2}
+		return Range{R1: r.R1, C1: r.C1, R2: excel.MaxRows - 1, C2: r.C2}
 	}
-	return Range{R1: r.R1, C1: r.C1, R2: r.R2, C2: MaxCols - 1}
+	return Range{R1: r.R1, C1: r.C1, R2: r.R2, C2: excel.MaxCols - 1}
 }
 
 // MergeCrosses reports whether a merged area lies partly inside strip.
@@ -88,9 +90,9 @@ func (s *Sheet) ShiftCells(r Range, vertical, insert bool) {
 		if !strip.Contains(k[0], k[1]) {
 			return k, true
 		}
-		i, limit := &k[0], MaxRows
+		i, limit := &k[0], excel.MaxRows
 		if !vertical {
-			i, limit = &k[1], MaxCols
+			i, limit = &k[1], excel.MaxCols
 		}
 		var ok bool
 		*i, ok = ShiftIndex(*i, at, n)

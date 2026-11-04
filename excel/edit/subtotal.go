@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sort"
 	"strings"
 
+	"officelite/excel"
 	"officelite/excel/calc"
 	"officelite/excel/formula"
 	"officelite/excel/model"
@@ -130,7 +132,7 @@ func (b *Book) rowSet(sheet int, rows []int, insert bool) (calc.Result, error) {
 	}
 	lo, hi := slices.Min(rows), slices.Max(rows)
 	return b.structural(&structural{kind: rowSet, sheet: sheet, n: n, rows: rows},
-		Where{sheet, model.Range{R1: lo, R2: hi, C2: model.MaxCols - 1}})
+		Where{sheet, model.Range{R1: lo, R2: hi, C2: excel.MaxCols - 1}})
 }
 
 // RemoveSubtotals deletes the subtotal rows of list r and its row outline
@@ -257,15 +259,12 @@ func (b *Book) Subtotal(sheet int, spec SubtotalSpec) (model.Range, calc.Result,
 		return fail(err)
 	}
 	res = joinResults(res, sres)
-	// final is where an old row is now; ins[k] is at ins[k].at+k.
+	// final is where an old row is now; ins[k] is at ins[k].at+k. The
+	// insertion points go in ascending order, so the rows inserted at or
+	// above row are found by binary search (a count over all of them, for
+	// every group, took minutes on a list of 100,000 groups).
 	final := func(row int) int {
-		n := 0
-		for _, x := range ins {
-			if x.at <= row {
-				n++
-			}
-		}
-		return row + n
+		return row + sort.Search(len(ats), func(i int) bool { return ats[i] > row })
 	}
 	end := r.R2 + len(ins) // every row went in inside the list or right below it
 	list := model.Range{R1: r.R1, C1: r.C1, R2: end, C2: r.C2}

@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"officelite/excel"
 )
 
 // Node is a parsed formula expression.
@@ -91,8 +93,20 @@ func Parse(src string) (Node, error) {
 // parser is a recursive-descent parser over a token slice; i is the next
 // token.
 type parser struct {
-	toks []token
-	i    int
+	toks  []token
+	i     int
+	depth int // depth of the tree being built, bounded by excel.FormulaMaxParseDepth
+}
+
+// enter counts one more level of nesting, failing past
+// excel.FormulaMaxParseDepth. The caller gives the levels back
+// (p.depth -= n) when it returns.
+func (p *parser) enter() error {
+	if p.depth >= excel.FormulaMaxParseDepth {
+		return fmt.Errorf("formula nested too deeply")
+	}
+	p.depth++
+	return nil
 }
 
 // peek returns the next token without consuming it.
@@ -117,7 +131,15 @@ var binPrec = map[string]int{
 	"^": 5,
 }
 
+// expr parses a binary expression whose operators bind at least as tightly
+// as minPrec.
 func (p *parser) expr(minPrec int) (Node, error) {
+	levels := 0
+	defer func() { p.depth -= levels }()
+	if err := p.enter(); err != nil {
+		return nil, err
+	}
+	levels++
 	left, err := p.unary()
 	if err != nil {
 		return nil, err
@@ -132,6 +154,10 @@ func (p *parser) expr(minPrec int) (Node, error) {
 			return left, nil
 		}
 		p.next()
+		if err := p.enter(); err != nil { // the tree grows one level
+			return nil, err
+		}
+		levels++
 		right, err := p.expr(prec + 1) // left-associative
 		if err != nil {
 			return nil, err
@@ -140,7 +166,12 @@ func (p *parser) expr(minPrec int) (Node, error) {
 	}
 }
 
+// unary parses a primary with any prefix +, - or @ operators.
 func (p *parser) unary() (Node, error) {
+	if err := p.enter(); err != nil {
+		return nil, err
+	}
+	defer func() { p.depth-- }()
 	t := p.peek()
 	if t.kind == tOp && (t.text == "-" || t.text == "+") {
 		p.next()
@@ -161,13 +192,23 @@ func (p *parser) unary() (Node, error) {
 	return p.postfix()
 }
 
+// postfix parses a range expression with any postfix %, # or call
+// operators.
 func (p *parser) postfix() (Node, error) {
+	levels := 0
+	defer func() { p.depth -= levels }()
 	x, err := p.rangeExpr()
 	if err != nil {
 		return nil, err
 	}
 	for {
 		t := p.peek()
+		if t.kind == tOp && t.text == "%" || t.kind == tHash || t.kind == tLParen {
+			if err := p.enter(); err != nil { // the tree grows one level
+				return nil, err
+			}
+			levels++
+		}
 		switch {
 		case t.kind == tOp && t.text == "%":
 			p.next()
@@ -190,6 +231,8 @@ func (p *parser) postfix() (Node, error) {
 
 // rangeExpr handles the ':' range operator between references.
 func (p *parser) rangeExpr() (Node, error) {
+	levels := 0
+	defer func() { p.depth -= levels }()
 	x, err := p.spillOperand()
 	if err != nil {
 		return nil, err
@@ -200,6 +243,10 @@ func (p *parser) rangeExpr() (Node, error) {
 	}
 	for p.peek().kind == tOp && p.peek().text == ":" {
 		p.next()
+		if err := p.enter(); err != nil { // the tree grows one level
+			return nil, err
+		}
+		levels++
 		y, err := p.spillOperand()
 		if err != nil {
 			return nil, err
@@ -217,11 +264,17 @@ func (p *parser) rangeExpr() (Node, error) {
 // spillOperand parses a primary with any spill operators, which bind
 // tighter than ':' (A1#:B2 is (A1#):B2, A1:B2# is A1:(B2#)).
 func (p *parser) spillOperand() (Node, error) {
+	levels := 0
+	defer func() { p.depth -= levels }()
 	x, err := p.primary()
 	if err != nil {
 		return nil, err
 	}
 	for p.peek().kind == tHash {
+		if err := p.enter(); err != nil { // the tree grows one level
+			return nil, err
+		}
+		levels++
 		p.next()
 		x = spillNode{x: x}
 	}
@@ -371,7 +424,7 @@ func parseRef(t token) (Node, error) {
 }
 
 func colIndex(s string) (int, bool) {
-	if s == "" || len(s) > 3 {
+	if s == "" || len(s) > excel.ExcelMaxColLetters {
 		return 0, false
 	}
 	n := 0

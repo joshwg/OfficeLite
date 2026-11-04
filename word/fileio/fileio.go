@@ -1,16 +1,17 @@
 // Package fileio opens and saves Word documents, picking the format from
 // the file's content (.docx zip, .doc compound file, or plain text); Pages
-// documents (.pages) are opened read-only.
+// documents (.pages) are opened read-only. Templates (.dotx, .dot) read
+// like the documents they're built on and save with the template marker.
 package fileio
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"officelite/common/atomicfile"
 	"officelite/common/iwork"
 	"officelite/common/ole"
 	"officelite/word/fileio/docfile"
@@ -26,6 +27,8 @@ const (
 	DOCX Format = iota // Word Document
 	DOC                // Word 97-2003 Document
 	TXT                // plain text (UTF-8)
+	DOTX               // Word Template
+	DOT                // Word 97-2003 Template
 )
 
 // FormatFor picks the save format from a file name's extension.
@@ -37,6 +40,10 @@ func FormatFor(name string) (Format, bool) {
 		return DOC, true
 	case ".txt":
 		return TXT, true
+	case ".dotx", ".dotm":
+		return DOTX, true
+	case ".dot":
+		return DOT, true
 	}
 	return 0, false
 }
@@ -48,8 +55,27 @@ func (f Format) Ext() string {
 		return ".doc"
 	case TXT:
 		return ".txt"
+	case DOTX:
+		return ".dotx"
+	case DOT:
+		return ".dot"
 	}
 	return ".docx"
+}
+
+// IsTemplate reports whether f saves a template.
+func (f Format) IsTemplate() bool { return f == DOTX || f == DOT }
+
+// Document is the document format a template format is built on: .docx
+// for .dotx and .doc for .dot; other formats are returned unchanged.
+func (f Format) Document() Format {
+	switch f {
+	case DOTX:
+		return DOCX
+	case DOT:
+		return DOC
+	}
+	return f
 }
 
 // String is the format's name as Word's Save As dialog shows it.
@@ -61,6 +87,10 @@ func (f Format) String() string {
 		return "Word 97-2003 Document (*.doc)"
 	case TXT:
 		return "Plain Text (*.txt)"
+	case DOTX:
+		return "Word Template (*.dotx)"
+	case DOT:
+		return "Word 97-2003 Template (*.dot)"
 	}
 	return fmt.Sprintf("Format(%d)", int(f))
 }
@@ -109,46 +139,17 @@ func Write(doc *model.Document, w io.Writer, f Format) error {
 		return docfile.Write(doc, w)
 	case TXT:
 		return writeText(doc, w)
+	case DOTX:
+		return docxfile.WriteTemplate(doc, w)
+	case DOT:
+		return docfile.WriteTemplate(doc, w)
 	}
 	return fmt.Errorf("unknown format %v", f)
 }
 
 // SaveFile writes doc to path through a temporary file renamed over the
-// target, so a failed save leaves the old file intact.
-func SaveFile(doc *model.Document, path string, f Format) (err error) {
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if removeErr := os.Remove(tmp.Name()); err == nil && removeErr != nil && !os.IsNotExist(removeErr) {
-			err = fmt.Errorf("remove temporary file: %w", removeErr)
-		}
-	}()
-	bw := bufio.NewWriter(tmp)
-	closeWithError := func(err error) error {
-		if closeErr := tmp.Close(); closeErr != nil {
-			return fmt.Errorf("%w (closing temporary file: %v)", err, closeErr)
-		}
-		return err
-	}
-	if err := Write(doc, bw, f); err != nil {
-		return closeWithError(err)
-	}
-	if err := bw.Flush(); err != nil {
-		return closeWithError(err)
-	}
-	if err := tmp.Sync(); err != nil {
-		return closeWithError(err)
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if fi, err := os.Stat(path); err == nil {
-		_ = os.Chmod(tmp.Name(), fi.Mode().Perm())
-	} else {
-		_ = os.Chmod(tmp.Name(), 0o644)
-	}
-	return os.Rename(tmp.Name(), path)
+// target (see atomicfile.Write), so a failed save leaves the old file
+// intact; an existing file keeps its permissions.
+func SaveFile(doc *model.Document, path string, f Format) error {
+	return atomicfile.Write(path, 0o644, func(w io.Writer) error { return Write(doc, w, f) })
 }

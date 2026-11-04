@@ -1,5 +1,5 @@
 // The outline (Data > Group): every row and column has an outline level,
-// 0 to MaxOutlineLevel. A run of rows whose level is at least L is a
+// 0 to excel.MaxOutlineLevel. A run of rows whose level is at least L is a
 // group of level L; its summary row is the row right below it (or above,
 // with SummaryAbove), which carries the group's collapsed flag. A
 // collapsed group's rows are hidden rows (height 0), as Excel keeps them;
@@ -12,11 +12,9 @@ package model
 import (
 	"maps"
 	"slices"
-)
 
-// MaxOutlineLevel is the deepest outline level (Excel's 8 levels of
-// buttons: 1 for the top, 7 of grouping).
-const MaxOutlineLevel = 7
+	"officelite/excel"
+)
 
 // Outline is a sheet's outline.
 type Outline struct {
@@ -42,9 +40,9 @@ type OutlineGroup struct {
 // HasSummary reports whether the group's summary row (column) is on the
 // sheet, which is where its +/- button goes.
 func (g OutlineGroup) HasSummary() bool {
-	n := MaxCols
+	n := excel.MaxCols
 	if g.Rows {
-		n = MaxRows
+		n = excel.MaxRows
 	}
 	return g.Summary >= 0 && g.Summary < n
 }
@@ -76,7 +74,7 @@ func (s *Sheet) Level(rows bool, i int) int {
 // SetLevel sets the outline level of row (column) i, 0..MaxOutlineLevel.
 func (s *Sheet) SetLevel(rows bool, i, level int) {
 	lv, _, _ := s.outlineMaps(rows)
-	level = min(max(level, 0), MaxOutlineLevel)
+	level = min(max(level, 0), excel.MaxOutlineLevel)
 	if level == 0 {
 		delete(*lv, i)
 		return
@@ -135,7 +133,7 @@ func (s *Sheet) Groups(rows bool) []OutlineGroup {
 	idx := slices.Sorted(maps.Keys(*lv))
 	after := s.summaryAfter(rows)
 	var out []OutlineGroup
-	for level := 1; level <= MaxOutlineLevel; level++ {
+	for level := 1; level <= excel.MaxOutlineLevel; level++ {
 		lo, prev := -1, -2
 		flush := func() {
 			if lo < 0 {

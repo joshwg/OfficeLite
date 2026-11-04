@@ -5,6 +5,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"officelite/word"
 )
 
 // Pos is a caret position: a paragraph, numbered in document order
@@ -47,7 +49,9 @@ type ParaLoc struct {
 }
 
 // Locate lists every paragraph in document order with its location; the
-// list index is Pos.Para.
+// list index is Pos.Para. It repairs what would leave the caret nowhere:
+// empty cells get a paragraph, rows without cells go, and a document
+// without paragraphs gets one.
 func (d *Document) Locate() []ParaLoc {
 	var out []ParaLoc
 	var walkIn func(blocks *[]Block, top int, cell *TableCell, hidden bool)
@@ -60,6 +64,9 @@ func (d *Document) Locate() []ParaLoc {
 			case *Paragraph:
 				out = append(out, ParaLoc{P: b, Blocks: blocks, Index: i, Top: top, Cell: cell, Hidden: hidden})
 			case *Table:
+				// A row without cells (from a file; Word repairs such a
+				// file) holds no caret position: it goes.
+				b.Rows = slices.DeleteFunc(b.Rows, func(r *TableRow) bool { return len(r.Cells) == 0 })
 				for _, row := range b.Rows {
 					for _, c := range row.Cells {
 						if len(c.Blocks) == 0 {
@@ -75,6 +82,12 @@ func (d *Document) Locate() []ParaLoc {
 		d.Body = []Block{&Paragraph{}}
 	}
 	walkIn(&d.Body, 0, nil, false)
+	if len(out) == 0 {
+		// Only tables without rows or cells (from a file): the caret needs
+		// a paragraph, as Word ends every document with one.
+		d.Body = append(d.Body, &Paragraph{})
+		out = append(out, ParaLoc{P: d.Body[len(d.Body)-1].(*Paragraph), Blocks: &d.Body, Index: len(d.Body) - 1, Top: len(d.Body) - 1})
+	}
 	return out
 }
 
@@ -507,8 +520,8 @@ func (s *step) Label() string {
 		return s.label
 	case s.typed != "":
 		t := strings.Join(strings.Fields(s.typed), " ")
-		if r := []rune(t); len(r) > 20 {
-			t = string(r[:20]) + "…"
+		if r := []rune(t); len(r) > word.UndoLabelRunes {
+			t = string(r[:word.UndoLabelRunes]) + "…"
 		}
 		return "Typing '" + t + "'"
 	case kindLabels[s.kind] != "":
@@ -1153,6 +1166,10 @@ func (e *Editor) Copy() *Fragment {
 			b = t.Off
 		}
 		q := &Paragraph{Style: p.Style, Props: copyParaProps(p.Props), Mark: p.Mark, Runs: cutRuns(p, a, b)}
+		for k := range q.Runs {
+			// A note's text or a text box edited later must not change the copy.
+			q.Runs[k].Opaque = copyOpaque(q.Runs[k].Opaque)
+		}
 		f.Paras = append(f.Paras, q)
 	}
 	return f
@@ -1194,6 +1211,11 @@ func (e *Editor) pasteAt(p Pos, f *Fragment) Pos {
 			dst.Style, dst.Props = src.Style, copyParaProps(src.Props)
 		}
 		runs := slices.Clone(src.Runs)
+		for k := range runs {
+			// Each paste gets notes and text boxes of its own: pasting a
+			// fragment twice must not make two references to one note.
+			runs[k].Opaque = copyOpaque(runs[k].Opaque)
+		}
 		insertRuns(dst, p.Off, runs...)
 		for k := range runs {
 			p.Off += RunLen(&runs[k])
@@ -1628,6 +1650,6 @@ func (d *Document) Clone() *Document {
 	c.Body = CopyBlocks(d.Body)
 	c.Lists = copyLists(d.Lists)
 	c.Warnings = slices.Clone(d.Warnings)
-	c.HF = d.HF.Clone()
+	c.Section = *d.Section.Clone() // headers and footers, column widths
 	return &c
 }

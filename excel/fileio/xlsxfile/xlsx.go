@@ -19,6 +19,7 @@ import (
 
 	"officelite/common/colors"
 	"officelite/common/opc"
+	"officelite/excel"
 	"officelite/excel/formula"
 	"officelite/excel/model"
 	"officelite/excel/numfmt"
@@ -304,14 +305,20 @@ func (r *reader) readSST(name string) (out []string, err error) {
 
 // --- styles ---
 
+// openExcelize opens the package in data with excelize, unpacking at most
+// limit bytes.
+func openExcelize(data []byte, limit int64) (*excelize.File, error) {
+	return excelize.OpenReader(bytes.NewReader(data), excelize.Options{UnzipSizeLimit: limit})
+}
+
 // loadStyles converts the cellXfs table into model styles via excelize,
 // which resolves theme and indexed colors and tints for us.
 func (r *reader) loadStyles(data []byte) {
 	def := model.DefaultStyle()
-	x, err := excelize.OpenReader(bytes.NewReader(data))
+	x, err := openExcelize(data, excel.XlsxUnzipLimit)
 	if err != nil {
 		r.wb.Styles = []model.Style{def}
-		r.wb.Warnings = append(r.wb.Warnings, "styles could not be read; showing unformatted values")
+		r.wb.Warnings = append(r.wb.Warnings, "styles could not be read ("+err.Error()+"); showing unformatted values")
 		return
 	}
 	defer func() {
@@ -506,7 +513,7 @@ func (r *reader) readSheet(name string, sh *model.Sheet) (err error) {
 					row++
 				}
 				col = -1
-				if row >= 0 && row < model.MaxRows {
+				if row >= 0 && row < excel.MaxRows {
 					ht := attr(t, "ht")
 					if xmlBool(attr(t, "hidden")) {
 						sh.RowHeight[row] = 0
@@ -603,7 +610,7 @@ func (r *reader) readSheet(name string, sh *model.Sheet) (err error) {
 					} else if rr, cc, ok := parseCellRef(fArray); ok {
 						spill = &model.Range{R1: rr, C1: cc, R2: rr, C2: cc}
 					}
-					if spill != nil && (spill.R2 >= model.MaxRows || spill.C2 >= model.MaxCols) {
+					if spill != nil && (spill.R2 >= excel.MaxRows || spill.C2 >= excel.MaxCols) {
 						spill = nil // past what the model holds
 					}
 					if spill != nil {
@@ -715,7 +722,7 @@ func (r *reader) colInfo(t xml.StartElement, sh *model.Sheet) {
 	if lo < 1 || hi < lo {
 		return
 	}
-	hi = min(hi, model.MaxCols)
+	hi = min(hi, excel.MaxCols)
 	outlineAttrs(t, sh, false, lo-1, hi-1)
 	var w float32 = -1
 	if xmlBool(attr(t, "hidden")) {
@@ -755,18 +762,15 @@ func parseCellRef(s string) (row, col int, ok bool) {
 		return 0, 0, false
 	}
 	n, err := strconv.Atoi(s[i:])
-	if err != nil || n < 1 || n > excelRows {
+	if err != nil || n < 1 || n > excel.ExcelMaxRows {
 		return 0, 0, false
 	}
 	col = model.ParseColName(s[:i])
-	if col < 0 || col >= excelCols {
+	if col < 0 || col >= excel.ExcelMaxCols {
 		return 0, 0, false // past XFD1048576
 	}
 	return n - 1, col, true
 }
-
-// Excel's sheet size: references beyond it are malformed.
-const excelRows, excelCols = 1048576, 16384
 
 func parseRange(s string) (model.Range, bool) {
 	a, b, _ := strings.Cut(s, ":")

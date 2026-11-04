@@ -17,6 +17,7 @@ import (
 
 	"officelite/common/colors"
 	"officelite/common/gui"
+	"officelite/excel"
 	"officelite/excel/edit"
 	"officelite/excel/internal/chartsample"
 	"officelite/excel/model"
@@ -131,7 +132,7 @@ func TestChartFollowsInsertedRows(t *testing.T) {
 	h := chartHarness(t)
 	a := h.a
 	sh := a.wb.Sheets[0]
-	a.selectRange(0, model.Range{R1: 0, C1: 0, R2: 1, C2: model.MaxCols - 1})
+	a.selectRange(0, model.Range{R1: 0, C1: 0, R2: 1, C2: excel.MaxCols - 1})
 	h.frame()
 	h.press("=", key.ModShortcut|key.ModShift)
 	c := sh.Charts[2]

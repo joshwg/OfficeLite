@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"unicode/utf16"
 
+	"officelite/word"
 	"officelite/word/model"
 )
 
@@ -213,8 +214,8 @@ func (w *writer) std(istd int, sl *wstyle) []byte {
 		name = s.ID
 	}
 	u := utf16.Encode([]rune(name))
-	if len(u) > 253 {
-		u = u[:253]
+	if len(u) > word.DocMaxStyleName {
+		u = u[:word.DocMaxStyleName]
 	}
 	out := make([]byte, 10)
 	le.PutUint16(out[0:], uint16(sl.sti&0x0FFF))

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"image/color"
 
+	"officelite/excel"
 	"officelite/excel/calc"
 	"officelite/excel/formula"
 	"officelite/excel/model"
@@ -70,12 +71,12 @@ func (b *Book) shiftCells(sheet int, r model.Range, vertical, insert bool) (calc
 	// A block spanning whole columns (rows) shifted along them is a
 	// row (column) insertion.
 	switch {
-	case vertical && r.C1 == 0 && r.C2 == model.MaxCols-1:
+	case vertical && r.C1 == 0 && r.C2 == excel.MaxCols-1:
 		if insert {
 			return b.InsertRows(sheet, r.R1, r.R2-r.R1+1)
 		}
 		return b.DeleteRows(sheet, r.R1, r.R2-r.R1+1)
-	case !vertical && r.R1 == 0 && r.R2 == model.MaxRows-1:
+	case !vertical && r.R1 == 0 && r.R2 == excel.MaxRows-1:
 		if insert {
 			return b.InsertCols(sheet, r.C1, r.C2-r.C1+1)
 		}
@@ -127,7 +128,7 @@ func (b *Book) applyShiftCells(op *structural) (calc.Result, error) {
 // nonblank cell off the sheet.
 func stripFits(sh *model.Sheet, r model.Range, vertical bool, n int) bool {
 	if vertical {
-		for row := model.MaxRows - n; row < sh.UsedRows(); row++ {
+		for row := excel.MaxRows - n; row < sh.UsedRows(); row++ {
 			for c := r.C1; c <= min(r.C2, sh.RowLen(row)-1); c++ {
 				if !sh.Get(row, c).IsBlank() {
 					return false
@@ -137,7 +138,7 @@ func stripFits(sh *model.Sheet, r model.Range, vertical bool, n int) bool {
 		return true
 	}
 	for row := r.R1; row <= min(r.R2, sh.UsedRows()-1); row++ {
-		for c := model.MaxCols - n; c < sh.RowLen(row); c++ {
+		for c := excel.MaxCols - n; c < sh.RowLen(row); c++ {
 			if !sh.Get(row, c).IsBlank() {
 				return false
 			}

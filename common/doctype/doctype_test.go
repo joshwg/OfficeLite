@@ -127,3 +127,17 @@ func TestKindString(t *testing.T) {
 		}
 	}
 }
+
+// TestIsTemplate checks which extensions are templates, in any case.
+func TestIsTemplate(t *testing.T) {
+	for name, want := range map[string]bool{
+		"Letter.dotx": true, "a.DOTM": true, "old.dot": true,
+		"Budget.xltx": true, "b.xltm": true, "c.XLT": true,
+		"a.docx": false, "a.doc": false, "a.xlsx": false, "dotx": false, "": false,
+		"/some/dir.dotx/file.txt": false,
+	} {
+		if got := IsTemplate(name); got != want {
+			t.Errorf("IsTemplate(%q) = %v, want %v", name, got, want)
+		}
+	}
+}

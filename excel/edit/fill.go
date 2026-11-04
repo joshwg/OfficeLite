@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"officelite/excel"
 	"officelite/excel/calc"
 	"officelite/excel/formula"
 	"officelite/excel/model"
@@ -45,10 +46,10 @@ func (b *Book) FillRight(sheet int, sel model.Range) calc.Result {
 func (b *Book) fill(sheet int, sel model.Range, down bool) calc.Result {
 	sh := b.WB.Sheets[sheet]
 	// Whole columns or rows only fill the used area.
-	if sel.R2 == model.MaxRows-1 {
+	if sel.R2 == excel.MaxRows-1 {
 		sel.R2 = max(sh.UsedRows()-1, sel.R1)
 	}
-	if sel.C2 == model.MaxCols-1 {
+	if sel.C2 == excel.MaxCols-1 {
 		sel.C2 = max(sh.UsedCols()-1, sel.C1)
 	}
 	src, dest := sel, sel
@@ -138,7 +139,7 @@ func (b *Book) AutoFill(sheet int, src, to model.Range) (calc.Result, error) {
 		}
 		return b.apply(Where{sheet, to}, cells), nil
 	}
-	if to.R2 >= model.MaxRows || to.C2 >= model.MaxCols || to.R1 < 0 || to.C1 < 0 {
+	if to.R2 >= excel.MaxRows || to.C2 >= excel.MaxCols || to.R1 < 0 || to.C1 < 0 {
 		return calc.Result{}, ErrPasteSize
 	}
 	vertical := to.C1 == src.C1 && to.C2 == src.C2
@@ -312,7 +313,7 @@ func numberedTexts(cs []model.Cell) (string, []numSuffix, bool) {
 			j--
 		}
 		digits := c.Text[j:]
-		if digits == "" || len(digits) > 9 {
+		if digits == "" || len(digits) > excel.FillMaxDigits {
 			return "", nil, false
 		}
 		if i == 0 {

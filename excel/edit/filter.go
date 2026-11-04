@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"errors"
 	"math"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -58,12 +59,16 @@ func (c *filterChange) set(wb *model.Workbook, after bool) {
 }
 
 // changeFilter applies f to the sheet's filter state and records the
-// change.
+// change, unless nothing changed (a filter command with no AutoFilter on
+// the sheet, say): that leaves no empty step in the Undo list.
 func (b *Book) changeFilter(sheet int, f func(sh *model.Sheet)) {
 	sh := b.WB.Sheets[sheet]
 	ch := &filterChange{sheet: sheet, before: filterStateOf(sh)}
 	f(sh)
 	ch.after = filterStateOf(sh)
+	if reflect.DeepEqual(ch.before, ch.after) {
+		return
+	}
 	b.visibilityChanged()
 	where := model.Range{R1: sh.ActiveRow, C1: sh.ActiveCol, R2: sh.ActiveRow, C2: sh.ActiveCol}
 	if af := ch.after.af; af != nil {

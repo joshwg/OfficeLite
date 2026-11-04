@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"officelite/excel"
 	"officelite/excel/formula"
 	"officelite/excel/model"
 )
@@ -102,6 +103,8 @@ type errShared struct{ row, col int }
 func (e errShared) Error() string { return "shared formula" }
 
 var errTable = errors.New("data table formula (TABLE)")
+
+var errFormulaTooLong = errors.New("formula too long")
 
 // supbook is a SUPBOOK record: this workbook, an add-in, or another file.
 type supbook struct {
@@ -200,7 +203,16 @@ func (d *decoder) decode(b, extra []byte) (string, error) {
 		}
 		return nil
 	}
+	tooLong := func() bool {
+		return len(st) > 0 && len(st[len(st)-1].s) > excel.XlsMaxFormulaText ||
+			len(sp)+len(spOpen)+len(spClose) > excel.XlsMaxFormulaText
+	}
 	for i < len(b) {
+		// Every item is made on top of the stack, so checking the top
+		// before each token checks them all.
+		if tooLong() {
+			return "", errFormulaTooLong
+		}
 		id := b[i]
 		i++
 		if id == ptgExp || id == ptgTbl {
@@ -484,6 +496,9 @@ func (d *decoder) decode(b, extra []byte) (string, error) {
 	}
 	if len(st) != 1 {
 		return "", fmt.Errorf("formula left %d values", len(st))
+	}
+	if tooLong() {
+		return "", errFormulaTooLong
 	}
 	return st[0].s, nil
 }

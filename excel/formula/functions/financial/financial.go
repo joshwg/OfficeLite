@@ -9,6 +9,7 @@ package financial
 import (
 	"math"
 
+	"officelite/excel"
 	f "officelite/excel/formula"
 )
 
@@ -196,7 +197,7 @@ func rate(e *f.Env, a []f.Value) f.Value {
 		dy = n*pv*g/(1+r) + pay*(typ*a+(1+r*typ)*da)
 		return y, dy
 	}
-	if res, ok := newton(r, 20, 1e-7, eval); ok {
+	if res, ok := newton(r, excel.FinancialRateMaxIter, excel.FinancialRateTol, eval); ok {
 		return f.NumberOrErr(res)
 	}
 	return f.ErrNum
@@ -267,7 +268,7 @@ func cumipmt(e *f.Env, a []f.Value, principal bool) f.Value {
 	}
 	rate, n, pv := x[0], x[1], x[2]
 	start, end, typ := math.Trunc(x[3]), math.Trunc(x[4]), math.Trunc(x[5])
-	if rate <= 0 || n <= 0 || pv <= 0 || start < 1 || end < start || end > n || (typ != 0 && typ != 1) {
+	if rate <= 0 || n <= 0 || pv <= 0 || start < 1 || end < start || end > n || end > excel.FinancialMaxPeriods || (typ != 0 && typ != 1) {
 		return f.ErrNum
 	}
 	pay := pmtOf(rate, n, pv, 0, typ)

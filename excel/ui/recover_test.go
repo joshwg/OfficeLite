@@ -181,3 +181,26 @@ func TestOpenRecovered(t *testing.T) {
 		t.Errorf("recovered copy left after Save As: %v", f)
 	}
 }
+
+// TestSaveAsRecoveredWithLaterEdits: a recovered workbook saved as a file
+// while it was edited is no longer [Recovered], though it stays modified,
+// so AutoSave isn't blocked as for a recovered workbook.
+func TestSaveAsRecoveredWithLaterEdits(t *testing.T) {
+	h := newHarness(t)
+	a := h.a
+	a.ar.recovered = &autorecover.Entry{Name: "Budget.xlsx", Format: ".xlsx"}
+	a.modified = true
+	saved := filepath.Join(t.TempDir(), "Budget.xlsx")
+	// The snapshot written was taken at revision 0; an edit came after.
+	a.revision = 1
+	a.savedSnapshot(a.wb, a.wb, 0, a.active, fileio.XLSX, saved, false, nil)
+	if a.ar.recovered != nil || a.docName() != "Budget.xlsx" {
+		t.Errorf("after Save As: recovered %v, name %q", a.ar.recovered, a.docName())
+	}
+	if !a.modified || a.path != saved {
+		t.Errorf("after Save As: modified %v, path %q", a.modified, a.path)
+	}
+	if msg := a.autoSaveBlocked(); strings.Contains(msg, "recovered") {
+		t.Errorf("AutoSave still blocked as recovered: %q", msg)
+	}
+}

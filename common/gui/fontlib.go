@@ -22,6 +22,7 @@ import (
 	"gioui.org/text"
 
 	"officelite/common/atomicfile"
+	"officelite/common/limits"
 )
 
 // FontLibrary indexes font folders (the OS font folders plus extras) by
@@ -365,7 +366,7 @@ func readFamilies(path string) []string {
 	offsets := []int64{0}
 	if string(head[:4]) == "ttcf" {
 		n := int64(binary.BigEndian.Uint32(head[8:]))
-		if n <= 0 || n > 256 {
+		if n <= 0 || n > limits.FontCollectionMaxFonts {
 			return nil
 		}
 		b := make([]byte, 4*n)
@@ -409,7 +410,7 @@ func fontFamilies(r io.ReaderAt, off int64) []string {
 		}
 		tOff := int64(binary.BigEndian.Uint32(rec[8:]))
 		tLen := binary.BigEndian.Uint32(rec[12:])
-		if tLen > 1<<20 {
+		if tLen > limits.FontNameTableMax {
 			return nil
 		}
 		tbl := make([]byte, tLen)

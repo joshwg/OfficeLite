@@ -181,9 +181,12 @@ func (r *reader) readPieces() error {
 	}
 	mainCcp := ccp
 	ccp = all
-	r.text = make([]uint16, 0, ccp)
-	r.cpFc = make([]uint32, 0, ccp)
-	r.cpPiece = make([]int32, 0, ccp)
+	// The counts come from the file: every character takes at least one
+	// byte of the WordDocument stream, so preallocate no more than that.
+	capacity := min(ccp, len(r.wd))
+	r.text = make([]uint16, 0, capacity)
+	r.cpFc = make([]uint32, 0, capacity)
+	r.cpPiece = make([]int32, 0, capacity)
 	for i := 0; i < n; i++ {
 		cp, cpEnd := int(u32(plc[4*i:])), int(u32(plc[4*i+4:]))
 		pcd := plc[4*(n+1)+8*i:]

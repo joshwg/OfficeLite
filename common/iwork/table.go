@@ -8,6 +8,7 @@ import (
 	"errors"
 	"math"
 	"math/big"
+	"officelite/common/limits"
 )
 
 // Table object types.
@@ -203,11 +204,8 @@ func (d *Document) readTable(id uint64) (*Table, error) {
 		UUID:             m.Str(1),
 		Name:             m.Str(8),
 		NameShown:        m.Bool(22),
-		Rows:             int(m.Uint(6)),
-		Cols:             int(m.Uint(7)),
-		HeaderRows:       int(m.Uint(9)),
-		HeaderCols:       int(m.Uint(10)),
-		FooterRows:       int(m.Uint(11)),
+		Rows:             count(m.Uint(6), limits.IWorkMaxTableRows),
+		Cols:             count(m.Uint(7), limits.IWorkMaxTableCols),
 		DefaultRowHeight: m.Double(16),
 		DefaultColWidth:  m.Double(17),
 		HeaderRowsFrozen: m.Bool(12),
@@ -218,6 +216,9 @@ func (d *Document) readTable(id uint64) (*Table, error) {
 		AreaCellStyle:    [4]uint64{m.Ref(18), m.Ref(19), m.Ref(20), m.Ref(21)},
 		AreaTextStyle:    [4]uint64{m.Ref(24), m.Ref(25), m.Ref(26), m.Ref(27)},
 	}
+	t.HeaderRows = count(m.Uint(9), t.Rows)
+	t.HeaderCols = count(m.Uint(10), t.Cols)
+	t.FooterRows = count(m.Uint(11), t.Rows-t.HeaderRows)
 	t.BandFill = d.bandFill(m.Ref(3))
 	ds := m.Msg(4)
 	readHeaders := func(bucket uint64, into map[int]Header) {
@@ -271,11 +272,31 @@ func (d *Document) readTable(id uint64) (*Table, error) {
 	if unsupported > 0 {
 		t.Warnings = append(t.Warnings, "some cells are stored in an older Numbers format and were not read")
 	}
-	t.Merges = d.tableMerges(m, ds)
+	t.Merges = clipMerges(d.tableMerges(m, ds), t.Rows, t.Cols)
 	if len(d.dataList(ds.Ref(18))) > 0 {
 		t.Warnings = append(t.Warnings, "conditional highlighting was not imported")
 	}
 	return t, nil
+}
+
+// count is a count field of a table as an int in 0..hi.
+func count(v uint64, hi int) int {
+	return int(min(v, uint64(max(hi, 0))))
+}
+
+// clipMerges drops the merges that begin outside a table of rows × cols
+// (or are inside out) and cuts the others at its edges, so a damaged
+// merge can't make a reader walk millions of cells.
+func clipMerges(merges []Range, rows, cols int) []Range {
+	var out []Range
+	for _, r := range merges {
+		if r.R1 < 0 || r.C1 < 0 || r.R1 >= rows || r.C1 >= cols || r.R2 < r.R1 || r.C2 < r.C1 {
+			continue
+		}
+		r.R2, r.C2 = min(r.R2, rows-1), min(r.C2, cols-1)
+		out = append(out, r)
+	}
+	return out
 }
 
 // missingCell is the offset that marks a column with no cell.
@@ -400,6 +421,9 @@ func decimal128(b []byte) float64 {
 	}
 	be[0] = b[14] & 1
 	mant.SetBytes(be)
+	if mant.Sign() == 0 {
+		return 0 // not 0 × 10^exp, which is NaN once 10^exp overflows
+	}
 	f, _ := new(big.Float).SetInt(mant).Float64()
 	v := f * math.Pow10(exp)
 	if exp < 0 { // divide for exactness: 5 * 10^-2 is better as 5 / 100

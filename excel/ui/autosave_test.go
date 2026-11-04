@@ -15,6 +15,7 @@ import (
 	"officelite/common/autorecover"
 	"officelite/common/autosave"
 	"officelite/common/gui"
+	"officelite/common/limits"
 	"officelite/excel/fileio"
 )
 
@@ -156,7 +157,7 @@ func TestAutoSave(t *testing.T) {
 	if h.cell("A1").Text != "42" {
 		t.Fatalf("undo: A1 = %q", h.cell("A1").Text)
 	}
-	clock.Advance(autosave.Delay)
+	clock.Advance(limits.AutoSaveDelay)
 	h.settle()
 	if got := fileA1(t, path); got != "42" {
 		t.Errorf("undo saved: A1 = %q", got)
@@ -174,7 +175,7 @@ func TestAutoSave(t *testing.T) {
 	if got := fileA1(t, path); got != "44" || a.modified {
 		t.Errorf("Ctrl+S: A1 = %q, modified %v", got, a.modified)
 	}
-	clock.Advance(autosave.Delay)
+	clock.Advance(limits.AutoSaveDelay)
 	h.settle()
 	if a.as.saver.Busy() || !a.as.saver.On() || a.errMsg != "" {
 		t.Errorf("after Ctrl+S: busy %v, on %v, %q", a.as.saver.Busy(), a.as.saver.On(), a.errMsg)
@@ -209,7 +210,7 @@ func TestAutoSaveError(t *testing.T) {
 	if err := os.RemoveAll(dir); err != nil { // the folder is gone (a USB stick pulled)
 		t.Fatal(err)
 	}
-	clock.Advance(autosave.Delay)
+	clock.Advance(limits.AutoSaveDelay)
 	h.settle()
 	if a.as.saver.On() || !strings.HasPrefix(a.errMsg, "AutoSave turned off: Save failed") || !a.modified || h.cell("A1").Text != "42" {
 		t.Errorf("on %v, error %q, modified %v", a.as.saver.On(), a.errMsg, a.modified)

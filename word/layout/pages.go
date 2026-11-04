@@ -139,8 +139,21 @@ type Engine struct {
 	// header); see hdrftr.go.
 	FieldValue func(instr string) (string, bool)
 	hf         hfState
+	// bodyFields holds the values the body's page fields show, by
+	// paragraph and caret offset, as the last pagination found them
+	// (updateBodyFields); fieldPass is set while Layout runs again for them.
+	bodyFields map[*model.Paragraph]map[int]string
+	fieldPass  bool
+	// secCount caches the page count of each section (sectionPages) for
+	// the pages ending with last, n of them.
+	secCount struct {
+		n     int
+		last  *Page
+		pages []int
+	}
 
 	showHidden bool // hidden text is laid out (see marks.go)
+	showCodes  bool // fields show their codes, not their results (SetShowFieldCodes)
 }
 
 // New returns an engine for doc measuring text with shaper.
@@ -248,6 +261,16 @@ func (e *Engine) Layout() {
 		pg.X = math.Round((e.Width - pg.Width) / 2)
 	}
 	e.Height = top
+	// Page fields in the body show the pages they landed on; when that
+	// changes what they show, lay their paragraphs out again (once: a
+	// value that moves its field to another page settles next time).
+	if !e.fieldPass && e.updateBodyFields() {
+		relaid := e.LastRelaid
+		e.fieldPass = true
+		e.Layout()
+		e.fieldPass = false
+		e.LastRelaid += relaid
+	}
 	e.LastDuration = time.Since(start)
 }
 

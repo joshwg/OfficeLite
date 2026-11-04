@@ -36,7 +36,7 @@ func (f FileFilter) Label() string { return f.Name + " (" + f.Pattern() + ")" }
 // File-type filters shared by the spreadsheet and document windows.
 var (
 	ExcelFilter = FileFilter{Name: "Excel Files", Exts: []string{".xlsx", ".xlsm", ".xls", ".csv", ".tsv", ".txt", ".numbers"}}
-	WordFilter  = FileFilter{Name: "Word Documents", Exts: []string{".docx", ".docm", ".dotx", ".doc", ".txt", ".pages"}}
+	WordFilter  = FileFilter{Name: "Word Documents", Exts: []string{".docx", ".docm", ".dotx", ".dotm", ".doc", ".dot", ".txt", ".pages"}}
 	AllFilter   = FileFilter{Name: "All Files"}
 	PDFFilter   = FileFilter{Name: "PDF", Exts: []string{".pdf"}}
 	ImageFilter = FileFilter{Name: "Pictures", Exts: []string{".png", ".jpg", ".jpeg", ".jfif", ".gif", ".bmp", ".tif", ".tiff", ".webp"}}

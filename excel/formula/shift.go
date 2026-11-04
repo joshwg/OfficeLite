@@ -5,6 +5,7 @@ package formula
 import (
 	"strconv"
 
+	"officelite/excel"
 	"officelite/excel/model"
 )
 
@@ -39,7 +40,7 @@ func Shift(f string, dRow, dCol int) string {
 				r.r2 += dRow
 			}
 		}
-		if min(r.r1, r.r2, r.c1, r.c2) < 0 || max(r.r1, r.r2) >= excelRows || max(r.c1, r.c2) >= excelCols {
+		if min(r.r1, r.r2, r.c1, r.c2) < 0 || max(r.r1, r.r2) >= excel.ExcelMaxRows || max(r.c1, r.c2) >= excel.ExcelMaxCols {
 			return string(ErrRef)
 		}
 		return t.result(r, true)
@@ -78,10 +79,10 @@ func parseShiftRef(s string) (cellRef, int, bool) {
 		i++
 	}
 	start := i
-	for i < len(s) && i-start < 4 && isLetter(s[i]) {
+	for i < len(s) && i-start <= excel.ExcelMaxColLetters && isLetter(s[i]) {
 		i++
 	}
-	if i == start || i-start > 3 {
+	if i == start || i-start > excel.ExcelMaxColLetters {
 		return r, 0, false
 	}
 	r.col = model.ParseColName(s[start:i])

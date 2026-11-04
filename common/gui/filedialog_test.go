@@ -6,7 +6,7 @@ import "testing"
 
 // TestFileFilter checks a filter's label and the all-files pattern.
 func TestFileFilter(t *testing.T) {
-	if got := WordFilter.Label(); got != "Word Documents (*.docx;*.docm;*.dotx;*.doc;*.txt;*.pages)" {
+	if got := WordFilter.Label(); got != "Word Documents (*.docx;*.docm;*.dotx;*.dotm;*.doc;*.dot;*.txt;*.pages)" {
 		t.Errorf("label = %q", got)
 	}
 	if got := AllFilter.Pattern(); got != "*.*" {

@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	"officelite/excel"
 	"officelite/excel/formula"
 	"officelite/excel/model"
 )
@@ -232,7 +233,7 @@ func parseCell(s string) (row, col int, ok bool) {
 // filterFits reports whether the AutoFilter can be written to .xls.
 func filterFits(sh *model.Sheet) bool {
 	f := sh.AutoFilter
-	return f != nil && f.Range.R2 < xlsMaxRows && f.Range.C2 < xlsMaxCols
+	return f != nil && f.Range.R2 < excel.XlsMaxRows && f.Range.C2 < excel.XlsMaxCols
 }
 
 // filterNames adds the hidden _FilterDatabase NAME of each sheet with an
@@ -372,6 +373,6 @@ func doper(cd model.FilterCond) (d, str []byte) {
 	if v, err := strconv.ParseFloat(cd.Val, 64); err == nil {
 		return append([]byte{vtNumber, sign}, binary.LittleEndian.AppendUint64(nil, math.Float64bits(v))...), nil
 	}
-	s := truncUTF16(cd.Val, 255)
+	s := truncUTF16(cd.Val, excel.XlsMaxShortString)
 	return []byte{vtString, sign, 0, 0, 0, 0, byte(strLen(s)), 0, 0, 0}, appendChars(nil, s)
 }

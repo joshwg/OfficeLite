@@ -3,6 +3,7 @@ package financial
 import (
 	"math"
 
+	"officelite/excel"
 	f "officelite/excel/formula"
 )
 
@@ -43,7 +44,7 @@ func db(e *f.Env, a []f.Value) f.Value {
 		month = math.Trunc(x[4])
 	}
 	if cost <= 0 || salvage < 0 || salvage > cost || life <= 0 || period <= 0 ||
-		period > life+1 || month < 1 || month > 12 {
+		period > life+1 || period > excel.FinancialMaxPeriods || month < 1 || month > 12 {
 		return f.ErrNum
 	}
 	rate := math.Round((1-math.Pow(salvage/cost, 1/life))*1000) / 1000
@@ -139,7 +140,7 @@ func vdb(e *f.Env, a []f.Value) f.Value {
 		factor = x[5]
 	}
 	noSwitch := x[6] != 0
-	if cost < 0 || salvage < 0 || salvage > cost || life <= 0 || start < 0 || end < start || end > life || factor <= 0 {
+	if cost < 0 || salvage < 0 || salvage > cost || life <= 0 || start < 0 || end < start || end > life || end > excel.FinancialMaxPeriods || factor <= 0 {
 		return f.ErrNum
 	}
 	iStart, iEnd := math.Floor(start), math.Ceil(end)

@@ -71,11 +71,19 @@ func (a *App) backstageConfig() gui.BackstageConfig {
 // handleBackstage carries out a backstage action: back, new, open, save
 // or close.
 func (a *App) handleBackstage(ev gui.BackstageEvent) {
+	if ev.Action != gui.ActSave && ev.Action != gui.ActClose {
+		// Anything but saving abandons a close waiting for the save
+		// (the Save As page "Save changes?" showed), so a later Save As
+		// doesn't close the window.
+		a.closing = false
+	}
 	switch ev.Action {
 	case gui.ActBack:
-		a.closing = false
 		a.grid.focusPending = true
 	case gui.ActNew:
+		if ev.Template < 0 || ev.Template >= len(templates) {
+			return
+		}
 		a.back.Hide()
 		kind := doctype.Spreadsheet
 		if templates[ev.Template].Kind == recent.Document {
@@ -96,7 +104,8 @@ func (a *App) handleBackstage(ev gui.BackstageEvent) {
 // pristine reports whether the window holds an untouched new workbook,
 // which Excel replaces when a file is opened.
 func (a *App) pristine() bool {
-	return a.path == "" && !a.modified && !a.loading.Load()
+	// Not while a Save As or export runs: its result belongs to this workbook.
+	return a.path == "" && !a.modified && !a.loading.Load() && !a.saving.Load()
 }
 
 // openFile opens path in this window if it is pristine, otherwise in a new
@@ -312,6 +321,8 @@ func (a *App) saved(wb *model.Workbook, f fileio.Format, path string, export boo
 	a.savedSnapshot(wb, wb, a.revision, a.active, f, path, export, err)
 }
 
+// savedSnapshot runs on the UI goroutine after a Save As or export of wb,
+// a snapshot of owner taken at revision with sheet active, finishes.
 func (a *App) savedSnapshot(owner, wb *model.Workbook, revision uint64, sheet int, f fileio.Format, path string, export bool, err error) {
 	if err != nil {
 		a.errMsg = "Save failed: " + err.Error()
@@ -326,7 +337,13 @@ func (a *App) savedSnapshot(owner, wb *model.Workbook, revision uint64, sheet in
 		what = "Exported "
 	}
 	a.notice = what + filepath.Base(path) + lossNote(wb, f, sheet)
-	if export || owner != a.wb {
+	if export {
+		// An export isn't the save a close waits for, and it leaves the
+		// backstage, which abandons the close.
+		a.closing = false
+		return
+	}
+	if owner != a.wb {
 		return
 	}
 	if a.revision == revision {
@@ -342,6 +359,9 @@ func (a *App) savedSnapshot(owner, wb *model.Workbook, revision uint64, sheet in
 		a.lk.readOnly = false
 		a.lk.doc.Set(path, true) // the new file's registration and owner file
 		a.as.elsewhere = false
+		// No longer a recovered workbook, even with edits made during the
+		// write (which keep their recovery copy, now for this file).
+		a.ar.recovered = nil
 	}
 	a.wb.Name = filepath.Base(path)
 	a.warned = path

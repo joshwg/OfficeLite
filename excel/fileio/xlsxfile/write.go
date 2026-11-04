@@ -17,6 +17,7 @@ import (
 	"github.com/xuri/excelize/v2"
 
 	"officelite/common/colors"
+	"officelite/excel"
 	"officelite/excel/formula"
 	"officelite/excel/model"
 )
@@ -298,22 +299,22 @@ func (x *writer) writeSheet(sh *model.Sheet, name, part string) error {
 	// Rows: every row with cells or its own height, in order.
 	nRows := sh.UsedRows()
 	for r := range sh.RowHeight {
-		if r < model.MaxRows {
+		if r < excel.MaxRows {
 			nRows = max(nRows, r+1)
 		}
 	}
 	for r := range sh.Filtered {
-		if r < model.MaxRows {
+		if r < excel.MaxRows {
 			nRows = max(nRows, r+1)
 		}
 	}
 	for _, m := range []map[int]uint8{sh.Outline.RowLevel} {
 		for r := range m {
-			nRows = max(nRows, min(r+1, model.MaxRows))
+			nRows = max(nRows, min(r+1, excel.MaxRows))
 		}
 	}
 	for r := range sh.Outline.RowCollapsed {
-		nRows = max(nRows, min(r+1, model.MaxRows))
+		nRows = max(nRows, min(r+1, excel.MaxRows))
 	}
 	var vals []any
 	for r := 0; r < nRows; r++ {
@@ -393,7 +394,7 @@ func colsXML(sh *model.Sheet) string {
 	}
 	cols := make([]int, 0, len(set))
 	for c := range set {
-		if c >= 0 && c < model.MaxCols {
+		if c >= 0 && c < excel.MaxCols {
 			cols = append(cols, c)
 		}
 	}
@@ -579,8 +580,13 @@ func needsExponent(v float64) bool {
 	return strings.ContainsRune(strconv.FormatFloat(v, 'g', -1, 64), 'e')
 }
 
+// xmlEscape escapes s for XML text or an attribute value. Characters XML
+// 1.0 cannot carry at all (control characters other than tab, CR and LF,
+// U+FFFE and U+FFFF; text from .xls and .csv files can hold them) become
+// U+FFFD, as excelize writes them: passed through, they made the saved part
+// unreadable (chart caches, PivotTable items and formulas hold cell text).
 func xmlEscape(s string) string {
-	if !strings.ContainsAny(s, `&<>"'`+"\r\t\n") {
+	if !strings.ContainsAny(s, `&<>"'`+"\r\t\n\uFFFE\uFFFF") && !hasControlChars(s) {
 		return s
 	}
 	var b strings.Builder
@@ -603,7 +609,12 @@ func xmlEscape(s string) string {
 			b.WriteString("&#x9;")
 		case '\n':
 			b.WriteString("&#xA;")
+		case '\uFFFE', '\uFFFF':
+			b.WriteRune(utf8.RuneError)
 		default:
+			if r < ' ' {
+				r = utf8.RuneError
+			}
 			b.WriteRune(r)
 		}
 	}
@@ -990,8 +1001,8 @@ func (x *writer) setNormalFont(b []byte) ([]byte, error) {
 // <sheetData> and replacing each placeholder <c r="REF" ...></c> with its
 // raw XML.
 func patchSheet(dst io.Writer, src io.Reader, p *sheetPatch) error {
-	br := bufio.NewReaderSize(src, 64<<10)
-	bw := bufio.NewWriterSize(dst, 64<<10)
+	br := bufio.NewReaderSize(src, excel.XlsxPatchBufSize)
+	bw := bufio.NewWriterSize(dst, excel.XlsxPatchBufSize)
 	if p.formatPr != "" {
 		if err := copyUntil(bw, br, "sheetFormatPr"); err != nil {
 			return fmt.Errorf("no sheetFormatPr")

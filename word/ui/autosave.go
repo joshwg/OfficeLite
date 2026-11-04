@@ -7,16 +7,12 @@ import (
 	"time"
 
 	"gioui.org/layout"
-	"gioui.org/op"
 
 	"officelite/common/autosave"
 	"officelite/common/gui"
 	"officelite/common/lockfile"
 	"officelite/word/fileio"
 )
-
-// savedShown is how long the title says "Saved" after an AutoSave.
-const savedShown = 4 * time.Second
 
 // autoSave is the window's AutoSave state: when the title bar's switch is
 // on, the document is saved into its file a few seconds after each edit
@@ -128,22 +124,7 @@ func (d *window) autoSaved(err error) {
 // autoSaveStatus is what the title says after the name: "Saving…" while
 // AutoSave writes, "Saved" for a moment after.
 func (d *window) autoSaveStatus(gtx layout.Context) string {
-	s := d.as.saver
-	switch {
-	case s.Busy():
-		return "Saving…"
-	case !s.On() || d.as.savedAt.IsZero():
-		return ""
-	}
-	now, end := gtx.Now, d.as.savedAt.Add(savedShown)
-	if now.IsZero() {
-		now = time.Now() // a frame without a clock (wordshot)
-	}
-	if !now.Before(end) {
-		return ""
-	}
-	gtx.Execute(op.InvalidateCmd{At: end})
-	return "Saved"
+	return gui.AutoSaveStatus(gtx, d.as.saver, d.as.savedAt)
 }
 
 // autoSaveSwitch is the title bar's AutoSave switch.

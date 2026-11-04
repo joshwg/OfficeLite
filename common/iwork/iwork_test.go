@@ -9,9 +9,11 @@ import (
 	"encoding/binary"
 	"errors"
 	"math"
+	"officelite/common/limits"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -143,7 +145,9 @@ func TestDecimal128(t *testing.T) {
 		exp  int
 		neg  bool
 		want float64
-	}{{5, 0, false, 5}, {125, -1, true, -12.5}, {825, -4, false, 0.0825}, {3, 3, false, 3000}} {
+	}{{5, 0, false, 5}, {125, -1, true, -12.5}, {825, -4, false, 0.0825}, {3, 3, false, 3000},
+		{0, 5000, false, 0}, // 0 × 10^5000 was NaN (0 × +Inf)
+	} {
 		if got := decimal128(enc(tt.mant, tt.exp, tt.neg)); got != tt.want {
 			t.Errorf("decimal128(%d e%d) = %v, want %v", tt.mant, tt.exp, got, tt.want)
 		}
@@ -617,5 +621,37 @@ func TestParagraphsPayloadCycle(t *testing.T) {
 			t.Errorf("Paragraphs(%d) = %v", id, p)
 		}
 		d.PlainText(id)
+	}
+}
+
+// TestTableBounds checks that a damaged table model's dimensions and
+// merges are kept within Numbers' limits and the table: field values of
+// 2^63 and more once came out as negative counts, and a merge could span
+// billions of cells for a reader to walk.
+func TestTableBounds(t *testing.T) {
+	huge := uint64(1) << 63
+	v := func(n int, x uint64) Field { return Field{Num: n, Wire: wireVarint, V: x} }
+	model := Message{v(6, huge+5), v(7, 1<<40), v(9, huge), v(10, 5000), v(11, huge)}
+	d := &Document{Objects: map[uint64]*Object{1: {ID: 1, Type: TypeTableModel, Msg: model}}}
+	tb, err := d.TableModel(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tb.Rows != limits.IWorkMaxTableRows || tb.Cols != limits.IWorkMaxTableCols {
+		t.Errorf("dimensions %d × %d", tb.Rows, tb.Cols)
+	}
+	if tb.HeaderRows < 0 || tb.FooterRows < 0 || tb.HeaderRows+tb.FooterRows > tb.Rows || tb.HeaderCols != tb.Cols {
+		t.Errorf("headers %d rows, %d columns, footers %d rows", tb.HeaderRows, tb.HeaderCols, tb.FooterRows)
+	}
+	got := clipMerges([]Range{
+		{0, 0, 1, 1},         // kept
+		{5, 5, 1 << 40, 100}, // cut at the edges
+		{-1, 0, 2, 2},        // negative start: dropped
+		{20, 0, 30, 1},       // starts below the table: dropped
+		{2, 3, 1, 3},         // inside out: dropped
+	}, 10, 10)
+	want := []Range{{0, 0, 1, 1}, {5, 5, 9, 9}}
+	if !slices.Equal(got, want) {
+		t.Errorf("clipMerges = %v, want %v", got, want)
 	}
 }

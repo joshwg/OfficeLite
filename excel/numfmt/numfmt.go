@@ -8,6 +8,7 @@ import (
 
 	"github.com/xuri/excelize/v2"
 
+	"officelite/excel"
 	"officelite/excel/formula"
 )
 
@@ -140,16 +141,15 @@ func General(v float64) string {
 	if v < 0 {
 		return "-" + General(-v) // the sign does not count toward the width
 	}
-	const maxLen = 11
-	if v >= 1e11 || v < 1e-9 {
+	if v >= excel.GeneralSciFrom || v < excel.GeneralSciBelow {
 		return formatScientific(v)
 	}
 	s := strconv.FormatFloat(v, 'f', -1, 64)
-	if len(s) <= maxLen {
+	if len(s) <= excel.GeneralMaxLen {
 		return s
 	}
 	intLen := len(strconv.FormatFloat(math.Trunc(v), 'f', 0, 64))
-	decimals := maxLen - intLen - 1
+	decimals := excel.GeneralMaxLen - intLen - 1
 	if decimals <= 0 {
 		return strconv.FormatFloat(v, 'f', 0, 64)
 	}

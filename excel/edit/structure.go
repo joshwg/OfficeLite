@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"officelite/excel"
 	"officelite/excel/calc"
 	"officelite/excel/formula"
 	"officelite/excel/model"
@@ -58,28 +59,28 @@ var ErrShiftOffSheet = errors.New("to prevent possible loss of data, nonblank ce
 func (b *Book) InsertRows(sheet, at, n int) (calc.Result, error) {
 	defer b.Op("Insert Rows")()
 	return b.structural(&structural{kind: insertRows, sheet: sheet, at: at, n: n},
-		Where{sheet, model.Range{R1: at, R2: at + n - 1, C2: model.MaxCols - 1}})
+		Where{sheet, model.Range{R1: at, R2: at + n - 1, C2: excel.MaxCols - 1}})
 }
 
 // DeleteRows deletes rows at..at+n-1 on sheet.
 func (b *Book) DeleteRows(sheet, at, n int) (calc.Result, error) {
 	defer b.Op("Delete Rows")()
 	return b.structural(&structural{kind: deleteRows, sheet: sheet, at: at, n: n},
-		Where{sheet, model.Range{R1: at, R2: at + n - 1, C2: model.MaxCols - 1}})
+		Where{sheet, model.Range{R1: at, R2: at + n - 1, C2: excel.MaxCols - 1}})
 }
 
 // InsertCols inserts n columns before column at on sheet.
 func (b *Book) InsertCols(sheet, at, n int) (calc.Result, error) {
 	defer b.Op("Insert Columns")()
 	return b.structural(&structural{kind: insertCols, sheet: sheet, at: at, n: n},
-		Where{sheet, model.Range{C1: at, C2: at + n - 1, R2: model.MaxRows - 1}})
+		Where{sheet, model.Range{C1: at, C2: at + n - 1, R2: excel.MaxRows - 1}})
 }
 
 // DeleteCols deletes columns at..at+n-1 on sheet.
 func (b *Book) DeleteCols(sheet, at, n int) (calc.Result, error) {
 	defer b.Op("Delete Columns")()
 	return b.structural(&structural{kind: deleteCols, sheet: sheet, at: at, n: n},
-		Where{sheet, model.Range{C1: at, C2: at + n - 1, R2: model.MaxRows - 1}})
+		Where{sheet, model.Range{C1: at, C2: at + n - 1, R2: excel.MaxRows - 1}})
 }
 
 // InsertSheet adds an empty sheet before sheet index at, named Sheet<n>
@@ -139,8 +140,8 @@ func ValidSheetName(name string) error {
 	switch {
 	case strings.TrimSpace(name) == "":
 		return errors.New("a sheet name can't be blank")
-	case len([]rune(name)) > 31:
-		return errors.New("a sheet name can't be longer than 31 characters")
+	case len([]rune(name)) > excel.MaxSheetName:
+		return fmt.Errorf("a sheet name can't be longer than %d characters", excel.MaxSheetName)
 	case strings.ContainsAny(name, `:\/?*[]`):
 		return errors.New(`a sheet name can't contain : \ / ? * [ or ]`)
 	case name[0] == '\'' || name[len(name)-1] == '\'':
@@ -379,7 +380,7 @@ func (b *Book) recalculateAll() calc.Result {
 // pushing nonblank cells off the sheet.
 func fits(sh *model.Sheet, rows bool, n int) bool {
 	if rows {
-		for r := model.MaxRows - n; r < sh.UsedRows(); r++ {
+		for r := excel.MaxRows - n; r < sh.UsedRows(); r++ {
 			for c := 0; c < sh.RowLen(r); c++ {
 				if cell := sh.Get(r, c); cell.Formula != "" || cell.Kind != model.KindEmpty {
 					return false
@@ -389,7 +390,7 @@ func fits(sh *model.Sheet, rows bool, n int) bool {
 		return true
 	}
 	for r := 0; r < sh.UsedRows(); r++ {
-		for c := model.MaxCols - n; c < sh.RowLen(r); c++ {
+		for c := excel.MaxCols - n; c < sh.RowLen(r); c++ {
 			if cell := sh.Get(r, c); cell.Formula != "" || cell.Kind != model.KindEmpty {
 				return false
 			}

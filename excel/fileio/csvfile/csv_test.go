@@ -3,6 +3,7 @@ package csvfile
 import (
 	"testing"
 
+	"officelite/excel"
 	"officelite/excel/model"
 )
 
@@ -15,6 +16,7 @@ func TestRead(t *testing.T) {
 		{"semi.csv", "a;b;c\n1;2;3\n", [][]string{{"a", "b", "c"}, {"1", "2", "3"}}},
 		{"tab.txt", "a\tb\n1\t2\n", [][]string{{"a", "b"}, {"1", "2"}}},
 		{"sep.csv", "sep=|\na|b\n", [][]string{{"a", "b"}}},
+		{"badsep.csv", "sep=\"\na,b\n", [][]string{{"a", "b"}}}, // csv refuses a quote: sniffed instead
 		{"bom.csv", "\xEF\xBB\xBFhé,x\n", [][]string{{"hé", "x"}}},
 		{"cp1252.csv", "caf\xE9,1\n", [][]string{{"café", "1"}}},
 		{"multi.csv", "\"line1\nline2\",z\n", [][]string{{"line1\nline2", "z"}}},
@@ -75,16 +77,16 @@ func TestFormulaCell(t *testing.T) {
 }
 
 func TestLimits(t *testing.T) {
-	wide := make([]byte, 0, 3*(model.MaxCols+5))
-	for i := 0; i < model.MaxCols+5; i++ {
+	wide := make([]byte, 0, 3*(excel.MaxCols+5))
+	for i := 0; i < excel.MaxCols+5; i++ {
 		wide = append(wide, "1,"...)
 	}
 	wb, err := Read("wide.csv", wide)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := wb.Sheets[0].UsedCols(); got != model.MaxCols {
-		t.Errorf("used cols = %d, want %d", got, model.MaxCols)
+	if got := wb.Sheets[0].UsedCols(); got != excel.MaxCols {
+		t.Errorf("used cols = %d, want %d", got, excel.MaxCols)
 	}
 	if len(wb.Warnings) != 1 {
 		t.Errorf("warnings = %v", wb.Warnings)

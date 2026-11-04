@@ -1,6 +1,7 @@
 package docfile
 
 import (
+	"officelite/word"
 	"officelite/word/model"
 )
 
@@ -127,10 +128,10 @@ func (r *reader) readSep(sed []byte) *model.Section {
 				if op == sprmSDxaColSpacing {
 					list = &cols.Spaces
 				}
-				for len(*list) <= i && i < 64 {
+				for len(*list) <= i && i < word.DocMaxSectColumns {
 					*list = append(*list, 0)
 				}
-				if i < 64 {
+				if i < word.DocMaxSectColumns {
 					(*list)[i] = twips(int(u16(a[1:])))
 				}
 			}

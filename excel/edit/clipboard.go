@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"officelite/excel"
 	"officelite/excel/calc"
 	"officelite/excel/formula"
 	"officelite/excel/model"
@@ -94,10 +95,10 @@ func shownRows(sh *model.Sheet, u model.Range) []int {
 // cell fills the selection), otherwise once at its top-left cell.
 func pasteTarget(sh *model.Sheet, sel model.Range, h, w int) (model.Range, error) {
 	// A whole column or row selection only covers the used part.
-	if sel.R2 == model.MaxRows-1 {
+	if sel.R2 == excel.MaxRows-1 {
 		sel.R2 = max(sel.R1+h-1, min(sel.R2, sh.UsedRows()-1))
 	}
-	if sel.C2 == model.MaxCols-1 {
+	if sel.C2 == excel.MaxCols-1 {
 		sel.C2 = max(sel.C1+w-1, min(sel.C2, sh.UsedCols()-1))
 	}
 	sh2, sw := sel.R2-sel.R1+1, sel.C2-sel.C1+1
@@ -105,7 +106,7 @@ func pasteTarget(sh *model.Sheet, sel model.Range, h, w int) (model.Range, error
 	if sh2%h != 0 || sw%w != 0 {
 		dest.R2, dest.C2 = sel.R1+h-1, sel.C1+w-1
 	}
-	if dest.R2 >= model.MaxRows || dest.C2 >= model.MaxCols {
+	if dest.R2 >= excel.MaxRows || dest.C2 >= excel.MaxCols {
 		return dest, ErrPasteSize
 	}
 	return dest, nil
@@ -129,18 +130,8 @@ func (b *Book) Paste(clip *Clip, sheet int, sel model.Range) (model.Range, calc.
 	if err != nil {
 		return dest, calc.Result{}, err
 	}
-	cells := map[[3]int]*cellChange{}
-	var order [][3]int
-	set := func(s, r, c int, v model.Cell) {
-		k := [3]int{s, r, c}
-		if ch, ok := cells[k]; ok {
-			ch.after = v
-			return
-		}
-		ws := b.WB.Sheets[s]
-		cells[k] = &cellChange{s, r, c, snapshot(ws, spillChildren(ws), r, c), v}
-		order = append(order, k)
-	}
+	ed := b.newCellEdits()
+	cells, set := ed.cells, ed.set
 	if clip.Cut {
 		// The source empties first; the destination may overlap it.
 		for r := clip.Src.R1; r <= clip.Src.R2; r++ {
@@ -203,16 +194,13 @@ func (b *Book) Paste(clip *Clip, sheet int, sel model.Range) (model.Range, calc.
 			}
 		}
 		// Destination cells past the sheet's stored cells aren't in the scan.
-		for _, k := range slices.Clone(order) {
+		for _, k := range slices.Clone(ed.order) {
 			if s := b.WB.Sheets[k[0]]; k[1] >= s.UsedRows() || k[2] >= s.RowLen(k[1]) {
 				fix(k[0], k[1], k[2])
 			}
 		}
 	}
-	list := make([]cellChange, 0, len(order))
-	for _, k := range order {
-		list = append(list, *cells[k])
-	}
+	list := ed.list()
 	if clip.Cut && clip.Sheet == sheet {
 		if names := b.moveNames(b.WB.Sheets[clip.Sheet].Name, clip.Src, dr, dc); names != nil {
 			// Names pointing into the moved block follow it too.
@@ -250,7 +238,7 @@ func (b *Book) PasteText(text string, sheet int, sel model.Range) (model.Range, 
 			return dest, calc.Result{}, err
 		}
 	}
-	if dest.R2 >= model.MaxRows || dest.C2 >= model.MaxCols {
+	if dest.R2 >= excel.MaxRows || dest.C2 >= excel.MaxCols {
 		return dest, calc.Result{}, ErrPasteSize
 	}
 	child := spillChildren(sh)

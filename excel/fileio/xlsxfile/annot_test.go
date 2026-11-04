@@ -1,8 +1,11 @@
 package xlsxfile
 
 import (
+	"archive/zip"
 	"testing"
+	"time"
 
+	"officelite/excel"
 	"officelite/excel/model"
 )
 
@@ -59,5 +62,25 @@ func TestNoteAuthorAndControlChars(t *testing.T) {
 		if n, _ := got.Sheets[0].NoteAt(k[0], k[1]); n != want {
 			t.Errorf("note %v = %+q, want %+q", k, n, want)
 		}
+	}
+}
+
+// TestHugeLinkRanges checks that hyperlinks over the whole sheet stay
+// cheap: the row loop ignored the per-link bound, so each A1:XFD1048576
+// hyperlink still walked all 262,144 rows, and thousands of them stalled
+// the reader.
+func TestHugeLinkRanges(t *testing.T) {
+	r := &reader{files: map[string]*zip.File{}, wb: &model.Workbook{}}
+	for range 20000 {
+		r.links = append(r.links, xLink{ref: "A1:XFD1048576", location: "Sheet1!A1"})
+	}
+	sh := model.NewSheet("Sheet1")
+	start := time.Now()
+	r.readAnnotations("xl/worksheets/sheet1.xml", sh)
+	if d := time.Since(start); d > 3*time.Second {
+		t.Errorf("took %v", d)
+	}
+	if len(sh.Links) != excel.MaxLinkCells {
+		t.Errorf("%d linked cells, want %d", len(sh.Links), excel.MaxLinkCells)
 	}
 }

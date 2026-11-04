@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"gioui.org/font/gofont"
+	"gioui.org/op"
 	"gioui.org/text"
 
 	"officelite/word/model"
@@ -499,5 +500,35 @@ func TestListSkipsHiddenCells(t *testing.T) {
 	e := layoutDoc(d)
 	if e.labels[first] != "1." || e.labels[last] != "2." || e.labels[hidden] != "" {
 		t.Errorf("labels %q %q %q, want 1. / (none) / 2.", e.labels[first], e.labels[hidden], e.labels[last])
+	}
+}
+
+// TestHugeAndBadFontSizes checks that text of Word's largest size (1638
+// pt), drawn zoomed in, and a zero or negative size from a file neither
+// crash Gio's shaper (which panics on sizes past 1023 pixels per em) nor
+// change how wide big text measures.
+func TestHugeAndBadFontSizes(t *testing.T) {
+	sizes := []float64{100, 256, 1638, -5, math.NaN()}
+	var body []model.Block
+	for _, sz := range sizes {
+		body = append(body, &model.Paragraph{Runs: []model.Run{{Text: "Wide", Props: model.RunProps{Size: sz}}}})
+	}
+	e := layoutDoc(docOf(body...))
+	for _, pg := range e.Pages {
+		var ops op.Ops
+		e.DrawPage(&ops, pg, DrawOptions{Scale: 4})
+	}
+	width := func(i int) float64 {
+		w := 0.0
+		for _, ref := range e.paraLines[i] {
+			for _, it := range e.Pages[ref.Page].Lines[ref.Line].Line.Items {
+				w += it.W
+			}
+		}
+		return w
+	}
+	// Measuring is linear in the size, whatever size it shapes at.
+	if w100, w1638 := width(0), width(2); w100 <= 0 || math.Abs(w1638/w100-16.38) > 0.2 {
+		t.Errorf("1638 pt text is %.1f wide, 100 pt %.1f: want 16.38 times", w1638, w100)
 	}
 }

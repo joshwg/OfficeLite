@@ -99,7 +99,13 @@ func DateSerial(year, month, day int, date1904 bool) (float64, bool) {
 	// Counting days from the first of the month lands on Excel's serials
 	// even around the fictitious 1900-02-29 (DATE(1900,2,29) = 60).
 	s := TimeToSerial(first, date1904) + float64(day-1)
-	if s < 0 { // the upper end is limited by year <= 9999 above
+	// Days (and months) roll over, so a valid year can still land past
+	// 9999-12-31: DATE(9999,12,40).
+	last := float64(MaxSerial)
+	if date1904 {
+		last -= Offset1904
+	}
+	if s < 0 || s > last {
 		return 0, false
 	}
 	return s, true

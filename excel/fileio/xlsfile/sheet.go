@@ -3,6 +3,7 @@ package xlsfile
 import (
 	"errors"
 
+	"officelite/excel"
 	"officelite/excel/model"
 )
 
@@ -236,7 +237,7 @@ func (p *parser) readSheet(pos int, sh *model.Sheet) {
 			hidden := opts&0x01 != 0
 			// An outline column whose width wasn't set keeps the default.
 			deflt := (level > 0 || opts&0x1000 != 0) && !hidden && opts&0x02 == 0
-			for c := first; c <= min(last, xlsMaxCols-1); c++ { // COLINFO may run to column 257
+			for c := first; c <= min(last, excel.XlsMaxCols-1); c++ { // COLINFO may run to column 257
 				if !deflt {
 					sh.ColWidth[c] = w
 				}

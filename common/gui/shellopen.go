@@ -39,6 +39,11 @@ func linkAllowed(target string) bool {
 			return true
 		}
 	}
+	// A leading "-" would reach xdg-open or open as an option, and
+	// "open -aTerminal" starts a program.
+	if strings.HasPrefix(t, "-") {
+		return false
+	}
 	p := t
 	if strings.HasPrefix(low, "file:") {
 		u, err := url.Parse(t)

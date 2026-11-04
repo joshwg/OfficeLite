@@ -5,6 +5,7 @@ import (
 	"slices"
 	"testing"
 
+	"officelite/excel"
 	"officelite/excel/fileio"
 	"officelite/excel/model"
 )
@@ -39,7 +40,7 @@ func TestFormatAndUndo(t *testing.T) {
 	}
 
 	// Whole columns format only the used rows.
-	b.Format(0, model.Range{R1: 0, C1: 3, R2: model.MaxRows - 1, C2: 3}, func(st *model.Style, _, _ int) { st.Font.Italic = true })
+	b.Format(0, model.Range{R1: 0, C1: 3, R2: excel.MaxRows - 1, C2: 3}, func(st *model.Style, _, _ int) { st.Font.Italic = true })
 	if n := b.WB.Sheets[0].UsedRows(); n != 2 {
 		t.Errorf("used rows after formatting column D = %d", n)
 	}

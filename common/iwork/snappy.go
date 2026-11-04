@@ -5,6 +5,7 @@ package iwork
 import (
 	"encoding/binary"
 	"errors"
+	"officelite/common/limits"
 )
 
 var errSnappy = errors.New("iwork: corrupt snappy data")
@@ -14,10 +15,9 @@ var errSnappy = errors.New("iwork: corrupt snappy data")
 // literal and copy elements.
 func snappyDecode(src []byte) ([]byte, error) {
 	n, k := binary.Uvarint(src)
-	// No element expands more than 64/3 times (a 3-byte copy of 64
-	// bytes), so a longer claimed length is corrupt; checking it before
-	// allocating keeps a few bad bytes from reserving a gigabyte.
-	if k <= 0 || n > 22*uint64(len(src)) {
+	// A claimed length beyond limits.IWorkSnappyMaxRatio times the
+	// input is corrupt.
+	if k <= 0 || n > limits.IWorkSnappyMaxRatio*uint64(len(src)) {
 		return nil, errSnappy
 	}
 	src = src[k:]

@@ -5,6 +5,8 @@ package autorecover
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
@@ -55,9 +57,11 @@ func Minutes() int {
 // saves it for later ones. Other keys of the settings file are kept.
 func SetMinutes(m int) error {
 	Minutes() // loaded first, so it isn't read over the new value
+	// Held through the save, so that of two calls at once the one whose
+	// value stays in memory is also the one left in the file.
 	settings.Lock()
+	defer settings.Unlock()
 	settings.minutes = max(m, 0)
-	settings.Unlock()
 	return SaveSetting("autoRecoverMinutes", max(m, 0))
 }
 
@@ -78,7 +82,12 @@ func SaveSetting(key string, v any) error {
 	}
 	fileMu.Lock()
 	defer fileMu.Unlock()
-	s := readSettings()
+	s, err := loadSettings(path)
+	if err != nil {
+		// A file there but unreadable for now (on Windows, another
+		// process may hold it): writing would drop all its other keys.
+		return err
+	}
 	if s == nil {
 		s = map[string]any{}
 	}
@@ -100,13 +109,24 @@ func readSettings() map[string]any {
 	if path == "" {
 		return nil
 	}
+	s, _ := loadSettings(path)
+	return s
+}
+
+// loadSettings reads the settings file at path. A missing file, or one
+// that isn't a JSON object, is nil with no error; the error is for a file
+// that is there but can't be read.
+func loadSettings(path string) (map[string]any, error) {
 	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	var s map[string]any
 	if json.Unmarshal(b, &s) != nil {
-		return nil
+		return nil, nil
 	}
-	return s
+	return s, nil
 }

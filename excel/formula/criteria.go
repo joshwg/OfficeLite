@@ -185,34 +185,48 @@ func compareOp(op string, cmp int) bool {
 
 // WildcardMatch matches s against an Excel wildcard pattern, ignoring case:
 // '*' is any run of characters, '?' any one character, and '~' escapes the
-// next character.
+// next character. It is greedy with backtracking to the last '*', so it
+// takes O(len(pattern)·len(s)) time and no extra memory (COUNTIF calls it
+// for every cell).
 func WildcardMatch(pattern, s string) bool {
-	p := []rune(strings.ToLower(pattern))
-	t := []rune(strings.ToLower(s))
-	var match func(i, j int) bool
-	memo := map[[2]int]bool{}
-	match = func(i, j int) bool {
-		key := [2]int{i, j}
-		if v, ok := memo[key]; ok {
-			return v
-		}
-		var res bool
-		switch {
-		case i == len(p):
-			res = j == len(t)
-		case p[i] == '*':
-			res = match(i+1, j) || (j < len(t) && match(i, j+1))
-		case p[i] == '~' && i+1 < len(p):
-			res = j < len(t) && t[j] == p[i+1] && match(i+2, j+1)
-		case p[i] == '?':
-			res = j < len(t) && match(i+1, j+1)
-		default:
-			res = j < len(t) && t[j] == p[i] && match(i+1, j+1)
-		}
-		memo[key] = res
-		return res
+	type elem struct {
+		kind rune // 'c' literal, '?' any character, '*' any run
+		c    rune
 	}
-	return match(0, 0)
+	var p []elem
+	pr := []rune(strings.ToLower(pattern))
+	for i := 0; i < len(pr); i++ {
+		switch c := pr[i]; {
+		case c == '~' && i+1 < len(pr):
+			i++
+			p = append(p, elem{'c', pr[i]})
+		case c == '?' || c == '*':
+			p = append(p, elem{c, 0})
+		default:
+			p = append(p, elem{'c', c})
+		}
+	}
+	t := []rune(strings.ToLower(s))
+	i, j, star, mark := 0, 0, -1, 0
+	for j < len(t) {
+		switch {
+		case i < len(p) && (p[i].kind == '?' || p[i].kind == 'c' && p[i].c == t[j]):
+			i++
+			j++
+		case i < len(p) && p[i].kind == '*':
+			star, mark = i, j
+			i++
+		case star >= 0:
+			mark++
+			i, j = star+1, mark
+		default:
+			return false
+		}
+	}
+	for i < len(p) && p[i].kind == '*' {
+		i++
+	}
+	return i == len(p)
 }
 
 // HasWildcards reports whether pattern contains unescaped * or ?.

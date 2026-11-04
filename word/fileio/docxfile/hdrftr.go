@@ -111,6 +111,7 @@ func (w *writer) prepareHeaders() {
 		}
 	}
 	done := map[*model.HeaderFooter]hfPart{} // a header two sections share is written once
+	claimed := map[string]bool{}             // source parts already written for a header
 	for si, sec := range w.doc.Sections() {
 		for _, footer := range []bool{false, true} {
 			for k := range 3 {
@@ -123,7 +124,7 @@ func (w *writer) prepareHeaders() {
 					w.hfParts = append(w.hfParts, p)
 					continue
 				}
-				p := w.hfPart(h, model.HFKind(k), footer, used)
+				p := w.hfPart(h, model.HFKind(k), footer, used, claimed)
 				p.sec = si
 				done[h] = p
 				w.hfParts = append(w.hfParts, p)
@@ -132,15 +133,18 @@ func (w *writer) prepareHeaders() {
 	}
 }
 
-// hfPart writes the part of one header or footer.
-func (w *writer) hfPart(h *model.HeaderFooter, kind model.HFKind, footer bool, used map[string]bool) hfPart {
+// hfPart writes the part of one header or footer. A header read from a
+// source part keeps it, unless another header (a copy of it: an unlinked
+// section's, or one restored by undo) has claimed it already, when it gets
+// a new part.
+func (w *writer) hfPart(h *model.HeaderFooter, kind model.HFKind, footer bool, used, claimed map[string]bool) hfPart {
 	p := hfPart{kind: kind, footer: footer, ctype: ctHeader}
 	base := "header"
 	if footer {
 		p.ctype, base = ctFooter, "footer"
 	}
 	// An unchanged source part keeps its relationship.
-	if w.src != nil && h.Part != "" && w.src.find(h.Part) != nil {
+	if w.src != nil && h.Part != "" && !claimed[strings.ToLower(h.Part)] && w.src.find(h.Part) != nil {
 		for _, rl := range w.rels {
 			if strings.EqualFold(opc.Resolve(w.main, rl.Target), h.Part) {
 				p.name, p.relID = h.Part, rl.ID
@@ -173,6 +177,7 @@ func (w *writer) hfPart(h *model.HeaderFooter, kind model.HFKind, footer bool, u
 			}
 		}
 	}
+	claimed[strings.ToLower(p.name)] = true
 	p.data, p.rels = w.hfXML(h, p)
 	if !p.isNew {
 		// Unchanged content keeps the original part byte for byte.

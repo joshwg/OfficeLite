@@ -10,6 +10,7 @@ import (
 	"gioui.org/widget"
 
 	"officelite/common/gui"
+	"officelite/excel"
 	"officelite/excel/edit"
 	"officelite/excel/formula"
 	"officelite/excel/model"
@@ -251,9 +252,9 @@ func (a *App) layoutTop10Dialog(gtx layout.Context, k int) {
 	}
 	if k > 0 {
 		n, err := strconv.ParseFloat(strings.TrimSpace(d.n.Text()), 64)
-		limit := 500.0
+		limit := float64(excel.FilterTop10MaxItems)
 		if d.pct {
-			limit = 100
+			limit = excel.FilterTop10MaxPercent
 		}
 		if err != nil || n < 1 || n > limit || n != float64(int(n)) {
 			a.ins.err = "Enter a whole number from 1 to " + strconv.Itoa(int(limit)) + "."

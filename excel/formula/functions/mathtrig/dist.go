@@ -3,6 +3,7 @@ package mathtrig
 import (
 	"math"
 
+	"officelite/excel"
 	f "officelite/excel/formula"
 )
 
@@ -105,9 +106,11 @@ func registerDist(r *f.Registry) {
 			if n <= 0 || k < 0 || n < k {
 				return f.ErrNum
 			}
+			// Count factors rather than step i up to n: past 2^53 i++ no
+			// longer changes i and the loop would never end.
 			p := 1.0
-			for i := n - k + 1; i <= n; i++ {
-				p *= i
+			for i := 0.0; i < k && !math.IsInf(p, 0); i++ {
+				p *= n - i
 			}
 			return f.NumberOrErr(p)
 		}),
@@ -287,7 +290,7 @@ func tInv2T(x []float64) f.Value {
 // CHISQ.DIST(x, deg_freedom, cumulative)
 func chisqDist(x []float64) f.Value {
 	v := math.Trunc(x[1])
-	if x[0] < 0 || v < 1 || v > 1e10 {
+	if x[0] < 0 || v < 1 || v > excel.DistMaxDegFreedom {
 		return f.ErrNum
 	}
 	if x[2] != 0 {
@@ -300,7 +303,7 @@ func chisqDist(x []float64) f.Value {
 // CHISQ.DIST.RT(x, deg_freedom), CHIDIST
 func chisqDistRT(x []float64) f.Value {
 	v := math.Trunc(x[1])
-	if x[0] < 0 || v < 1 || v > 1e10 {
+	if x[0] < 0 || v < 1 || v > excel.DistMaxDegFreedom {
 		return f.ErrNum
 	}
 	_, q := gammaPQ(v/2, x[0]/2)
@@ -310,7 +313,7 @@ func chisqDistRT(x []float64) f.Value {
 // chisqInv is the x with lower tail p (upper tail q = 1-p).
 func chisqInv(p, q, df float64) f.Value {
 	v := math.Trunc(df)
-	if !prob(p) || v < 1 || v > 1e10 {
+	if !prob(p) || v < 1 || v > excel.DistMaxDegFreedom {
 		return f.ErrNum
 	}
 	return gammaInvPQ(p, q, v/2, 2)
@@ -333,7 +336,7 @@ func gammaInvPQ(p, q, a, b float64) f.Value {
 // F.DIST(x, deg_freedom1, deg_freedom2, cumulative)
 func fDist(x []float64) f.Value {
 	d1, d2 := math.Trunc(x[1]), math.Trunc(x[2])
-	if x[0] < 0 || d1 < 1 || d2 < 1 || d1 > 1e10 || d2 > 1e10 {
+	if x[0] < 0 || d1 < 1 || d2 < 1 || d1 > excel.DistMaxDegFreedom || d2 > excel.DistMaxDegFreedom {
 		return f.ErrNum
 	}
 	if x[3] != 0 {
@@ -346,7 +349,7 @@ func fDist(x []float64) f.Value {
 // F.DIST.RT(x, deg_freedom1, deg_freedom2), FDIST
 func fDistRT(x []float64) f.Value {
 	d1, d2 := math.Trunc(x[1]), math.Trunc(x[2])
-	if x[0] < 0 || d1 < 1 || d2 < 1 || d1 > 1e10 || d2 > 1e10 {
+	if x[0] < 0 || d1 < 1 || d2 < 1 || d1 > excel.DistMaxDegFreedom || d2 > excel.DistMaxDegFreedom {
 		return f.ErrNum
 	}
 	_, q := fPQ(x[0], d1, d2)
@@ -356,7 +359,7 @@ func fDistRT(x []float64) f.Value {
 // fInv is the F value with lower tail p (upper tail q = 1-p).
 func fInv(p, q, df1, df2 float64) f.Value {
 	d1, d2 := math.Trunc(df1), math.Trunc(df2)
-	if !prob(p) || d1 < 1 || d2 < 1 || d1 > 1e10 || d2 > 1e10 {
+	if !prob(p) || d1 < 1 || d2 < 1 || d1 > excel.DistMaxDegFreedom || d2 > excel.DistMaxDegFreedom {
 		return f.ErrNum
 	}
 	switch {
@@ -455,17 +458,12 @@ func betaInv(x []float64) f.Value {
 	return f.NumberOrErr(lo + t*(hi-lo))
 }
 
-// smallN bounds the counts for which the discrete distributions use exact
-// binomial coefficients (products of up to smallN terms) rather than
-// log-gamma functions.
-const smallN = 1000
-
 // binomPMF is the probability of k successes in n trials.
 func binomPMF(k, n, p float64) float64 {
 	if k < 0 || k > n {
 		return 0
 	}
-	if n <= smallN {
+	if n <= excel.DistSmallN {
 		if v := combin(n, k) * math.Pow(p, k) * math.Pow(1-p, n-k); v > 0 && !math.IsInf(v, 0) {
 			return v
 		}
@@ -484,7 +482,7 @@ func binomCDF(k, n, p float64) float64 {
 	if k >= n {
 		return 1
 	}
-	if n > smallN {
+	if n > excel.DistSmallN {
 		_, q := betaPQ(p, 1-p, k+1, n-k)
 		return q
 	}
@@ -514,9 +512,19 @@ func binomRange(x []float64) f.Value {
 	if n < 0 || !prob(p) || s < 0 || s > n || s2 < s || s2 > n {
 		return f.ErrNum
 	}
+	if s2-s > excel.DistSmallN {
+		// A wide range from the cumulative distribution: summing term by
+		// term would take up to n steps (forever once k++ stops changing
+		// k, past 2^53).
+		sum := binomCDF(s2, n, p)
+		if s > 0 {
+			sum -= binomCDF(s-1, n, p)
+		}
+		return f.NumberOrErr(math.Max(0, math.Min(sum, 1)))
+	}
 	sum := 0.0
-	for k := s; k <= s2; k++ {
-		sum += binomPMF(k, n, p)
+	for i := 0.0; i <= s2-s; i++ { // counted: s++ stalls past 2^53
+		sum += binomPMF(s+i, n, p)
 	}
 	return f.NumberOrErr(math.Min(sum, 1))
 }
@@ -528,10 +536,28 @@ func binomInv(x []float64) f.Value {
 	if n < 0 || !prob(p) || !prob(alpha) {
 		return f.ErrNum
 	}
+	target := alpha * (1 - 1e-15)
+	if n > excel.DistSmallN {
+		// Bisect on the cumulative distribution: stepping k up to n would
+		// take up to n steps (forever past 2^53, where k++ is a no-op).
+		lo, hi := -1.0, n // binomCDF(lo) < target <= binomCDF(hi)
+		for i := 0; i < excel.DistBinomBisectMaxIter && hi-lo > 1; i++ {
+			mid := math.Floor(lo/2 + hi/2)
+			if mid <= lo || mid >= hi {
+				break
+			}
+			if binomCDF(mid, n, p) >= target {
+				hi = mid
+			} else {
+				lo = mid
+			}
+		}
+		return f.Number(hi)
+	}
 	s := 0.0
 	for k := 0.0; k < n; k++ {
 		s += binomPMF(k, n, p)
-		if s >= alpha*(1-1e-15) {
+		if s >= target {
 			return f.Number(k)
 		}
 	}
@@ -565,7 +591,7 @@ func hypgeom(x []float64) f.Value {
 		return f.ErrNum
 	}
 	pmf := func(i float64) float64 {
-		if pop <= smallN {
+		if pop <= excel.DistSmallN {
 			if c := combin(succ, i) * combin(pop-succ, n-i) / combin(pop, n); c > 0 && !math.IsInf(c, 0) {
 				return c
 			}
@@ -575,9 +601,12 @@ func hypgeom(x []float64) f.Value {
 	if x[4] == 0 {
 		return f.NumberOrErr(pmf(k))
 	}
+	if k-lo > excel.DistMaxTerms {
+		return f.ErrNum // too many terms to sum
+	}
 	s := 0.0
-	for i := lo; i <= k; i++ {
-		s += pmf(i)
+	for i := 0.0; i <= k-lo; i++ { // counted: lo++ stalls past 2^53
+		s += pmf(lo + i)
 	}
 	return f.NumberOrErr(math.Min(s, 1))
 }
@@ -593,7 +622,7 @@ func negbinom(x []float64) f.Value {
 		v, _ := betaPQ(p, 1-p, s, k+1)
 		return f.NumberOrErr(v)
 	}
-	if k+s <= smallN {
+	if k+s <= excel.DistSmallN {
 		if v := combin(k+s-1, s-1) * math.Pow(p, s) * math.Pow(1-p, k); v > 0 && !math.IsInf(v, 0) {
 			return f.Number(v)
 		}

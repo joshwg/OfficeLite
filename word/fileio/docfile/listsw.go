@@ -5,6 +5,7 @@ import (
 	"sort"
 	"unicode/utf16"
 
+	"officelite/word"
 	"officelite/word/model"
 )
 
@@ -104,8 +105,8 @@ func (w *writer) lvl(lv model.ListLevel) []byte {
 	}
 	var papx grpprl
 	if lv.Indent != 0 || lv.Hang != 0 {
-		left := uint16(int16(clampTw(lv.Indent, -31680, 31680)))
-		first := uint16(int16(-clampTw(lv.Hang, -31680, 31680)))
+		left := uint16(int16(clampTw(lv.Indent, -word.DocMaxTw, word.DocMaxTw)))
+		first := uint16(int16(-clampTw(lv.Hang, -word.DocMaxTw, word.DocMaxTw)))
 		papx.w(sprmPDxaLeft80, left)
 		papx.w(sprmPDxaLeft180, first)
 		papx.w(sprmPDxaLeft, left)

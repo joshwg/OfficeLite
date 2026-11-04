@@ -6,6 +6,7 @@ import (
 	"math"
 	"strings"
 
+	"gioui.org/f32"
 	"gioui.org/op"
 	"gioui.org/op/clip"
 	"gioui.org/text"
@@ -13,6 +14,7 @@ import (
 
 	"officelite/common/colors"
 	"officelite/common/gui"
+	"officelite/word"
 	"officelite/word/model"
 )
 
@@ -248,14 +250,22 @@ func (e *Engine) drawObject(ops *op.Ops, it *Item, x, base, s float64) {
 // whole pixels at small sizes, which would otherwise make text drift
 // against the caret and the next word.
 func (e *Engine) drawText(ops *op.Ops, st *TextStyle, str string, x, y, scale float64, adv []float32) {
-	if str == "" || st.Size <= 0 {
+	if str == "" || !(st.Size > 0) {
 		return
+	}
+	if sc := shapeScale(st.Size, scale); sc < scale {
+		// Too big for Gio to shape (see word.LayoutMaxShapePx): shape it
+		// smaller and scale the drawing up.
+		k := scale / sc
+		t := op.Affine(f32.AffineId().Scale(f32.Point{}, f32.Pt(float32(k), float32(k)))).Push(ops)
+		defer t.Pop()
+		x, y, scale = x/k, y/k, sc
 	}
 	sh := e.m.shaper
 	sh.LayoutString(text.Parameters{
 		Font:             st.Font,
 		PxPerEm:          fixed.Int26_6(math.Round(st.Size * scale * 64)),
-		MaxWidth:         1 << 24,
+		MaxWidth:         word.LayoutUnwrappedWidth,
 		MaxLines:         1,
 		DisableSpaceTrim: true,
 	}, str)

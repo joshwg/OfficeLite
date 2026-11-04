@@ -3,7 +3,8 @@
 See [the documentation overview](./README.md) for the architecture and
 build guides.
 
-WordLite opens and saves `.docx`, `.doc` (Word 97-2003) and `.txt` documents.
+WordLite opens and saves `.docx`, `.doc` (Word 97-2003) and `.txt` documents,
+and `.dotx` / `.dot` templates (see [Templates](#templates)).
 It can also open `.docm` files, but macros are never run; use Save As to
 keep changes, and macros are removed from the saved copy. Apple Pages
 (`.pages`) files are imported read-only; use Save As to keep changes.
@@ -94,7 +95,9 @@ are disabled when they do not apply to the current selection.
 ![WordLite Insert menu](./images/word-insert-menu.png)
 
 The **Insert** menu inserts a table (using a grid picker or Insert Table
-dialog), picture, link, symbol, date/time, page break, line break or tab.
+dialog), picture, link, symbol, date/time, field, page break, line break or
+tab. See [Fields](#fields) for Date & Time's *Update automatically* and the
+Field dialog.
 When the caret is in a table, the lower commands insert or delete rows and
 columns, delete the table, or select it; they are disabled outside a table.
 
@@ -103,7 +106,8 @@ columns, delete the table, or select it; they are disabled outside a table.
 ![WordLite View menu](./images/word-view-menu.png)
 
 The **View** menu changes page zoom: Zoom In and Zoom Out adjust it in
-steps, and **100%** restores actual size.
+steps, and **100%** restores actual size. **Field Codes** (Alt+F9) shows
+each field's code in place of its result.
 
 ### File page
 
@@ -111,14 +115,78 @@ steps, and **100%** restores actual size.
 
 **File** opens a full-window page rather than a dropdown. **Home** shows
 blank-document and blank-workbook tiles and recent files; **New** creates a
-document or workbook; **Open** browses for a file or opens a recent one.
+document or workbook, or a document from one of your templates; **Open**
+browses for a file or opens a recent one.
 **Info** shows document details, the AutoRecover interval, and the default
 for AutoSave. AutoRecover periodically keeps a recovery copy of unsaved
 changes. The title-bar AutoSave switch saves `.docx` files a few seconds
 after edits; it is off by default and has no version history. **Save**
 writes in the current format when possible, while **Save As** chooses
-`.docx`, `.doc` or `.txt`. **Print** opens a PDF for printing, and **Export**
+`.docx`, `.doc`, `.dotx`, `.dot` or `.txt`. **Print** opens a PDF for printing, and **Export**
 writes text, legacy Word format or PDF. **Close** closes the window.
+
+### Templates
+
+A template (`.dotx`, `.dot`, or a `.dotm` with its macros left out) is a
+starting point for new documents: its text, styles, headers and footers,
+and page setup. WordLite uses them the way Word does:
+
+- **New from a template.** The **New** page lists the templates in your
+  *Documents/Custom Office Templates* folder (on Windows, the Documents
+  folder wherever it has been moved, OneDrive included) after the blank
+  tiles. Choosing one opens an untitled *DocumentN* with the template's
+  content; the template file itself is left alone. **Save** goes to Save As
+  in the format the template is built on (`.docx` for `.dotx`, `.doc` for
+  `.dot`). Opening a template from the command line or from Explorer
+  (`officelite Letter.dotx`) does the same.
+- **Saving a template.** In **Save As**, pick *Word Template (\*.dotx)* or
+  *Word 97-2003 Template (\*.dot)*. The dialog starts in the templates
+  folder (it is created if need be), so the template shows up on the
+  **New** page.
+- **Editing a template.** Opening a template from **Open** or the recent
+  files edits the template itself, and **Save** writes it back as a template.
+  From the command line, `officelite --edit Letter.dotx` does the same.
+
+### Headers and footers
+
+Double-click the top or bottom margin of a page (or use Home ▸ Edit Header
+/ Edit Footer) to edit its header or footer; Esc, **Close Header and
+Footer** or a double-click in the body goes back. The Header & Footer bar
+inserts **# Page Number**, **Number of Pages** and **Page X of Y**, opens
+**Format Page Numbers…** (1, 2, 3 / i, ii, iii / I, II, III / a, b, c /
+A, B, C, and continue from the previous section or start at a number), and
+switches **Different First Page**, **Different Odd & Even Pages** and, in
+sections after the first, **Link to Previous** (unlinking gives the
+section a copy of the header to change on its own). Adding, removing,
+linking and these switches are undoable from the body.
+
+### Fields
+
+A field is a value Word computes: a page number, a date, the file name.
+WordLite computes these and shows their current results:
+
+| Field | Shows |
+|---|---|
+| `PAGE`, `NUMPAGES` | the page number, the number of pages |
+| `SECTIONPAGES`, `SECTION` | the pages in the section, the section number |
+| `DATE`, `TIME` | today's date, the time |
+| `FILENAME` (`\p` for the path) | the document's file name |
+| `NUMWORDS`, `NUMCHARS` | the document's word and character counts |
+
+Page fields update as the pages change, in the body as well as in headers
+and footers. The others update with **F9** (the fields in the selection;
+Ctrl+A, F9 for all of them) and keep that result when saved. They take
+Word's switches: `\* roman`, `Roman`, `alphabetic`, `ALPHABETIC`, `Arabic`,
+`Ordinal`, `CardText`, `OrdText`, `Hex`, `Upper`, `Lower`, `Caps`,
+`FirstCap` (`\* MERGEFORMAT` is accepted and ignored); `\# "0.00"` numeric
+pictures; and `\@ "dddd, MMMM d, yyyy"` date-time pictures.
+
+**Insert ▸ Date & Time** with **Update automatically** inserts a `DATE` or
+`TIME` field in the chosen format rather than text. **Insert ▸ Field…**
+(Ctrl+F9) lists the fields above, takes any field code with its switches,
+and shows its result before inserting it. Other fields (`REF`, `SEQ`,
+`AUTHOR`, `IF`...) are kept and shown with their last result; Word updates
+them.
 
 ## Keyboard shortcuts and mouse
 
@@ -128,7 +196,9 @@ Ctrl+K link, Ctrl+Shift+C / Ctrl+Shift+V copy / paste formatting,
 Ctrl+Alt+V Paste Special, Ctrl+Shift+> / < grow / shrink font,
 Ctrl+Alt+Shift+S Styles pane, Ctrl+Shift+8 Show/Hide ¶, Tab / Shift+Tab between table cells, Esc
 leaves header/footer editing, the find bar or the Format Painter, F9
-updates the table of contents the caret is in.
+updates the fields in the selection or at the caret (and the table of
+contents), Alt+F9 shows or hides field codes, Ctrl+F9 opens the Field
+dialog.
 
 ### Mouse behavior
 
@@ -177,10 +247,14 @@ updates the table of contents the caret is in.
   before a continuous break); a continuous break that changes the page
   size starts a new page. The `.doc` writer writes Word's default note
   separators.
-- Fields other than PAGE / NUMPAGES / SECTIONPAGES and the table of
-  contents (F9) show their last result.
-- Headers/footers: creating or removing one and the first-page / odd-even
-  switches aren't undoable. Find doesn't match across paragraph marks.
+- Fields: cross-references and numbering (`REF`, `PAGEREF`, `SEQ`,
+  `NOTEREF`), document properties (`AUTHOR`, `TITLE`, `DOCPROPERTY`) and
+  formulas (`=`, `IF`) show their last result; a field's code can't be
+  edited in place (delete it and insert it again), and fields can't be
+  locked. The table of contents is plain text (no links to the headings).
+- Headers/footers: there is no Page Setup dialog for the header and footer
+  distance (it is kept from the file). Find doesn't match across paragraph
+  marks.
   Modify… in the Styles pane edits paragraph styles only.
 - Show/Hide ¶ draws the marks in a mid grey; there are no floating-object
   anchor marks, and hidden text is revealed in the body only (not in

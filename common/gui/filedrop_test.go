@@ -10,10 +10,12 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"officelite/common/limits"
 )
 
 // TestOpenDropped: documents and workbooks open once each, the first
-// MaxDrop of them; folders, programs, pictures and missing files are named
+// limits.DropFiles of them; folders, programs, pictures and missing files are named
 // in the message and never opened.
 func TestOpenDropped(t *testing.T) {
 	dir := t.TempDir()
@@ -42,14 +44,14 @@ func TestOpenDropped(t *testing.T) {
 		t.Errorf("message %q, want %q", msg, want)
 	}
 
-	// Too many: the first MaxDrop open.
+	// Too many: the first limits.DropFiles open.
 	var many []string
-	for i := range MaxDrop + 5 {
+	for i := range limits.DropFiles + 5 {
 		many = append(many, write(fmt.Sprintf("Book%02d.csv", i), "1\n"))
 	}
 	opened = nil
 	msg = OpenDropped(many, func(p string) { opened = append(opened, p) })
-	if len(opened) != MaxDrop || opened[0] != many[0] || !strings.Contains(msg, fmt.Sprintf("first %d of %d", MaxDrop, MaxDrop+5)) {
+	if len(opened) != limits.DropFiles || opened[0] != many[0] || !strings.Contains(msg, fmt.Sprintf("first %d of %d", limits.DropFiles, limits.DropFiles+5)) {
 		t.Errorf("%d opened, message %q", len(opened), msg)
 	}
 	if msg := OpenDropped(nil, func(string) { t.Error("opened from an empty drop") }); msg != "" {

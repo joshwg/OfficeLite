@@ -204,3 +204,68 @@ func (e *Editor) sectionEnd(i int) int {
 	}
 	return -1
 }
+
+// ChangeSections runs f, which changes the sections' properties without
+// touching the text: their headers and footers (adding, removing, linking
+// or unlinking them, Different First Page or Odd & Even) or their page
+// numbering, as one undoable step named label. The step keeps copies of
+// the section-ending paragraphs (which hold the earlier sections), of
+// the last section, and of the styles (a new header adds the "header"
+// style; see HFStyleID).
+func (e *Editor) ChangeSections(label string, f func()) {
+	defer e.Op(label)()
+	from, to := 0, -1
+	for i, b := range e.Doc.Body {
+		if p, ok := b.(*Paragraph); ok && p.Sect != nil {
+			if to < 0 {
+				from = i
+			}
+			to = i
+		}
+	}
+	last := e.Doc.Section.Clone()
+	e.edit("format", from, to, true, f)
+	e.undo[len(e.undo)-1].sect = last
+	e.all = true // headers and numbering are laid out apart from the blocks the step holds
+}
+
+// UnlinkHeader gives section i of the document (see Sections) a header
+// (or footer) of kind of its own: a copy of the one it shows through
+// Link to Previous, or an empty one, and returns it. A section that
+// already has its own is left as it is; there is none (nil) when the
+// document has no section i.
+func (d *Document) UnlinkHeader(i int, kind HFKind, footer bool) *HeaderFooter {
+	secs := d.Sections()
+	if i < 0 || i >= len(secs) {
+		return nil
+	}
+	slot := secs[i].HF.Slot(kind, footer)
+	if *slot != nil {
+		return *slot
+	}
+	if i > 0 {
+		if prev := HeaderFor(secs, i-1, kind, footer); prev != nil {
+			c := &HeaderFooter{Blocks: CopyBlocks(prev.Blocks)} // a part of its own when saved
+			*slot = c
+			return c
+		}
+	}
+	return d.NewHeaderFooterIn(&secs[i].HF, kind, footer)
+}
+
+// LinkHeader links section i's header (or footer) of kind to the
+// previous section's (Word's Link to Previous), dropping its own; the
+// first section has no previous one and keeps its own, and a section
+// the document doesn't have is ignored.
+func (d *Document) LinkHeader(i int, kind HFKind, footer bool) {
+	if secs := d.Sections(); i > 0 && i < len(secs) {
+		*secs[i].HF.Slot(kind, footer) = nil
+	}
+}
+
+// HeaderLinked reports whether section i shows the previous section's
+// header (or footer) of kind, having none of its own.
+func (d *Document) HeaderLinked(i int, kind HFKind, footer bool) bool {
+	secs := d.Sections()
+	return i > 0 && i < len(secs) && *secs[i].HF.Slot(kind, footer) == nil
+}

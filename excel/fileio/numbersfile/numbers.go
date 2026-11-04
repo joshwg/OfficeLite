@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"officelite/common/iwork"
+	"officelite/excel"
 	"officelite/excel/model"
 	"officelite/excel/numfmt"
 )
@@ -169,8 +170,8 @@ func (r *reader) sheetName(name string) string {
 		name = "Sheet"
 	}
 	base := []rune(name)
-	if len(base) > 31 {
-		base = base[:31]
+	if len(base) > excel.MaxSheetName {
+		base = base[:excel.MaxSheetName]
 	}
 	name = string(base)
 	for i := 2; r.names[strings.ToLower(name)]; i++ {
@@ -190,7 +191,7 @@ func (r *reader) addTable(t *iwork.Table, name string) {
 		}
 		r.tableWarn[w] = append(r.tableWarn[w], name)
 	}
-	rows, cols := min(t.Rows, model.MaxRows), min(t.Cols, model.MaxCols)
+	rows, cols := min(t.Rows, excel.MaxRows), min(t.Cols, excel.MaxCols)
 	// Every row and column of the table gets its size; the sheet around
 	// it keeps Excel's defaults.
 	for row := range rows {
@@ -228,7 +229,7 @@ func (r *reader) addTable(t *iwork.Table, name string) {
 	}
 	dropped := 0
 	each := func(f func(row, col int)) {
-		if rows*cols <= 1<<20 {
+		if rows*cols <= excel.NumbersDenseTableCells {
 			for row := range rows {
 				for col := range cols {
 					f(row, col)

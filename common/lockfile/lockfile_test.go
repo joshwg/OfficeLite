@@ -305,6 +305,15 @@ func TestRegistryStale(t *testing.T) {
 	if _, err := os.Stat(dead); !os.IsNotExist(err) {
 		t.Error("dead process's entry kept")
 	}
+	// A damaged entry with no pid (0 signals our own process group on
+	// Unix, so it once counted as live forever): dropped too.
+	nopid := write(0, 1)
+	if openElsewhere(path) {
+		t.Error("an entry without a pid counts")
+	}
+	if _, err := os.Stat(nopid); !os.IsNotExist(err) {
+		t.Error("an entry without a pid kept")
+	}
 	// A live one that can't be reached: open elsewhere, not activated.
 	live := write(os.Getppid(), 0)
 	if Activate(path) {

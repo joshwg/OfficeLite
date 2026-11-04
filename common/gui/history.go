@@ -6,6 +6,7 @@ package gui
 import (
 	"image"
 	"image/color"
+	"officelite/common/limits"
 	"strconv"
 
 	"gioui.org/font"
@@ -31,9 +32,6 @@ type HistoryList struct {
 	hover int
 	tip   string // the button's tooltip name, last set
 }
-
-// maxHistory is the most entries a HistoryList shows.
-const maxHistory = 100
 
 // IsOpen reports whether the list is showing.
 func (h *HistoryList) IsOpen() bool { return h.dd.IsOpen() }
@@ -127,7 +125,7 @@ func lower(s string) string {
 // panel draws the open list: the entries over the footer. It returns how
 // many entries were chosen and whether the list is done.
 func (h *HistoryList) panel(gtx layout.Context, th *Theme, verb string, labels []string) (layout.Dimensions, int, bool) {
-	labels = labels[:min(len(labels), maxHistory)]
+	labels = labels[:min(len(labels), limits.HistoryEntries)]
 	if len(h.items) != len(labels) {
 		h.items = make([]widget.Clickable, len(labels))
 	}

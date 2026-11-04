@@ -13,6 +13,7 @@ import (
 	"gioui.org/layout"
 	"gioui.org/widget"
 
+	"officelite/excel"
 	"officelite/excel/calc"
 	"officelite/excel/edit"
 	"officelite/excel/model"
@@ -182,8 +183,8 @@ func joinResult(a, b calc.Result) calc.Result {
 
 // wholeCols and wholeRows report whether the selection spans entire
 // columns or rows.
-func wholeCols(r model.Range) bool { return r.R1 == 0 && r.R2 == model.MaxRows-1 }
-func wholeRows(r model.Range) bool { return r.C1 == 0 && r.C2 == model.MaxCols-1 }
+func wholeCols(r model.Range) bool { return r.R1 == 0 && r.R2 == excel.MaxRows-1 }
+func wholeRows(r model.Range) bool { return r.C1 == 0 && r.C2 == excel.MaxCols-1 }
 
 // insertDelete inserts or deletes the selection's rows (or its columns)
 // for Ctrl++ and Ctrl+-: columns when whole columns are selected,
@@ -222,9 +223,9 @@ func (a *App) structural(insert, cols bool) {
 	a.syncSheets()
 	a.changed(res)
 	if cols {
-		a.selectRange(a.active, model.Range{C1: r.C1, C2: r.C2, R2: model.MaxRows - 1})
+		a.selectRange(a.active, model.Range{C1: r.C1, C2: r.C2, R2: excel.MaxRows - 1})
 	} else {
-		a.selectRange(a.active, model.Range{R1: r.R1, R2: r.R2, C2: model.MaxCols - 1})
+		a.selectRange(a.active, model.Range{R1: r.R1, R2: r.R2, C2: excel.MaxCols - 1})
 	}
 }
 

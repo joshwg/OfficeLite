@@ -8,6 +8,7 @@ import (
 	"gioui.org/widget"
 
 	"officelite/common/gui"
+	"officelite/excel"
 	"officelite/excel/edit"
 	"officelite/excel/model"
 )
@@ -22,10 +23,10 @@ func (a *App) sortRegion() model.Range {
 	if r.R1 == r.R2 && r.C1 == r.C2 {
 		return edit.CurrentRegion(v.Sheet, r.R1, r.C1)
 	}
-	if r.R2 == model.MaxRows-1 {
+	if r.R2 == excel.MaxRows-1 {
 		r.R2 = max(v.Sheet.UsedRows()-1, r.R1)
 	}
-	if r.C2 == model.MaxCols-1 {
+	if r.C2 == excel.MaxCols-1 {
 		r.C2 = max(v.Sheet.UsedCols()-1, r.C1)
 	}
 	return r

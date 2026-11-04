@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"officelite/common/colors"
+	"officelite/excel"
 	"officelite/excel/model"
 )
 
@@ -549,6 +550,11 @@ func (cr *chartReader) text(tx *xTxPr) model.TextProps {
 	return t
 }
 
+// cachePoints is a cached series' points, blanks included, indexed by
+// point. The length trusts ptCount and the points' indexes only up to
+// excel.ChartCacheSlotsPerPoint slots per point present, and never past
+// excel.ChartCacheMaxPoints: a ptCount or idx of a million on every series
+// of a few kilobytes of XML used to allocate gigabytes.
 func cachePoints(c *xCache, num bool) []model.ChartValue {
 	if c == nil {
 		return nil
@@ -557,7 +563,7 @@ func cachePoints(c *xCache, num bool) []model.ChartValue {
 	for _, p := range c.Pts {
 		n = max(n, p.Idx+1)
 	}
-	n = min(n, 1<<20)
+	n = max(0, min(n, excel.ChartCacheMaxPoints, excel.ChartCacheSlotsPerPoint*(len(c.Pts)+1))) // a negative ptCount made make panic
 	out := make([]model.ChartValue, n)
 	for _, p := range c.Pts {
 		if p.Idx < 0 || p.Idx >= n {
@@ -1172,10 +1178,10 @@ func (r *reader) rawRels(name string) []model.RawRel {
 	return out
 }
 
-// keepParts reads the internal targets of rels (and theirs, a few levels
-// down) into raw.Parts.
+// keepParts reads the internal targets of rels (and theirs, down to
+// excel.XlsxMaxChartPartDepth levels) into raw.Parts.
 func (r *reader) keepParts(raw *model.ChartRaw, rels []model.RawRel, depth int) {
-	if depth > 3 {
+	if depth > excel.XlsxMaxChartPartDepth {
 		return
 	}
 	for _, rel := range rels {

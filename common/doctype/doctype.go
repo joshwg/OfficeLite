@@ -134,3 +134,14 @@ func byExtension(name string) Kind {
 	}
 	return Unknown
 }
+
+// IsTemplate reports whether name's extension is a template's (.dotx,
+// .dotm, .dot, .xltx, .xltm, .xlt), which opening from the shell or the
+// New page turns into a new untitled document rather than editing it.
+func IsTemplate(name string) bool {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".dotx", ".dotm", ".dot", ".xltx", ".xltm", ".xlt":
+		return true
+	}
+	return false
+}

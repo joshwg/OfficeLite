@@ -6,9 +6,9 @@ package mathtrig
 import (
 	"testing"
 
+	"officelite/excel"
 	f "officelite/excel/formula"
 	"officelite/excel/formula/functions/internal/ftest"
-	"officelite/excel/model"
 )
 
 // aggData: A1:A8 = 10, 7, 9, 27, 2, "3" (text), TRUE, blank; B1:B3 = 1,
@@ -59,7 +59,7 @@ func TestSumCount(t *testing.T) {
 		{"=COUNTBLANK(A1:A8)", 1},
 		{"=COUNTBLANK(A1:A10)", 3},
 		{"=COUNTBLANK(C1:C2)", 2},
-		{"=COUNTBLANK(A:A)", float64(model.MaxRows - 7)},
+		{"=COUNTBLANK(A:A)", float64(excel.MaxRows - 7)},
 		{"=COUNTBLANK(B1:B3)", 0},
 		{"=SUMPRODUCT({3,4;8,6;1,9},{2,7;6,7;5,3})", 156},
 		{"=SUMPRODUCT({1,2,3})", 6},

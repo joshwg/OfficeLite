@@ -6,6 +6,7 @@ package pdf
 import (
 	"encoding/binary"
 	"errors"
+	"officelite/common/limits"
 	"strings"
 	"sync"
 	"unicode/utf16"
@@ -50,7 +51,7 @@ func parseFaces(b []byte) ([]*face, error) {
 	offsets := []int{0}
 	if string(b[:4]) == "ttcf" {
 		n := int(be.Uint32(b[8:]))
-		if n <= 0 || n > 256 || 12+4*n > len(b) {
+		if n <= 0 || n > limits.FontCollectionMaxFonts || 12+4*n > len(b) {
 			return nil, errors.New("pdf: bad font collection")
 		}
 		offsets = offsets[:0]

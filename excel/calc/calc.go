@@ -5,10 +5,12 @@ package calc
 
 import (
 	"fmt"
+	"log"
 	"math/rand"
 	"strings"
 	"time"
 
+	"officelite/excel"
 	"officelite/excel/formula"
 	"officelite/excel/model"
 	"officelite/excel/numfmt"
@@ -161,13 +163,27 @@ func (e *engine) compute(k key) {
 	if node == nil {
 		res.Value = formula.ErrName
 	} else {
-		env := formula.NewEnv(e, e.funcs, k.sheet, k.row, k.col)
-		env.Legacy = !cell.Dynamic
-		res = env.Evaluate(node)
+		res = e.evaluate(k, node, !cell.Dynamic)
 	}
 	e.state[k] = done
 	e.res.Calculated++
 	e.store(k, res)
+}
+
+// evaluate calculates the parsed formula of cell k. A panic in a worksheet
+// function (a bug, perhaps triggered by an odd value) becomes #VALUE! in
+// that cell instead of taking down the application with the user's
+// unsaved work.
+func (e *engine) evaluate(k key, node formula.Node, legacy bool) (res formula.Result) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("calc: panic evaluating %s!%s: %v", e.wb.Sheets[k.sheet].Name, model.CellName(k.row, k.col), r)
+			res = formula.Result{Value: formula.ErrValue}
+		}
+	}()
+	env := formula.NewEnv(e, e.funcs, k.sheet, k.row, k.col)
+	env.Legacy = legacy
+	return env.Evaluate(node)
 }
 
 // store writes a result into the formula's cell, spilling arrays.
@@ -195,7 +211,7 @@ func (e *engine) store(k key, res formula.Result) {
 		clearSpill(sh, anchor, old)
 	}
 	rng := model.Range{R1: k.row, C1: k.col, R2: k.row + arr.Rows - 1, C2: k.col + arr.Cols - 1}
-	if rng.R2 >= model.MaxRows || rng.C2 >= model.MaxCols || e.blocked(sh, k, rng) {
+	if rng.R2 >= excel.MaxRows || rng.C2 >= excel.MaxCols || e.blocked(sh, k, rng) {
 		e.setValue(sh, k.row, k.col, formula.ErrSpill, "")
 		return
 	}

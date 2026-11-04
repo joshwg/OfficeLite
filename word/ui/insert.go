@@ -26,6 +26,7 @@ import (
 
 	"officelite/common/colors"
 	"officelite/common/gui"
+	"officelite/word"
 	wl "officelite/word/layout"
 	"officelite/word/model"
 )
@@ -40,6 +41,7 @@ const (
 	insRemoveLink
 	insSymbol
 	insDate
+	insField
 	_
 	insPageBreak
 	insLineBreak
@@ -73,6 +75,7 @@ func (d *window) insertMenu() []gui.MenuItem {
 		insRemoveLink: {Label: "Remove Link", Disabled: !inLink, Tip: "Keep the text but remove the link."},
 		insSymbol:     {Label: "Symbol…", Tip: "Insert a symbol or special character."},
 		insDate:       {Label: "Date & Time…", Tip: "Insert today's date or the time in a format you pick."},
+		insField:      {Label: "Field…", Shortcut: "Ctrl+F9", Tip: "Insert a field: a page number, date, file name or other value Word computes."},
 		{Separator: true},
 		insPageBreak: {Label: "Page Break", Shortcut: "Ctrl+Enter", Tip: "Start the next page here."},
 		insLineBreak: {Label: "Line Break", Shortcut: "Shift+Enter", Tip: "Start a new line in the same paragraph."},
@@ -110,6 +113,8 @@ func (d *window) insertChosen(item int) {
 	case insDate:
 		d.ins.show(insDateDlg)
 		d.ins.dateSel = 0
+	case insField:
+		d.openFieldDialog() // fielddlg.go
 	case insPageBreak:
 		ed.InsertSpecial(model.RunPageBreak)
 	case insLineBreak:
@@ -141,6 +146,7 @@ const (
 	insLinkDlg
 	insSymbolDlg
 	insDateDlg
+	insFieldDlg
 )
 
 // insertState holds the Insert menu's dialogs and the page view's
@@ -162,6 +168,9 @@ type insertState struct {
 	dates                  []widget.Clickable
 	dateSel                int
 	dateTag                int
+	dateAuto               widget.Clickable // the Update automatically check box
+	dateUpdate             bool             // insert a DATE/TIME field rather than text
+	field                  fieldDialog      // the Insert Field dialog (fielddlg.go)
 
 	// page view
 	anchor   model.Pos // where a drag selection started
@@ -213,6 +222,8 @@ func (s *insertState) layout(gtx layout.Context, d *window) {
 		s.symbolDialog(gtx, d)
 	case insDateDlg:
 		s.dateDialog(gtx, d)
+	case insFieldDlg:
+		s.fieldDialogLayout(gtx, d)
 	}
 }
 
@@ -398,13 +409,13 @@ func (s *insertState) tableDialog(gtx layout.Context, d *window) {
 	if s.ok.Clicked(gtx) || submitted(gtx, &s.rows, &s.cols) {
 		r, err1 := strconv.Atoi(strings.TrimSpace(s.rows.Text()))
 		c, err2 := strconv.Atoi(strings.TrimSpace(s.cols.Text()))
-		if err1 == nil && err2 == nil && r >= 1 && c >= 1 && r <= 32767 && c <= model.MaxTableSize {
+		if err1 == nil && err2 == nil && r >= 1 && c >= 1 && r <= word.MaxTableRows && c <= word.MaxTableSize {
 			s.close(d)
 			d.ed.InsertTable(r, c)
 			d.edited()
 			return
 		}
-		d.notice = "The number of columns must be 1 to " + strconv.Itoa(model.MaxTableSize) + " and of rows 1 to 32767."
+		d.notice = "The number of columns must be 1 to " + strconv.Itoa(word.MaxTableSize) + " and of rows 1 to " + strconv.Itoa(word.MaxTableRows) + "."
 	}
 	if s.cancel.Clicked(gtx) {
 		s.close(d)
@@ -542,34 +553,46 @@ func (s *insertState) symbolDialog(gtx layout.Context, d *window) {
 	})
 }
 
-// dateFormats are Word's Date and Time formats (en-US), as Go layouts.
+// dateFormats are Word's Date and Time formats (en-US), as \@ date-time
+// pictures (model.FormatDateTime), which a DATE or TIME field inserted
+// with Update automatically keeps.
 var dateFormats = []string{
-	"1/2/2006",
-	"Monday, January 2, 2006",
-	"January 2, 2006",
-	"1/2/06",
-	"2006-01-02",
-	"2-Jan-06",
-	"1.2.2006",
-	"Jan. 2, 06",
-	"2 January 2006",
-	"January 06",
-	"Jan-06",
-	"1/2/2006 3:04 PM",
-	"1/2/2006 3:04:05 PM",
-	"3:04 PM",
-	"3:04:05 PM",
-	"15:04",
-	"15:04:05",
+	"M/d/yyyy",
+	"dddd, MMMM d, yyyy",
+	"MMMM d, yyyy",
+	"M/d/yy",
+	"yyyy-MM-dd",
+	"d-MMM-yy",
+	"M.d.yyyy",
+	"MMM. d, yy",
+	"d MMMM yyyy",
+	"MMMM yy",
+	"MMM-yy",
+	"M/d/yyyy h:mm AM/PM",
+	"M/d/yyyy h:mm:ss AM/PM",
+	"h:mm AM/PM",
+	"h:mm:ss AM/PM",
+	"HH:mm",
+	"HH:mm:ss",
 }
 
 // DateChoices formats t in each of Word's date and time formats.
 func DateChoices(t time.Time) []string {
 	out := make([]string, len(dateFormats))
 	for i, f := range dateFormats {
-		out[i] = t.Format(f)
+		out[i] = model.FormatDateTime(t, f)
 	}
 	return out
+}
+
+// dateField is the field Update automatically inserts for date format
+// pic: TIME for a format with only a time in it, else DATE.
+func dateField(pic string) string {
+	name := model.FieldDate
+	if date := strings.NewReplacer("AM/PM", "", "am/pm", "").Replace(pic); !strings.ContainsAny(date, "dMy") {
+		name = model.FieldTime
+	}
+	return name + ` \@ "` + pic + `"`
 }
 
 func (s *insertState) dateDialog(gtx layout.Context, d *window) {
@@ -606,9 +629,16 @@ func (s *insertState) dateDialog(gtx layout.Context, d *window) {
 			}
 		}
 	}
+	for s.dateAuto.Clicked(gtx) {
+		s.dateUpdate = !s.dateUpdate
+	}
 	if insert {
 		s.close(d)
-		d.ed.InsertText(choices[s.dateSel])
+		if s.dateUpdate {
+			d.ed.InsertSimpleField(dateField(dateFormats[s.dateSel]), choices[s.dateSel])
+		} else {
+			d.ed.InsertText(choices[s.dateSel])
+		}
 		d.edited()
 		return
 	}
@@ -634,6 +664,9 @@ func (s *insertState) dateDialog(gtx layout.Context, d *window) {
 				})
 			}))
 		}
+		kids = append(kids, layout.Rigid(layout.Spacer{Height: 6}.Layout), layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return th.Check(gtx, &s.dateAuto, "Update automatically", s.dateUpdate)
+		}))
 		kids = append(kids, s.buttons(th, "Insert", nil))
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, kids...)
 	})

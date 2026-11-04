@@ -12,6 +12,7 @@ import (
 	"unicode/utf16"
 
 	"officelite/common/textenc"
+	"officelite/excel"
 	"officelite/excel/model"
 )
 
@@ -130,29 +131,28 @@ func (a *annotReader) record(r record) bool {
 	return false
 }
 
-// maxLinkCells bounds how many cells one HLINK range fills.
-const maxLinkCells = 10000
-
 // apply stores what was read in sh.
 func (a *annotReader) apply(sh *model.Sheet) {
 	if a.txo {
 		a.record(record{})
 	}
 	for _, n := range a.notes {
-		if n.row >= model.MaxRows || n.col >= model.MaxCols {
+		if n.row >= excel.MaxRows || n.col >= excel.MaxCols {
 			continue
 		}
 		sh.SetNote(n.row, n.col, &model.Note{Author: n.author, Text: a.texts[n.obj]})
 	}
+	total := 0
 	for _, l := range a.links {
 		if tip, ok := a.tooltips[l.rng]; ok {
 			l.h.Tooltip = tip
 		}
 		n := 0 // bounded as in the .xlsx reader: a damaged range can span the sheet
-		for r := l.rng.R1; r <= min(l.rng.R2, model.MaxRows-1) && n < maxLinkCells; r++ {
-			for c := l.rng.C1; c <= min(l.rng.C2, model.MaxCols-1) && n < maxLinkCells; c++ {
+		for r := l.rng.R1; r <= min(l.rng.R2, excel.MaxRows-1) && n < excel.MaxLinkCells && total < excel.MaxSheetLinkCells; r++ {
+			for c := l.rng.C1; c <= min(l.rng.C2, excel.MaxCols-1) && n < excel.MaxLinkCells && total < excel.MaxSheetLinkCells; c++ {
 				sh.SetLink(r, c, &l.h)
 				n++
+				total++
 			}
 		}
 	}
@@ -199,7 +199,7 @@ func (c *hcursor) u16() int {
 // terminating null) and UTF-16 characters.
 func (c *hcursor) hstring() string {
 	n := c.u32()
-	if n > 1<<16 {
+	if n > excel.XlsMaxHyperlinkString {
 		c.bad = true
 		return ""
 	}
@@ -340,7 +340,7 @@ func hlinkRecord(b []byte, r, c int, h model.Hyperlink) []byte {
 	b = rec(b, recHLink, body)
 	if h.Tooltip != "" {
 		tip := le(recHLinkTooltip, r, r, c, c)
-		tip = append(tip, utf16z(truncUTF16(h.Tooltip, 255))...)
+		tip = append(tip, utf16z(truncUTF16(h.Tooltip, excel.XlsMaxShortString))...)
 		b = rec(b, recHLinkTooltip, tip)
 	}
 	return b
@@ -350,7 +350,7 @@ func hlinkRecord(b []byte, r, c int, h model.Hyperlink) []byte {
 func (x *writer) annotations(b []byte, sh *model.Sheet) []byte {
 	keys := make([][2]int, 0, len(sh.Links))
 	for k := range sh.Links {
-		if k[0] < xlsMaxRows && k[1] < xlsMaxCols {
+		if k[0] < excel.XlsMaxRows && k[1] < excel.XlsMaxCols {
 			keys = append(keys, k)
 		}
 	}
@@ -419,7 +419,7 @@ func officeArt(b []byte, verInst, typ int, length int, data ...byte) []byte {
 func noteKeys(sh *model.Sheet) [][2]int {
 	keys := make([][2]int, 0, len(sh.Notes))
 	for k := range sh.Notes {
-		if k[0] < xlsMaxRows && k[1] < xlsMaxCols {
+		if k[0] < excel.XlsMaxRows && k[1] < excel.XlsMaxCols {
 			keys = append(keys, k)
 		}
 	}
@@ -518,7 +518,7 @@ func (x *writer) notes(b []byte, si int, sh *model.Sheet) []byte {
 		opt := slices.Clone(noteFOPT)
 		binary.LittleEndian.PutUint32(opt[2:], uint32(base+i+1)<<16)
 		r1 := max(row-1, 0)
-		anchor := le(2, min(col+1, 255), 15, r1, 10, min(col+3, 255), 15, min(r1+4, xlsMaxRows-1), 10)
+		anchor := le(2, min(col+1, excel.XlsMaxCols-1), 15, r1, 10, min(col+3, excel.XlsMaxCols-1), 15, min(r1+4, excel.XlsMaxRows-1), 10)
 		d = officeArt(d, 0x000F, 0xF004, noteLen-8)
 		d = officeArt(d, 0x0CA2, 0xF00A, 8, le32(uint32(base+i+1), 0x0A00)...) // FSP: text box, anchored
 		d = officeArt(d, 0x00D3, 0xF00B, len(opt), opt...)
@@ -534,14 +534,14 @@ func (x *writer) notes(b []byte, si int, sh *model.Sheet) []byte {
 		b = rec(b, recObj, obj)
 		b = rec(b, recMsoDrawing, officeArt(nil, 0, 0xF00D, 0))
 
-		text := []rune(truncUTF16(strings.ReplaceAll(sh.Notes[key].Text, "\r\n", "\n"), maxText))
+		text := []rune(truncUTF16(strings.ReplaceAll(sh.Notes[key].Text, "\r\n", "\n"), excel.XlsMaxText))
 		units := utf16.Encode(text)
 		b = rec(b, recTxo, le(0x0012, 0, 0, 0, 0, len(units), 16, 0, 0))
 		if len(units) == 0 {
 			continue
 		}
 		wide := !isLatin1(string(text))
-		per := maxRecord - 1
+		per := excel.XlsMaxRecord - 1
 		if wide {
 			per /= 2
 		}
@@ -592,7 +592,7 @@ var dropDownFOPT = []byte{
 // as an AutoFilter's, filtered when the column has criteria). d holds
 // the drawing's start when this is its first shape.
 func (x *writer) dropDown(b, d []byte, spid, objID, row, col int, sh *model.Sheet) []byte {
-	anchor := le(1, col, 0, row, 0, min(col+1, 255), 0, min(row+1, xlsMaxRows-1), 0)
+	anchor := le(1, col, 0, row, 0, min(col+1, excel.XlsMaxCols-1), 0, min(row+1, excel.XlsMaxRows-1), 0)
 	d = officeArt(d, 0x000F, 0xF004, 96-8)
 	d = officeArt(d, 0x0C92, 0xF00A, 8, le32(uint32(spid), 0x0A00)...) // FSP: host control, anchored
 	d = officeArt(d, 0x0053, 0xF00B, len(dropDownFOPT), dropDownFOPT...)

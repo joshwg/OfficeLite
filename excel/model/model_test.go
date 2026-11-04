@@ -2,7 +2,11 @@
 
 package model
 
-import "testing"
+import (
+	"testing"
+
+	"officelite/excel"
+)
 
 // TestColumnWidths checks character-to-pixel column widths for several
 // digit widths, and the default column width.
@@ -46,9 +50,9 @@ func TestColNameLimits(t *testing.T) {
 		t.Errorf("ParseColName(20 Zs) = %d", got)
 	}
 	sh := NewSheet("S")
-	sh.ActiveRow, sh.ActiveCol, sh.TopRow, sh.LeftCol, sh.FreezeRows, sh.FreezeCols = -3, 1<<40, MaxRows, 5, -1, MaxCols
+	sh.ActiveRow, sh.ActiveCol, sh.TopRow, sh.LeftCol, sh.FreezeRows, sh.FreezeCols = -3, 1<<40, excel.MaxRows, 5, -1, excel.MaxCols
 	sh.ClampView()
-	if sh.ActiveRow != 0 || sh.ActiveCol != MaxCols-1 || sh.TopRow != MaxRows-1 || sh.LeftCol != 5 || sh.FreezeRows != 0 || sh.FreezeCols != MaxCols-1 {
+	if sh.ActiveRow != 0 || sh.ActiveCol != excel.MaxCols-1 || sh.TopRow != excel.MaxRows-1 || sh.LeftCol != 5 || sh.FreezeRows != 0 || sh.FreezeCols != excel.MaxCols-1 {
 		t.Errorf("ClampView = %+v", sh)
 	}
 }

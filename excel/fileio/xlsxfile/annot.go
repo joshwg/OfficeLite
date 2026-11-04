@@ -7,6 +7,7 @@ import (
 
 	"github.com/xuri/excelize/v2"
 
+	"officelite/excel"
 	"officelite/excel/model"
 )
 
@@ -36,9 +37,6 @@ type xComments struct {
 	} `xml:"commentList>comment"`
 }
 
-// maxLinkCells bounds how many cells one <hyperlink ref="A1:Z9999"> fills.
-const maxLinkCells = 10000
-
 // readAnnotations reads the notes and resolves the hyperlinks of the
 // worksheet part (read just before, its links in r.links).
 func (r *reader) readAnnotations(part string, sh *model.Sheet) {
@@ -50,6 +48,7 @@ func (r *reader) readAnnotations(part string, sh *model.Sheet) {
 			r.readComments(rel.Target, sh)
 		}
 	}
+	total := 0
 	for _, l := range r.links {
 		ref := l.ref
 		if !strings.Contains(ref, ":") {
@@ -68,11 +67,14 @@ func (r *reader) readAnnotations(part string, sh *model.Sheet) {
 		if h.Target == "" && h.Location == "" {
 			continue
 		}
+		// The row loop stops at the bound too: it used to run on through
+		// every row of an A1:XFD1048576 range for each such hyperlink.
 		n := 0
-		for row := rng.R1; row <= min(rng.R2, model.MaxRows-1); row++ {
-			for col := rng.C1; col <= min(rng.C2, model.MaxCols-1) && n < maxLinkCells; col++ {
+		for row := rng.R1; row <= min(rng.R2, excel.MaxRows-1) && n < excel.MaxLinkCells && total < excel.MaxSheetLinkCells; row++ {
+			for col := rng.C1; col <= min(rng.C2, excel.MaxCols-1) && n < excel.MaxLinkCells && total < excel.MaxSheetLinkCells; col++ {
 				sh.SetLink(row, col, &h)
 				n++
+				total++
 			}
 		}
 	}
@@ -86,7 +88,7 @@ func (r *reader) readComments(name string, sh *model.Sheet) {
 	}
 	for _, cm := range c.List {
 		row, col, ok := parseCellRef(cm.Ref)
-		if !ok || row >= model.MaxRows || col >= model.MaxCols {
+		if !ok || row >= excel.MaxRows || col >= excel.MaxCols {
 			continue
 		}
 		var b strings.Builder

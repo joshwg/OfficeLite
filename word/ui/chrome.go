@@ -77,6 +77,8 @@ func (d *window) menus() []gui.Menu {
 			{Label: "Zoom In", Shortcut: "Ctrl++", Tip: "Make the page bigger on screen."},
 			{Label: "Zoom Out", Shortcut: "Ctrl+-", Tip: "Make the page smaller on screen."},
 			{Label: "100%", Shortcut: "Ctrl+0", Tip: "Zoom to the page's actual size."},
+			{Separator: true},
+			{Label: "Field Codes", Shortcut: "Alt+F9", Checked: d.showCodes, Tip: "Show field codes ({ PAGE }) instead of their results."},
 		}},
 	}
 }
@@ -127,6 +129,8 @@ func (d *window) menuChosen(ev gui.MenuEvent) {
 			d.setZoom(d.v.zoom - 0.1)
 		case 2:
 			d.setZoom(1)
+		case 4:
+			d.toggleFieldCodes()
 		}
 	}
 	d.edited()

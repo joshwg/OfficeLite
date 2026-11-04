@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 
+	"officelite/excel"
 	"officelite/excel/calc"
 	"officelite/excel/model"
 	"officelite/excel/numfmt"
@@ -96,10 +97,10 @@ func (b *Book) GrowRows(sheet int, rows []int, heights []float32) {
 // whole columns (rows) stops at the last used row (column). ok is false
 // when nothing is left.
 func FormatArea(sh *model.Sheet, r model.Range) (model.Range, bool) {
-	if r.R1 == 0 && r.R2 == model.MaxRows-1 {
+	if r.R1 == 0 && r.R2 == excel.MaxRows-1 {
 		r.R2 = min(r.R2, sh.UsedRows()-1)
 	}
-	if r.C1 == 0 && r.C2 == model.MaxCols-1 {
+	if r.C1 == 0 && r.C2 == excel.MaxCols-1 {
 		r.C2 = min(r.C2, sh.UsedCols()-1)
 	}
 	return r, r.R1 <= r.R2 && r.C1 <= r.C2
@@ -188,7 +189,7 @@ func (b *Book) Borders(sheet int, r model.Range, kind BorderKind) calc.Result {
 	in := area
 	if kind == BordersNone {
 		area = model.Range{R1: max(area.R1-1, 0), C1: max(area.C1-1, 0),
-			R2: min(area.R2+1, model.MaxRows-1), C2: min(area.C2+1, model.MaxCols-1)}
+			R2: min(area.R2+1, excel.MaxRows-1), C2: min(area.C2+1, excel.MaxCols-1)}
 		area.R2 = min(area.R2, max(in.R2, sh.UsedRows()-1))
 		area.C2 = min(area.C2, max(in.C2, sh.UsedCols()-1))
 	}
@@ -390,7 +391,7 @@ func (b *Book) SetStandardWidth(sheet int, chars float32) {
 	ch := &sheetChange{sheet: sheet, before: propsOf(sh)}
 	ch.after = propsOf(sh)
 	ch.after.baseWidth, ch.after.defWidth = chars, 0
-	b.applySheet(Where{sheet, model.Range{R2: model.MaxRows - 1, C2: model.MaxCols - 1}}, ch, nil)
+	b.applySheet(Where{sheet, model.Range{R2: excel.MaxRows - 1, C2: excel.MaxCols - 1}}, ch, nil)
 }
 
 // Built-in number formats as codes (en-US), for the Number group's

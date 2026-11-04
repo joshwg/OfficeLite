@@ -6,7 +6,7 @@ import (
 	"syscall"
 	"testing"
 
-	"officelite/common/autosave"
+	"officelite/common/limits"
 )
 
 // TestAutoSaveLocked: when another program (Word) holds the file open,
@@ -27,7 +27,7 @@ func TestAutoSaveLocked(t *testing.T) {
 	}
 	defer syscall.CloseHandle(hf)
 	h.typeText("Dear")
-	clock.Advance(autosave.Delay)
+	clock.Advance(limits.AutoSaveDelay)
 	h.settle()
 	if d.as.saver.On() || !strings.Contains(d.errMsg, "Letter.docx is open in another program") {
 		t.Errorf("on %v, error %q", d.as.saver.On(), d.errMsg)

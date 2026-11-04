@@ -194,3 +194,19 @@ func TestChartsPDF(t *testing.T) {
 		t.Errorf("chart sheet: %d pages", n)
 	}
 }
+
+// TestDashedHugeLine checks that a dashed line far longer than the chart
+// (a point way outside fixed axis bounds) is drawn solid at once instead
+// of being split into billions of dashes, where the float32 position
+// would stop advancing and hang the UI.
+func TestDashedHugeLine(t *testing.T) {
+	pts := []chartPt{{0, 0}, {0, -1e12}}
+	got := dashed(pts, dashOf("dash", 1), 1)
+	if len(got) != 1 || len(got[0]) != 2 {
+		t.Errorf("huge dashed line split into %d parts, want it solid", len(got))
+	}
+	// An ordinary line is still dashed: 70 units of 4 on, 3 off.
+	if got := dashed([]chartPt{{0, 0}, {70, 0}}, dashOf("dash", 1), 1); len(got) != 10 {
+		t.Errorf("70-unit dashed line has %d dashes, want 10", len(got))
+	}
+}

@@ -8,12 +8,8 @@ import (
 	"math"
 	"strconv"
 	"strings"
-)
 
-// Sheet size limits. Anything beyond these is dropped on load with a warning.
-const (
-	MaxRows = 262144 // 256K
-	MaxCols = 2048   // 2K
+	"officelite/excel"
 )
 
 // DefaultRowHeightPx is Excel's default row height at 96 DPI (Calibri 11).
@@ -252,17 +248,17 @@ func NewSheet(name string) *Sheet {
 // panes) within the sheet's limits; a damaged file can hold any value.
 func (s *Sheet) ClampView() {
 	clamp := func(v *int, n int) { *v = max(0, min(*v, n-1)) }
-	clamp(&s.ActiveRow, MaxRows)
-	clamp(&s.ActiveCol, MaxCols)
-	clamp(&s.TopRow, MaxRows)
-	clamp(&s.LeftCol, MaxCols)
-	clamp(&s.FreezeRows, MaxRows)
-	clamp(&s.FreezeCols, MaxCols)
+	clamp(&s.ActiveRow, excel.MaxRows)
+	clamp(&s.ActiveCol, excel.MaxCols)
+	clamp(&s.TopRow, excel.MaxRows)
+	clamp(&s.LeftCol, excel.MaxCols)
+	clamp(&s.FreezeRows, excel.MaxRows)
+	clamp(&s.FreezeCols, excel.MaxCols)
 }
 
 // Set stores a cell. Out-of-limit coordinates are ignored and reported false.
 func (s *Sheet) Set(row, col int, c Cell) bool {
-	if row < 0 || col < 0 || row >= MaxRows || col >= MaxCols {
+	if row < 0 || col < 0 || row >= excel.MaxRows || col >= excel.MaxCols {
 		return false
 	}
 	if row >= len(s.rows) {
@@ -373,7 +369,7 @@ type DefinedName struct {
 func (wb *Workbook) WarnDropped(sheet string, n int) {
 	if n > 0 {
 		wb.Warnings = append(wb.Warnings, fmt.Sprintf(
-			"%s: %d cells beyond %d rows × %d columns were not loaded", sheet, n, MaxRows, MaxCols))
+			"%s: %d cells beyond %d rows × %d columns were not loaded", sheet, n, excel.MaxRows, excel.MaxCols))
 	}
 }
 
@@ -424,7 +420,7 @@ func ParseColName(s string) int {
 		if c < 'A' || c > 'Z' {
 			return -1
 		}
-		if n > MaxCols*26*26 {
+		if n > excel.MaxCols*26*26 {
 			return -1 // far past any column (and safe from overflow)
 		}
 		n = n*26 + int(c-'A'+1)

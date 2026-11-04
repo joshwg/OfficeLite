@@ -14,13 +14,8 @@ import (
 	"time"
 
 	"officelite/common/autorecover"
+	"officelite/common/limits"
 )
-
-// Delay is how long after the last edit the document is saved.
-const Delay = 3 * time.Second
-
-// MaxWait is the longest edits wait while more keep coming.
-const MaxWait = 60 * time.Second
 
 // Clock is a Saver's time: the real one, or a fake in tests.
 type Clock interface {
@@ -166,8 +161,9 @@ func (s *Saver) SetOn(on bool) {
 	s.SaveNow()
 }
 
-// Edited tells the saver the document changed: it is saved Delay after
-// the last such call, or MaxWait after the first unsaved one.
+// Edited tells the saver the document changed: it is saved
+// limits.AutoSaveDelay after the last such call, or limits.AutoSaveMaxWait
+// after the first unsaved one.
 func (s *Saver) Edited() {
 	if !s.On() {
 		return
@@ -195,8 +191,8 @@ func (s *Saver) SaveNow() {
 
 // due is when the pending edits are saved.
 func (s *Saver) due() time.Time {
-	d := s.last.Add(Delay)
-	if m := s.first.Add(MaxWait); m.Before(d) {
+	d := s.last.Add(limits.AutoSaveDelay)
+	if m := s.first.Add(limits.AutoSaveMaxWait); m.Before(d) {
 		d = m
 	}
 	return d
@@ -376,8 +372,10 @@ func Default() bool {
 // saves it for later ones.
 func SetDefault(on bool) error {
 	Default()
+	// Held through the save, so that of two calls at once the one whose
+	// value stays in memory is also the one left in the file.
 	def.Lock()
+	defer def.Unlock()
 	def.on = on
-	def.Unlock()
 	return autorecover.SaveSetting(settingKey, on)
 }

@@ -324,3 +324,80 @@ func TestCreatedChartsRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// TestChartPartsStayWellFormed checks that cell text with control
+// characters (possible in .xls and .csv files) and a scatter style read
+// with a quote in it no longer make the saved chart parts malformed XML:
+// xmlEscape passed control characters through and the scatter style was
+// written as read.
+func TestChartPartsStayWellFormed(t *testing.T) {
+	wb := chartsample.Created()
+	sh := wb.Sheets[0]
+	for r := range sh.UsedRows() {
+		for c := range sh.RowLen(r) {
+			if cell := sh.Get(r, c); cell.Kind == model.KindText {
+				cell.Text += "\x0B\x01\uFFFE"
+			}
+		}
+	}
+	for _, c := range sh.Charts {
+		for k := range c.Plots {
+			c.Plots[k].ScatterStyle = `marker"/><bad`
+		}
+		if c.Title != nil {
+			c.Title.Text += "\x02"
+		}
+	}
+	_, out := chartRoundTrip(t, wb)
+	for name, s := range parts(t, out) {
+		if !strings.HasSuffix(name, ".xml") {
+			continue
+		}
+		d := xml.NewDecoder(strings.NewReader(s))
+		for {
+			if _, err := d.Token(); err == io.EOF {
+				break
+			} else if err != nil {
+				t.Errorf("%s: %v", name, err)
+				break
+			}
+		}
+	}
+}
+
+// TestXMLEscape checks the escapes and the replacement of characters XML
+// cannot carry.
+func TestXMLEscape(t *testing.T) {
+	for in, want := range map[string]string{
+		"plain":             "plain",
+		`a<b>&"c'`:          "a&lt;b&gt;&amp;&quot;c&apos;",
+		"t\tn\nr\r":         "t&#x9;n&#xA;r&#xD;",
+		"x\x01y\x1Fz\uFFFF": "x\uFFFDy\uFFFDz\uFFFD",
+	} {
+		if got := xmlEscape(in); got != want {
+			t.Errorf("xmlEscape(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestCachePointsBounds checks a chart cache's length: a negative ptCount
+// used to panic in make, and a huge ptCount or idx allocated a million
+// points for one point of XML.
+func TestCachePointsBounds(t *testing.T) {
+	val := func(s string) xVal { return xVal{Val: &s} }
+	cases := []struct {
+		c    xCache
+		want int
+	}{
+		{xCache{PtCount: val("-5")}, 0},
+		{xCache{PtCount: val("3"), Pts: []xPt{{Idx: 0, V: "1"}}}, 3},
+		{xCache{PtCount: val("1000000")}, 64},
+		{xCache{Pts: []xPt{{Idx: 1048575, V: "1"}}}, 128},
+		{xCache{Pts: []xPt{{Idx: -1, V: "1"}, {Idx: 1, V: "2"}}}, 2},
+	}
+	for i, tc := range cases {
+		if got := cachePoints(&tc.c, true); len(got) != tc.want {
+			t.Errorf("case %d: %d points, want %d", i, len(got), tc.want)
+		}
+	}
+}

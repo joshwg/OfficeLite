@@ -12,6 +12,7 @@ import (
 
 	"officelite/common/colors"
 	"officelite/common/gui"
+	"officelite/word"
 	"officelite/word/model"
 )
 
@@ -55,8 +56,8 @@ func (e *Engine) pictureOp(p *model.Picture, w int) (paint.ImageOp, bool) {
 		return paint.ImageOp{}, false
 	}
 	iw := img.Bounds().Dx()
-	bucket := 16
-	for bucket < w && bucket < 8192 {
+	bucket := word.LayoutMinPicBucket
+	for bucket < w && bucket < word.LayoutMaxPicBucket {
 		bucket *= 2
 	}
 	bucket = min(bucket, iw)

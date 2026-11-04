@@ -5,6 +5,7 @@
 package logical
 
 import (
+	"officelite/excel"
 	f "officelite/excel/formula"
 )
 
@@ -380,7 +381,8 @@ func makeArray(e *f.Env, args []f.Value) f.Value {
 	if err != nil {
 		return err
 	}
-	if rows < 1 || cols < 1 || rows*cols > 1<<24 {
+	// Each dimension first: their product can overflow (2^32 × 2^32 is 0).
+	if rows < 1 || cols < 1 || rows > excel.FormulaMaxArrayCells || cols > excel.FormulaMaxArrayCells || rows*cols > excel.FormulaMaxArrayCells {
 		return f.ErrValue
 	}
 	l, err := lambdaArg(args[2])

@@ -6,6 +6,7 @@ package iwork
 import (
 	"fmt"
 	"math"
+	"officelite/common/limits"
 	"strconv"
 	"strings"
 	"time"
@@ -34,14 +35,10 @@ const (
 // autoPlaces is the decimal_places value meaning "as many as needed".
 const autoPlaces = 253
 
-// maxPlaces is the most decimals a format asks for; a larger decimal_places
-// (damaged or hostile) is cut to it.
-const maxPlaces = 15
-
 // placesOf is the format's decimal places: autoPlaces or 0..maxPlaces.
 func placesOf(f Message) int {
 	if p := f.Uint(2); p != autoPlaces {
-		return int(min(p, maxPlaces))
+		return int(min(p, limits.IWorkMaxDecimalPlaces))
 	}
 	return autoPlaces
 }

@@ -383,6 +383,7 @@ func (a *App) layoutBarEditor(gtx layout.Context, content string, w, h int) {
 // cached counts.
 func (a *App) changed(res calc.Result) {
 	a.modified = true
+	a.revision++
 	a.ar.rev++ // AutoRecover copies it again (recover.go)
 	a.stats = statsCache{}
 	for _, st := range a.states {

@@ -177,6 +177,31 @@ func TestTypeAndUndo(t *testing.T) {
 	h.press(key.NameEscape, 0)
 }
 
+func TestGridEditUsesInputRange(t *testing.T) {
+	h := newHarness(t)
+	a := h.a
+	a.beginEdit("A", true, false)
+	h.frame()
+
+	// Input can briefly still be routed to the grid after editing starts.
+	// Its range is authoritative even if the editor's caret is stale.
+	requestFocus(a.gtx, &a.grid)
+	h.frame()
+	if !h.r.Source().Focused(&a.grid) {
+		t.Fatal("grid did not receive focus")
+	}
+	for i, r := range "bc" {
+		a.ed.cell.SetCaret(0, 0)
+		pos := i + 1
+		h.r.Queue(key.EditEvent{Range: key.Range{Start: pos, End: pos}, Text: string(r)})
+		h.frame()
+	}
+
+	if got := a.ed.cell.Text(); got != "Abc" {
+		t.Errorf("typed text = %q, want %q", got, "Abc")
+	}
+}
+
 func TestAltEnterAndStructure(t *testing.T) {
 	h := newHarness(t)
 	a := h.a

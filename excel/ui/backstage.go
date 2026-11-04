@@ -6,6 +6,7 @@ package ui
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -256,38 +257,59 @@ func (a *App) saveAs(f fileio.Format, export bool) {
 	a.writeAs(f, true)
 }
 
-// writeAs asks for a file name and writes the workbook. The dialog runs
-// on its own goroutine; the writing happens on the UI goroutine, so the
-// workbook can't change while it is written.
+// writeAs asks for a file name, then writes a workbook snapshot in the
+// background.
 func (a *App) writeAs(f fileio.Format, export bool) {
 	a.saving.Store(true)
 	name := a.saveAsName(f) // recover.go
 	go func() {
 		wc, err := a.expl.CreateFile(name)
-		a.calls.Post(func() {
-			defer a.saving.Store(false)
-			if errors.Is(err, explorer.ErrUserDecline) {
+		if errors.Is(err, explorer.ErrUserDecline) {
+			a.calls.Post(func() {
+				a.saving.Store(false)
 				a.closing = false
+			})
+			return
+		}
+		a.calls.Post(func() {
+			if err != nil {
+				defer a.saving.Store(false)
+				a.savedSnapshot(a.wb, a.wb, a.revision, a.active, f, name, export, err)
 				return
 			}
-			wb := a.wb
-			if err == nil {
-				err = fileio.Write(wb, wc, f, a.active)
-				if cerr := wc.Close(); err == nil {
-					err = cerr
-				}
-			}
-			path := name
-			if file, ok := wc.(*os.File); ok && err == nil {
-				path = file.Name()
-			}
-			a.saved(wb, f, path, export, err)
+			a.writeAsFile(wc, name, f, export)
+		})
+	}()
+}
+
+// writeAsFile writes a snapshot in the background so a large workbook
+// doesn't block input while Save As or Export is in progress.
+func (a *App) writeAsFile(wc io.WriteCloser, name string, f fileio.Format, export bool) {
+	owner := a.wb
+	wb := owner.Clone()
+	revision, sheet := a.revision, a.active
+	go func() {
+		err := fileio.Write(wb, wc, f, sheet)
+		if cerr := wc.Close(); err == nil {
+			err = cerr
+		}
+		path := name
+		if file, ok := wc.(*os.File); ok && err == nil {
+			path = file.Name()
+		}
+		a.calls.Post(func() {
+			defer a.saving.Store(false)
+			a.savedSnapshot(owner, wb, revision, sheet, f, path, export, err)
 		})
 	}()
 }
 
 // saved runs on the UI goroutine after a Save As or export finishes.
 func (a *App) saved(wb *model.Workbook, f fileio.Format, path string, export bool, err error) {
+	a.savedSnapshot(wb, wb, a.revision, a.active, f, path, export, err)
+}
+
+func (a *App) savedSnapshot(owner, wb *model.Workbook, revision uint64, sheet int, f fileio.Format, path string, export bool, err error) {
 	if err != nil {
 		a.errMsg = "Save failed: " + err.Error()
 		a.closing = false
@@ -300,12 +322,14 @@ func (a *App) saved(wb *model.Workbook, f fileio.Format, path string, export boo
 	if export {
 		what = "Exported "
 	}
-	a.notice = what + filepath.Base(path) + lossNote(wb, f, a.active)
-	if export || wb != a.wb {
+	a.notice = what + filepath.Base(path) + lossNote(wb, f, sheet)
+	if export || owner != a.wb {
 		return
 	}
-	a.modified = false
-	a.dropRecovery()
+	if a.revision == revision {
+		a.modified = false
+		a.dropRecovery()
+	}
 	if filepath.IsAbs(path) {
 		a.path = path
 		a.fileInfo, _ = os.Stat(path)
@@ -314,10 +338,10 @@ func (a *App) saved(wb *model.Workbook, f fileio.Format, path string, export boo
 		a.lk.doc.Set(path, true) // the new file's registration and owner file
 		a.as.elsewhere = false
 	}
-	wb.Name = filepath.Base(path)
+	a.wb.Name = filepath.Base(path)
 	a.warned = path
 	if a.win != nil {
-		a.win.Option(windowTitle(wb.Name))
+		a.win.Option(windowTitle(a.wb.Name))
 	}
 	if !a.as.saver.On() {
 		a.autoSaveLoaded() // on for a .xlsx when that's the default (autosave.go)
@@ -359,6 +383,9 @@ func (a *App) backstagePage(p gui.Page) []layout.Widget {
 			}
 			return th.Button(gtx, &bs.saveBtn, "Save")
 		})
+		if a.errMsg != "" {
+			rows = append(rows, layout.Spacer{Height: 12}.Layout, th.Paragraph(a.errMsg, gui.ErrorText))
+		}
 		return rows
 	case gui.PagePrint:
 		return a.printPageRows()

@@ -435,6 +435,7 @@ func (a *App) gridKeys(gtx layout.Context, st *sheetState) {
 			// Typing replaces the cell's content (Enter mode); characters
 			// typed before the editor took the focus are added to it.
 			if a.ed.active {
+				a.ed.cell.SetCaret(e.Range.Start, e.Range.End)
 				a.ed.cell.Insert(e.Text)
 			} else if e.Text != "" {
 				a.beginEdit(e.Text, true, false)

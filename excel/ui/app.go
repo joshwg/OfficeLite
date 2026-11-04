@@ -76,6 +76,7 @@ type App struct {
 	path     string      // file the workbook was loaded from or saved to
 	fileInfo os.FileInfo // of path, when loaded
 	modified bool        // unsaved changes
+	revision uint64      // increments for each workbook change
 	lk       lockState   // the file's registration, owner file, read-only (lock.go)
 	ar       autoRecover // the AutoRecover copy of unsaved changes (recover.go)
 	as       autoSave    // AutoSave into the file itself (autosave.go)
@@ -392,6 +393,7 @@ func (a *App) applyLoad(r loadResult, readOnly bool) {
 // visible sheet.
 func (a *App) setWorkbook(wb *model.Workbook) {
 	a.wb = wb
+	a.revision = 0
 	if a.book != nil {
 		a.book.Close()
 	}

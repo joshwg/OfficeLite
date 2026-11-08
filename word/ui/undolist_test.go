@@ -69,7 +69,7 @@ func TestUndoHistoryList(t *testing.T) {
 	d := h.d
 	h.typeText("hello")
 	h.press(key.NameLeftArrow, 0)
-	h.press("B", key.ModCtrl) // the word around the caret
+	h.press("B", key.ModShortcut) // the word around the caret
 	h.press(key.NameEnd, 0)
 	h.press(key.NameReturn, 0)
 	for _, c := range "worlds" {

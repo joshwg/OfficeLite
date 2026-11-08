@@ -72,7 +72,7 @@ func TestTypingAndStyles(t *testing.T) {
 	}
 	// Ctrl+Alt+1 on the first paragraph applies Heading 1.
 	h.press(key.NameUpArrow, 0)
-	h.press("1", key.ModCtrl|key.ModAlt)
+	h.press("1", key.ModShortcut|key.ModAlt)
 	if s := h.para(0).Style; s != "Heading1" {
 		t.Fatalf("style %q", s)
 	}
@@ -82,8 +82,8 @@ func TestTypingAndStyles(t *testing.T) {
 	// Select "Body" with Shift+Ctrl+Right and make it bold.
 	h.press(key.NameDownArrow, 0)
 	h.press(key.NameHome, 0)
-	h.press(key.NameRightArrow, key.ModCtrl|key.ModShift)
-	h.press("B", key.ModCtrl)
+	h.press(key.NameRightArrow, key.ModShortcut|key.ModShift)
+	h.press("B", key.ModShortcut)
 	p := h.para(1)
 	if len(p.Runs) != 2 || p.Runs[0].Text != "Body " || p.Runs[0].Props.Bold != model.On {
 		t.Fatalf("bold runs: %+v", p.Runs)
@@ -95,22 +95,22 @@ func TestTypingAndStyles(t *testing.T) {
 		t.Error("not marked modified")
 	}
 	// Undo the bold, then the heading.
-	h.press("Z", key.ModCtrl)
+	h.press("Z", key.ModShortcut)
 	if p := h.para(1); len(p.Runs) != 1 {
 		t.Fatalf("undo bold: %+v", p.Runs)
 	}
-	h.press("Z", key.ModCtrl)
+	h.press("Z", key.ModShortcut)
 	if s := h.para(0).Style; s != "" {
 		t.Fatalf("undo heading: %q", s)
 	}
-	h.press("Y", key.ModCtrl)
+	h.press("Y", key.ModShortcut)
 	if s := h.para(0).Style; s != "Heading1" {
 		t.Fatalf("redo heading: %q", s)
 	}
 	// Ctrl+Shift+N goes back to Normal; Ctrl+E centers.
 	h.press(key.NameUpArrow, 0)
-	h.press("N", key.ModCtrl|key.ModShift)
-	h.press("E", key.ModCtrl)
+	h.press("N", key.ModShortcut|key.ModShift)
+	h.press("E", key.ModShortcut)
 	if p := h.para(0); p.Style != "" || p.Props.Align != model.AlignCenter {
 		t.Fatalf("normal/center: %q %v", p.Style, p.Props.Align)
 	}
@@ -122,7 +122,7 @@ func TestTypingAndStyles(t *testing.T) {
 		t.Fatalf("join: %q", h.para(0).Text())
 	}
 	// Ctrl+Space then a space: the space from Ctrl+Space is not typed.
-	h.press(key.NameSpace, key.ModCtrl)
+	h.press(key.NameSpace, key.ModShortcut)
 	h.typeText(" ")
 	if h.para(0).Text() != "ReportBody text" {
 		t.Errorf("Ctrl+Space typed a space: %q", h.para(0).Text())

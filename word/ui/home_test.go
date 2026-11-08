@@ -14,7 +14,7 @@ func TestFindReplace(t *testing.T) {
 	h := newHarness(t)
 	d := h.d
 	h.typeText("cat dog Cat cat")
-	h.press("F", key.ModCtrl)
+	h.press("F", key.ModShortcut)
 	h.frame()
 	if !d.find.open || d.find.mode != findOnly {
 		t.Fatal("Ctrl+F didn't open the find bar")
@@ -52,7 +52,7 @@ func TestFindReplace(t *testing.T) {
 	}
 	d.find.matchCase = false
 	// Replace: the selected match, then the rest at once.
-	h.press("H", key.ModCtrl)
+	h.press("H", key.ModShortcut)
 	if d.find.mode != findReplace {
 		t.Fatal("Ctrl+H")
 	}
@@ -151,7 +151,7 @@ func TestFormatPainterAndPasteFormat(t *testing.T) {
 	d := h.d
 	h.typeText("one two three")
 	d.ed.Select(model.Pos{Off: 0}, model.Pos{Off: 3})
-	h.press("B", key.ModCtrl)
+	h.press("B", key.ModShortcut)
 	d.ed.Select(model.Pos{Off: 1}, model.Pos{Off: 1})
 	d.painterClick(1)
 	if !d.painter.armed {
@@ -179,9 +179,9 @@ func TestFormatPainterAndPasteFormat(t *testing.T) {
 	// Ctrl+Shift+C / Ctrl+Shift+V.
 	h.typeText(" four")
 	d.ed.Select(model.Pos{Off: 0}, model.Pos{Off: 2})
-	h.press("C", key.ModCtrl|key.ModShift)
+	h.press("C", key.ModShortcut|key.ModShift)
 	d.ed.Select(model.Pos{Off: 14}, model.Pos{Off: 18})
-	h.press("V", key.ModCtrl|key.ModShift)
+	h.press("V", key.ModShortcut|key.ModShift)
 	p := h.para(0)
 	last := p.Runs[len(p.Runs)-1]
 	if last.Props.Bold != model.On {
@@ -193,7 +193,7 @@ func TestStylesPaneAndDialogs(t *testing.T) {
 	h := newHarness(t)
 	d := h.d
 	h.typeText("Hello")
-	h.press("S", key.ModCtrl|key.ModAlt|key.ModShift)
+	h.press("S", key.ModShortcut|key.ModAlt|key.ModShift)
 	if !d.pane.open {
 		t.Fatal("Ctrl+Alt+Shift+S didn't open the Styles pane")
 	}
@@ -205,7 +205,7 @@ func TestStylesPaneAndDialogs(t *testing.T) {
 	if d.newStyle.open || d.doc.Styles.FindStyleByName("Fancy") == nil || h.para(0).Style != "Fancy" {
 		t.Fatalf("new style: open=%v style=%q", d.newStyle.open, h.para(0).Style)
 	}
-	h.press("V", key.ModCtrl|key.ModAlt)
+	h.press("V", key.ModShortcut|key.ModAlt)
 	if !d.pasteSpec.open || !d.modalOpen() {
 		t.Error("Ctrl+Alt+V didn't open Paste Special")
 	}
@@ -214,7 +214,7 @@ func TestStylesPaneAndDialogs(t *testing.T) {
 	if d.pasteSpec.open {
 		t.Error("Esc didn't close Paste Special")
 	}
-	h.press("G", key.ModCtrl)
+	h.press("G", key.ModShortcut)
 	if d.find.mode != findGoTo {
 		t.Error("Ctrl+G")
 	}
@@ -224,14 +224,14 @@ func TestShowHideMarks(t *testing.T) {
 	h := newHarness(t)
 	d := h.d
 	h.typeText("one two")
-	h.press("8", key.ModCtrl|key.ModShift)
+	h.press("8", key.ModShortcut|key.ModShift)
 	if !d.showMarks || !d.eng.ShowHidden() {
 		t.Fatal("Ctrl+Shift+8 didn't show the marks")
 	}
 	if !d.menus()[menuHome].Items[homeShowMarks].Checked {
 		t.Error("Home menu item not checked")
 	}
-	h.press("8", key.ModCtrl|key.ModShift)
+	h.press("8", key.ModShortcut|key.ModShift)
 	if d.showMarks || d.eng.ShowHidden() {
 		t.Fatal("Ctrl+Shift+8 didn't hide the marks")
 	}

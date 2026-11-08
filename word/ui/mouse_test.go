@@ -153,7 +153,7 @@ func TestMarginSelect(t *testing.T) {
 		t.Errorf("paragraph: %v..%v", a, b)
 	}
 	// Ctrl+click: everything.
-	h.click(pt, key.ModCtrl)
+	h.click(pt, key.ModShortcut)
 	if a, b := d.ed.Sel.Ordered(); a != (model.Pos{}) || b != (model.Pos{Para: 1, Off: 16}) {
 		t.Errorf("all: %v..%v", a, b)
 	}
@@ -190,8 +190,8 @@ func TestDragMovesText(t *testing.T) {
 	d.ed.Select(model.Pos{Off: 0}, model.Pos{Off: 4})
 	h.d.v.lastClick = time.Time{}
 	h.mouse(pointer.Press, h.at(model.Pos{Off: 1}), 0)
-	h.mouse(pointer.Drag, h.at(model.Pos{Off: 13}), key.ModCtrl)
-	h.mouse(pointer.Release, h.at(model.Pos{Off: 13}), key.ModCtrl)
+	h.mouse(pointer.Drag, h.at(model.Pos{Off: 13}), key.ModShortcut)
+	h.mouse(pointer.Release, h.at(model.Pos{Off: 13}), key.ModShortcut)
 	if got := h.para(0).Text(); got != "one two threeone " {
 		t.Fatalf("copied: %q", got)
 	}

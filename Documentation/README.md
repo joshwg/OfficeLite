@@ -36,13 +36,17 @@ See the
 ./officelite.sh --word                     # open a blank document
 ./officelite.sh --excel notes.txt          # force a spreadsheet
 ./officelite.sh --linux file.csv           # native Linux build (needs GUI headers)
-./officelite.sh --apple                    # build for Apple Silicon on macOS
+./officelite.sh --apple                    # build only, for Apple Silicon
 ./officelite.sh --build                    # build only
 ```
 
 Under WSL, the default is `bin/OfficeLite.exe`; the Linux build needs CGO and
-X11/Wayland development headers. On macOS, `--apple` builds
-`bin/OfficeLite-Apple-Silicon`, separate from the Windows and Linux binaries.
+X11/Wayland development headers. On macOS, the default is a native build for
+the Mac's own CPU (`bin/OfficeLite-Apple-Silicon` or `bin/OfficeLite-Intel`),
+which then opens like the Linux build does; `--build` builds without opening,
+and `--apple` builds the Apple Silicon binary only. Mac binaries are separate
+from the Windows and Linux ones. On a Mac, most keyboard shortcuts written as
+Ctrl in these guides use Cmd instead (Ctrl+S is Cmd+S, Ctrl+F is Cmd+F).
 When launching the native Linux build, the script defaults Mesa to software
 rendering to avoid DRI3 warnings on displays without a DRI3 device. Set
 `LIBGL_ALWAYS_SOFTWARE=0` to enable hardware rendering on a supported display:

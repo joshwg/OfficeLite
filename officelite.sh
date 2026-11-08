@@ -6,6 +6,8 @@
 #   ./officelite.sh --apple                        build for Apple Silicon
 #   ./officelite.sh --build                        build only
 #
+# On macOS the default is a native build for this Mac's CPU (Apple Silicon or
+# Intel), opened directly; it needs Xcode's command-line tools for CGO.
 # Under WSL the default is the native Windows .exe (no extra packages needed;
 # it shows up as a normal Windows window). The Linux build needs the GUI
 # development headers:
@@ -23,6 +25,9 @@ build_only=false
 if ! grep -qi microsoft /proc/version 2>/dev/null; then
     target=linux # not WSL: build for this machine
 fi
+if [[ $(uname -s) == Darwin ]]; then
+    target=mac
+fi
 case "${1:-}" in
 --linux) target=linux; shift ;;
 --windows) target=windows; shift ;;
@@ -39,6 +44,14 @@ if [[ $target == apple ]]; then
     GOOS=darwin GOARCH=arm64 go build -o "$exe" ./cmd/officelite
     echo "built $exe"
     exit 0
+elif [[ $target == mac ]]; then
+    case $(uname -m) in
+    arm64) exe="$ROOT/bin/OfficeLite-Apple-Silicon" ;;
+    *) exe="$ROOT/bin/OfficeLite-Intel" ;;
+    esac
+    CGO_ENABLED=1 go build -o "$exe" ./cmd/officelite
+    $build_only && { echo "built $exe"; exit 0; }
+    exec "$exe" "$@"
 elif [[ $target == windows ]]; then
     exe="$ROOT/bin/OfficeLite.exe"
     GOOS=windows GOARCH=amd64 go build -ldflags "-H windowsgui" -o "$exe" ./cmd/officelite

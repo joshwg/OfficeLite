@@ -42,11 +42,19 @@ type xComments struct {
 func (r *reader) readAnnotations(part string, sh *model.Sheet) {
 	rels, _ := r.rels(part)
 	byID := map[string]xRel{}
+	var threaded []string
 	for _, rel := range rels {
 		byID[rel.ID] = rel
 		if strings.HasSuffix(rel.Type, "/comments") {
 			r.readComments(rel.Target, sh)
 		}
+		if strings.HasSuffix(rel.Type, "/threadedComment") {
+			threaded = append(threaded, rel.Target)
+		}
+	}
+	// After the legacy comments, which they replace.
+	for _, name := range threaded {
+		r.readThreaded(name, sh)
 	}
 	total := 0
 	for _, l := range r.links {
@@ -104,21 +112,31 @@ func (r *reader) readComments(name string, sh *model.Sheet) {
 	}
 }
 
+// threadedNote reports whether a legacy comment's author marks it as
+// the stand-in of a threaded comment ("tc={GUID}").
+func threadedNote(author string) bool { return strings.HasPrefix(author, "tc=") }
+
 // noAuthor stands in for an empty note author, which excelize would
 // replace with "Author"; it is blanked again once the notes are added.
 const noAuthor = "\uE000"
 
-// writeAnnotations adds the sheet's notes and hyperlinks. It runs before
-// the sheet's StreamWriter is created, which keeps them.
-func (x *writer) writeAnnotations(sh *model.Sheet, name string) error {
+// writeAnnotations adds the sheet's notes and hyperlinks (and collects its
+// threaded comments for patch). It runs before the sheet's StreamWriter
+// is created, which keeps them.
+func (x *writer) writeAnnotations(sh *model.Sheet, name, part string) error {
 	for _, k := range sortedKeys(sh.Notes) {
 		n := sh.Notes[k]
-		author := n.Author
+		author, text := n.Author, n.Text
+		if n.Threaded {
+			author, text = x.threadLegacy(part, k, n)
+		} else if threadedNote(author) {
+			author = "" // would pass for a thread's stand-in
+		}
 		if author == "" {
 			author = noAuthor
 		}
 		// Control characters are escaped as in cell text (XML can't hold them).
-		if err := x.f.AddComment(name, excelize.Comment{Author: author, Cell: model.CellName(k[0], k[1]), Text: escapeOOXML(n.Text)}); err != nil {
+		if err := x.f.AddComment(name, excelize.Comment{Author: author, Cell: model.CellName(k[0], k[1]), Text: escapeOOXML(text)}); err != nil {
 			return err
 		}
 	}

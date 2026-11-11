@@ -1,3 +1,9 @@
+// Subtotals (Data > Subtotal): a row after (or before) each group of rows
+// with equal values in one column, holding SUBTOTAL formulas, a Grand
+// row over the whole list, and the row outline: level 1 shows the grand
+// total, level 2 the subtotals, level 3 the detail. Remove All takes the
+// rows out again. Each is one undo step.
+
 package edit
 
 import (
@@ -12,12 +18,6 @@ import (
 	"officelite/excel/formula"
 	"officelite/excel/model"
 )
-
-// Subtotals (Data > Subtotal): a row after (or before) each group of rows
-// with equal values in one column, holding SUBTOTAL formulas, a Grand
-// row over the whole list, and the row outline: level 1 shows the grand
-// total, level 2 the subtotals, level 3 the detail. Remove All takes the
-// rows out again. Each is one undo step.
 
 // SubtotalFunc is a function of the Subtotal dialog's "Use function".
 type SubtotalFunc struct {
@@ -145,6 +145,9 @@ func (b *Book) RemoveSubtotals(sheet int, r model.Range) (model.Range, calc.Resu
 	return b.removeSubtotals(sheet, r)
 }
 
+// removeSubtotals does RemoveSubtotals' work inside the caller's undo
+// group: it deletes the subtotal rows found in r, then clears the row
+// outline over what is left.
 func (b *Book) removeSubtotals(sheet int, r model.Range) (model.Range, calc.Result, error) {
 	sh := b.WB.Sheets[sheet]
 	var del []int

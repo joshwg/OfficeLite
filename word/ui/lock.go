@@ -1,9 +1,9 @@
+// lock.go ties the window to file locking: read-only mode, the locked-file
+// prompt and raising the window.
+
 package ui
 
 import (
-	"path/filepath"
-
-	"gioui.org/io/system"
 	"gioui.org/layout"
 
 	"officelite/common/gui"
@@ -23,35 +23,19 @@ type lockState struct {
 	answer        func(int) // handles the dialog's button; -1 for Esc
 }
 
-// raise brings the window to the front, when its file is opened again.
-func (d *window) raise() {
-	d.calls.Post(func() {
-		if d.win != nil {
-			d.win.Perform(system.ActionRaise)
-		}
-	})
-}
-
-// docName is the document's name for the title, marked when read-only.
+// docName is the document's name for the title, marked when read-only or
+// recovered.
 func (d *window) docName() string {
-	if d.lk.readOnly {
-		return d.doc.Name + " (Read-Only)"
-	}
-	if d.ar.recovered != nil {
-		return d.doc.Name + " [Recovered]"
-	}
-	return d.doc.Name
+	return gui.DocTitle(d.doc.Name, d.lk.readOnly, d.ar.recovered != nil)
 }
 
 // askLocked asks what to do with a loaded document whose file is open
 // elsewhere: open it read-only, open it anyway or not at all.
 func (d *window) askLocked(r loadResult) {
-	st := r.lock
 	d.menu.Close()
 	d.back.Hide()
-	d.lk.dlg.Show(st.Title(), st.Message(filepath.Base(r.path)), st.Buttons()...)
-	d.lk.answer = func(i int) {
-		switch st.Choice(i) {
+	d.lk.answer = gui.AskLocked(&d.lk.dlg, r.lock, r.path, func(c lockfile.Choice) {
+		switch c {
 		case lockfile.ReadOnly:
 			d.applyLoad(r, true)
 		case lockfile.Anyway:
@@ -65,9 +49,18 @@ func (d *window) askLocked(r loadResult) {
 			}
 		}
 		d.v.focusPending = true
-	}
+	})
 }
 
+// askSaveLocked asks whether to save over the file at path, which Save As
+// chose and lockfile.Check found st about (open elsewhere), and gives
+// answer the reply (gui.SaveAs.Ask).
+func (d *window) askSaveLocked(st lockfile.Status, path string, answer func(ok bool)) {
+	d.menu.Close()
+	d.lk.answer = gui.AskSaveLocked(&d.lk.dlg, st, path, answer)
+}
+
+// lockAnswer handles button i of the lock dialog (-1 for Esc), once.
 func (d *window) lockAnswer(i int) {
 	if f := d.lk.answer; f != nil {
 		d.lk.answer = nil
@@ -75,6 +68,7 @@ func (d *window) lockAnswer(i int) {
 	}
 }
 
+// lockLayout draws the lock dialog, when it is up, and takes its clicks.
 func (d *window) lockLayout(gtx layout.Context) {
 	if !d.lk.dlg.Visible {
 		return

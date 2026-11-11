@@ -1,3 +1,6 @@
+// Tests for row and column outlines (grouping) surviving a save in each
+// multi-sheet format.
+
 package fileio
 
 import (
@@ -33,6 +36,9 @@ func outlineWorkbook() *model.Workbook {
 	return &model.Workbook{Name: "outline", Sheets: []*model.Sheet{sh}, Styles: []model.Style{model.DefaultStyle()}}
 }
 
+// TestOutlineRoundTrip checks that outline levels, collapsed groups, the
+// summary side and the sizes of hidden rows and columns survive a save as
+// .xlsx and as .xls.
 func TestOutlineRoundTrip(t *testing.T) {
 	for _, f := range []Format{XLSX, XLS} {
 		t.Run(f.Ext(), func(t *testing.T) {

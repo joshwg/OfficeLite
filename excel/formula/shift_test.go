@@ -1,7 +1,12 @@
+// Tests for Shift (moving a formula's relative references).
+
 package formula
 
 import "testing"
 
+// TestShift checks that Shift moves relative cell, column and row
+// references, leaves absolute parts, strings, sheet names and defined
+// names alone, and gives #REF! for references moved off the sheet.
 func TestShift(t *testing.T) {
 	for _, c := range []struct {
 		in         string

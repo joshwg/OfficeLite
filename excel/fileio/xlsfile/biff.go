@@ -1,4 +1,6 @@
-// Package xlsfile reads Excel 97-2003 binary workbooks (.xls, BIFF8).
+// Package xlsfile reads and writes Excel 97-2003 binary workbooks (.xls,
+// BIFF8). This file holds the record ids and the primitive readers: fixed
+// width integers, RK numbers, Unicode strings and CONTINUE-split data.
 //
 // Reference: [MS-XLS] Excel Binary File Format Structure.
 package xlsfile
@@ -113,6 +115,7 @@ func rkValue(rk uint32) float64 {
 	return v
 }
 
+// errorTexts maps BIFF error codes (BErr) to the cell text Excel shows.
 var errorTexts = map[byte]string{
 	0x00: "#NULL!", 0x07: "#DIV/0!", 0x0F: "#VALUE!", 0x17: "#REF!",
 	0x1D: "#NAME?", 0x24: "#NUM!", 0x2A: "#N/A", 0x2B: "#GETTING_DATA",

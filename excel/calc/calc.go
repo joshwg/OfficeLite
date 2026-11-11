@@ -35,14 +35,19 @@ type Result struct {
 	Circular   []string // cells in circular references, e.g. "Sheet1!B2"
 }
 
+// key identifies a cell by sheet index, row and column.
 type key struct{ sheet, row, col int }
 
+// A formula cell's state during a recalculation; the zero value means it
+// is not scheduled.
 const (
 	pending = iota + 1
 	computing
 	done
 )
 
+// engine is one recalculation's state: the workbook, the formula engine's
+// context (it implements formula.Context) and the cells still to compute.
 type engine struct {
 	wb     *model.Workbook
 	funcs  *formula.Registry
@@ -499,6 +504,7 @@ type Override struct {
 	Value           formula.Value
 }
 
+// overrideCtx is an engine whose CellValue answers from o for one cell.
 type overrideCtx struct {
 	*engine
 	o *Override

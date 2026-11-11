@@ -1,3 +1,8 @@
+// Formula values: the Value kinds (Number, String, Bool, Error, Blank,
+// Missing, *Array, Ref, *Lambda), Excel's error constants, and the
+// coercion (Num, Int, Str, Truth, ParseNumber) and comparison (Compare,
+// Equal) rules.
+
 package formula
 
 import (
@@ -25,6 +30,7 @@ type (
 	Missing struct{}
 )
 
+// isValue marks the types that may be a Value; it does nothing.
 func (Number) isValue()  {}
 func (String) isValue()  {}
 func (Bool) isValue()    {}
@@ -84,6 +90,9 @@ func NewArray(rows, cols int) *Array {
 	return a
 }
 
+// At, Set, Len, Single, Row and Shape are the element accessors: At and Set
+// read and write the element at (r, c), Row returns row r as a slice of the
+// backing store, Single reports a 1×1 array, Shape gives (rows, cols).
 func (a *Array) At(r, c int) Value       { return a.V[r*a.Cols+c] }
 func (a *Array) Set(r, c int, v Value)   { a.V[r*a.Cols+c] = v }
 func (a *Array) Len() int                { return len(a.V) }
@@ -114,6 +123,8 @@ type Ref struct {
 	R1, C1, R2, C2 int
 }
 
+// Single reports a one-cell reference; Rows and Cols are its extent and
+// Contains reports whether (row, col) lies inside it.
 func (r Ref) Single() bool { return r.R1 == r.R2 && r.C1 == r.C2 }
 func (r Ref) Rows() int    { return r.R2 - r.R1 + 1 }
 func (r Ref) Cols() int    { return r.C2 - r.C1 + 1 }
@@ -326,6 +337,8 @@ func ParseNumber(s string) (float64, bool) {
 	return f, true
 }
 
+// parseDateTimeNumber is ParseNumber's fallback for text that is not a
+// plain number: a date or time in the 1900 date system, else false.
 func parseDateTimeNumber(s string) (float64, bool) {
 	if v, ok := ParseDateTime(s, false); ok {
 		return v, true

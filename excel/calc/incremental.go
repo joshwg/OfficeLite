@@ -1,3 +1,7 @@
+// incremental.go holds the Calculator: a dependency index over the
+// workbook's formulas that lets an edit recalculate only the formulas it
+// affects, rounds included for dynamic arrays whose spills grow or shrink.
+
 package calc
 
 import (
@@ -21,10 +25,12 @@ func CellArea(sheet, row, col int) Area {
 	return Area{sheet, model.Range{R1: row, C1: col, R2: row, C2: col}}
 }
 
+// intersects reports whether a and b share a cell (so are on one sheet).
 func (a Area) intersects(b Area) bool {
 	return a.Sheet == b.Sheet && a.R1 <= b.R2 && b.R1 <= a.R2 && a.C1 <= b.C2 && b.C1 <= a.C2
 }
 
+// size returns the number of cells in a.
 func (a Area) size() int { return (a.R2 - a.R1 + 1) * (a.C2 - a.C1 + 1) }
 
 // Calculator recalculates a workbook as it is edited. It keeps every
@@ -39,13 +45,15 @@ type Calculator struct {
 
 	f      map[key]*fentry
 	points map[key][]dref    // single cells read
-	cols   map[[2]int][]dref // (sheet, col) -> narrow ranges read
-	wide   map[int][]dref    // sheet -> wide ranges read
+	cols   map[[2]int][]dref // (sheet, col) → narrow ranges read
+	wide   map[int][]dref    // sheet → wide ranges read
 	always map[key]bool      // volatile, or reads cells it can't name in advance
 	dyn    map[key]bool      // dynamic-array formulas
 	stale  int               // index entries of removed or replaced formulas
 }
 
+// fentry is what the Calculator keeps about one formula cell; gen tells
+// its index entries (dref) from those of a formula it replaced.
 type fentry struct {
 	text    string
 	node    formula.Node // nil when the formula doesn't parse
@@ -71,6 +79,7 @@ func NewCalculator(wb *model.Workbook, funcs *formula.Registry) *Calculator {
 // cells or rename sheets (inserting rows, deleting sheets ...).
 func (c *Calculator) Invalidate() { c.built = false }
 
+// build indexes every formula in the workbook from scratch.
 func (c *Calculator) build() {
 	c.f = map[key]*fentry{}
 	c.points = map[key][]dref{}
@@ -175,6 +184,8 @@ func (c *Calculator) resolve(home int, d formula.Deps, depth int, always *bool) 
 	return out
 }
 
+// sheetIndex returns the index of the sheet named name (ignoring case),
+// or -1.
 func (c *Calculator) sheetIndex(name string) int {
 	for i, sh := range c.wb.Sheets {
 		if strings.EqualFold(sh.Name, name) {
@@ -184,10 +195,14 @@ func (c *Calculator) sheetIndex(name string) int {
 	return -1
 }
 
+// name returns the formula of defined name name as seen from sheet, as
+// the engine resolves it.
 func (c *Calculator) name(name string, sheet int) (string, bool) {
 	return (&engine{wb: c.wb}).Name(name, sheet)
 }
 
+// remove forgets the formula at k; its index entries stay behind as stale
+// ones until the next rebuild.
 func (c *Calculator) remove(k key) {
 	if e, ok := c.f[k]; ok {
 		c.stale += len(e.areas)
@@ -197,6 +212,8 @@ func (c *Calculator) remove(k key) {
 	}
 }
 
+// valid reports whether index entry d belongs to the formula now at its
+// cell, not to a removed or replaced one.
 func (c *Calculator) valid(d dref) bool {
 	e := c.f[d.f]
 	return e != nil && e.gen == d.gen
@@ -427,6 +444,7 @@ func (c *Calculator) dropSpills(a Area, changed []Area) []Area {
 	return out
 }
 
+// contains reports whether inner lies wholly within outer.
 func contains(outer, inner model.Range) bool {
 	return inner.R1 >= outer.R1 && inner.R2 <= outer.R2 && inner.C1 >= outer.C1 && inner.C2 <= outer.C2
 }

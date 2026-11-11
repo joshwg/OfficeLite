@@ -1,3 +1,9 @@
+// The Styles pane (Home > Styles Pane, Ctrl+Alt+Shift+S): every paragraph
+// and character style with a preview in its own formatting. A click
+// selects a style, a double-click (or Apply) applies it; New Style…,
+// Modify…, Update to Match Selection and Delete (custom styles only) work
+// on the selected one. The New Style dialog is here too.
+
 package ui
 
 import (
@@ -17,12 +23,7 @@ import (
 	"officelite/word/model"
 )
 
-// The Styles pane (Home > Styles Pane, Ctrl+Alt+Shift+S): every paragraph
-// and character style with a preview in its own formatting. A click
-// selects a style, a double-click (or Apply) applies it; New Style…,
-// Modify…, Update to Match Selection and Delete (custom styles only) work
-// on the selected one.
-
+// stylesPane is the pane's state: the selected style and its rows.
 type stylesPane struct {
 	open     bool
 	selected string // style ID
@@ -92,12 +93,15 @@ func (d *window) styleSample(st *model.Style, size float32) sampleFmt {
 	return sampleFmt{font: f, size: size, color: c}
 }
 
+// sampleFmt is the font, size and color a style's preview is drawn in.
 type sampleFmt struct {
 	font  font.Font
 	size  float32
 	color color.NRGBA
 }
 
+// stylesPaneLayout draws the pane beside the page view (nothing when it
+// is closed) and runs its buttons.
 func (d *window) stylesPaneLayout(gtx layout.Context) layout.Dimensions {
 	p := &d.pane
 	if !p.open {
@@ -263,6 +267,8 @@ type newStyleDialog struct {
 	focus                bool
 }
 
+// openFor shows the dialog with a free name (Style1, Style2, …), based on
+// the caret paragraph's style.
 func (s *newStyleDialog) openFor(d *window) {
 	s.open, s.typ, s.err, s.focus = true, model.ParagraphStyle, "", true
 	s.basedOn = d.ed.ParaStyleID(d.ed.Sel.Caret.Para)
@@ -276,6 +282,8 @@ func (s *newStyleDialog) openFor(d *window) {
 	d.menu.Close()
 }
 
+// layout draws the dialog; OK (or Enter) creates the style and selects it
+// in the pane, showing the editor's error in the dialog when it refuses.
 func (s *newStyleDialog) layout(gtx layout.Context, d *window) {
 	th := d.th
 	if s.focus {

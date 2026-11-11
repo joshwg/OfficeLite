@@ -1,3 +1,6 @@
+// Windows-only test: saving over a file another program holds open fails
+// cleanly.
+
 package fileio
 
 import (
@@ -11,8 +14,8 @@ import (
 	"officelite/excel/model"
 )
 
-// TestSaveOverLockedFile: saving over a document Excel holds open fails
-// with a message saying so, and leaves no temporary file behind.
+// TestSaveOverLockedFile checks that saving over a document Excel holds open
+// fails with a message saying so, and leaves no temporary file behind.
 func TestSaveOverLockedFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "Budget.xlsx")

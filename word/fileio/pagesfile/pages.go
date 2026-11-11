@@ -34,11 +34,14 @@ const (
 	typeSection    = 10011 // TP.SectionArchive
 )
 
+// reader holds the state of one import: the iWork document being read,
+// the Word document being built and the style and list mappings made
+// along the way.
 type reader struct {
 	doc      *iwork.Document
 	out      *model.Document
-	styleIDs map[uint64]string // named paragraph style -> Word style ID
-	lists    map[uint64]int    // list style -> NumID
+	styleIDs map[uint64]string // named paragraph style → Word style ID
+	lists    map[uint64]int    // list style → NumID
 	counts   map[string]int    // dropped or moved content, for warnings
 	seen     map[uint64]bool   // drawables already placed
 }
@@ -84,10 +87,15 @@ func Read(data []byte) (_ *model.Document, err error) {
 	if _, ok := out.Body[len(out.Body)-1].(*model.Paragraph); !ok {
 		out.Body = append(out.Body, &model.Paragraph{})
 	}
+	if err := doc.Err(); err != nil { // a picture was too large: fail the open
+		return nil, err
+	}
 	r.warnings()
 	return out, nil
 }
 
+// warnings turns the counts of dropped or moved content into the
+// document's user-visible warnings.
 func (r *reader) warnings() {
 	msgs := []struct{ key, text string }{
 		{"floating", "Text boxes, pictures and tables placed on the page (not in the text) were added at the end of the document, in page order"},

@@ -1,3 +1,5 @@
+// The built-in style sheet of a new document.
+
 package model
 
 // DefaultStyles is the style sheet of a new blank Word document: Normal

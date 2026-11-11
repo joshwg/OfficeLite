@@ -1,3 +1,8 @@
+// AutoFilter: turning it on and off, setting a column's criteria, and
+// working out which rows they hide. Rows hidden by the filter are kept in
+// Sheet.Filtered, apart from rows hidden by their height, so that Clear
+// shows only what the filter hid. Each change is one undo step.
+
 package edit
 
 import (
@@ -15,11 +20,6 @@ import (
 	"officelite/excel/numfmt"
 )
 
-// AutoFilter: turning it on and off, setting a column's criteria, and
-// working out which rows they hide. Rows hidden by the filter are kept in
-// Sheet.Filtered, apart from rows hidden by their height, so that Clear
-// shows only what the filter hid. Each change is one undo step.
-
 // ErrFilterRange is Excel's refusal to filter an empty cell.
 var ErrFilterRange = errors.New("this can't be applied to the selected range. Select a single cell in a range and try again")
 
@@ -29,15 +29,19 @@ type filterChange struct {
 	before, after filterState
 }
 
+// filterState is a snapshot of a sheet's AutoFilter and the rows it hides.
 type filterState struct {
 	af       *model.AutoFilter
 	filtered map[int]bool
 }
 
+// filterStateOf snapshots the sheet's filter state, copies that later
+// changes to the sheet don't touch.
 func filterStateOf(sh *model.Sheet) filterState {
 	return filterState{sh.AutoFilter.Clone(), cloneRows(sh.Filtered)}
 }
 
+// cloneRows copies a set of rows, nil for an empty one.
 func cloneRows(m map[int]bool) map[int]bool {
 	if len(m) == 0 {
 		return nil
@@ -49,6 +53,8 @@ func cloneRows(m map[int]bool) map[int]bool {
 	return out
 }
 
+// set puts the sheet's filter state back to the change's after or before
+// snapshot (copies, so the snapshots stay intact for the next undo or redo).
 func (c *filterChange) set(wb *model.Workbook, after bool) {
 	s := c.before
 	if after {
@@ -237,6 +243,8 @@ type filterEval struct {
 	cols []model.FilterColumn
 }
 
+// newFilterEval makes an evaluator for f's columns, working out the Top 10
+// and above/below-average thresholds (stored in f's columns) first.
 func (b *Book) newFilterEval(sh *model.Sheet, f *model.AutoFilter) *filterEval {
 	ev := &filterEval{b: b, sh: sh, f: f, cols: f.Columns}
 	for i := range f.Columns {
@@ -265,6 +273,7 @@ func (ev *filterEval) numbers(col int) []float64 {
 	return xs
 }
 
+// average is the mean of column col's numbers, 0 when there are none.
 func (ev *filterEval) average(col int) float64 {
 	xs := ev.numbers(col)
 	if len(xs) == 0 {
@@ -361,6 +370,7 @@ func (b *Book) matchColumn(sh *model.Sheet, fc *model.FilterColumn, c *model.Cel
 	return true
 }
 
+// isDate reports whether the cell's number format shows it as a date.
 func (b *Book) isDate(c *model.Cell) bool {
 	st := b.style(c.Style)
 	return numfmt.IsDate(st.NumFmtID, st.NumFmtCode)
@@ -405,6 +415,8 @@ func matchCond(cd model.FilterCond, c *model.Cell, blank bool) bool {
 	return compareOp(cd.Op, strings.Compare(strings.ToLower(c.Text), strings.ToLower(cd.Val)))
 }
 
+// compareOp reports whether a three-way comparison result c (-1, 0, 1)
+// satisfies op.
 func compareOp(op model.FilterOp, c int) bool {
 	switch op {
 	case model.OpEqual:

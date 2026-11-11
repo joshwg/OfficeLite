@@ -1,3 +1,7 @@
+// Tests for the AutoFilter: its range, criteria of every kind, undo, Clear,
+// Reapply, sorting, drop-down items, and how other commands treat the rows
+// it hides.
+
 package edit
 
 import (
@@ -46,6 +50,9 @@ func shown(b *Book) []int {
 	return out
 }
 
+// TestFilterRange checks that FilterRange grows a single cell or row to
+// the data around it, keeps a block selection as it is, clamps a whole
+// column to the used rows, and refuses an empty cell.
 func TestFilterRange(t *testing.T) {
 	b := filterBook(t)
 	sh := b.WB.Sheets[0]
@@ -66,6 +73,9 @@ func TestFilterRange(t *testing.T) {
 	}
 }
 
+// TestFilterCriteria checks which rows each kind of criteria shows: value
+// lists (with blanks), custom conditions with wildcards and And/Or, Top 10
+// by count and percent, above/below average, and date values and groups.
 func TestFilterCriteria(t *testing.T) {
 	b := filterBook(t)
 	r := rng("A1", "C8")
@@ -101,6 +111,10 @@ func TestFilterCriteria(t *testing.T) {
 	}
 }
 
+// TestFilterUndoAndClear checks that two columns' criteria combine, that
+// FilterCount counts the rows shown, that undo and redo restore the rows,
+// and that Clear and turning the filter off show the filtered rows but
+// not a row hidden by hand.
 func TestFilterUndoAndClear(t *testing.T) {
 	b := filterBook(t)
 	sh := b.WB.Sheets[0]
@@ -139,6 +153,9 @@ func TestFilterUndoAndClear(t *testing.T) {
 	}
 }
 
+// TestFilterReapplyAndSort checks that edits don't refilter by themselves,
+// that Reapply does and grows the range over a row added below, and that
+// SortFiltered sorts and refilters as one undo step.
 func TestFilterReapplyAndSort(t *testing.T) {
 	b := filterBook(t)
 	sh := b.WB.Sheets[0]
@@ -175,6 +192,9 @@ func TestFilterReapplyAndSort(t *testing.T) {
 	}
 }
 
+// TestFilterItems checks the drop-down checklist: text in order with
+// (Blanks) last, checked items matching the column's criteria, another
+// column's list limited to the rows shown, and FilterColumnKind.
 func TestFilterItems(t *testing.T) {
 	b := filterBook(t)
 	r := rng("A1", "C8")
@@ -210,6 +230,8 @@ func TestFilterItems(t *testing.T) {
 	}
 }
 
+// TestFilterInsertRows checks that inserting rows above the filter moves
+// its range and the hidden rows down, and undo moves them back.
 func TestFilterInsertRows(t *testing.T) {
 	b := filterBook(t)
 	sh := b.WB.Sheets[0]
@@ -228,9 +250,9 @@ func TestFilterInsertRows(t *testing.T) {
 	}
 }
 
-// SUBTOTAL always leaves out rows the filter hid, and 101-111 rows hidden
-// by hand too; AGGREGATE's odd options leave out both. They follow filter
-// changes and undo.
+// TestSubtotalHiddenRows checks that SUBTOTAL always leaves out rows the
+// filter hid, and 101-111 rows hidden by hand too; AGGREGATE's odd options
+// leave out both. They follow filter changes and undo.
 func TestSubtotalHiddenRows(t *testing.T) {
 	b := filterBook(t)
 	b.enter(t, 0, "B11", "100") // in the row hidden by hand
@@ -254,8 +276,9 @@ func TestSubtotalHiddenRows(t *testing.T) {
 	b.expect(t, "cleared", unfiltered)
 }
 
-// Fill, Clear, Copy and formatting skip the rows the AutoFilter hides,
-// as Excel's do; a single copied row pastes into the rows shown only.
+// TestFilteredRowsLeftAlone checks that Fill, Clear, Copy and formatting
+// skip the rows the AutoFilter hides, as Excel's do, and that a single
+// copied row pastes into the rows shown only.
 func TestFilteredRowsLeftAlone(t *testing.T) {
 	b := filterBook(t)
 	sh := b.WB.Sheets[0]

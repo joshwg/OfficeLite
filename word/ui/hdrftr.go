@@ -1,3 +1,10 @@
+// Editing headers and footers, as in Word: double-click the top or bottom
+// margin of a page to edit its header or footer (the body dims and a
+// Header & Footer bar shows); Esc, Close or a double-click in the body
+// goes back. While a header is edited d.ed is an editor over a document
+// holding the header's blocks (model.Document.SubDocument) and d.hf.view
+// lays it out where it shows on the page, for the caret and hit testing.
+
 package ui
 
 import (
@@ -16,13 +23,6 @@ import (
 	wl "officelite/word/layout"
 	"officelite/word/model"
 )
-
-// Editing headers and footers, as in Word: double-click the top or bottom
-// margin of a page to edit its header or footer (the body dims and a
-// Header & Footer bar shows); Esc, Close or a double-click in the body
-// goes back. While a header is edited d.ed is an editor over a document
-// holding the header's blocks (model.Document.SubDocument) and d.hf.view
-// lays it out where it shows on the page, for the caret and hit testing.
 
 // hfEdit is the header/footer editing state.
 type hfEdit struct {
@@ -420,6 +420,7 @@ func (d *window) drawPageExtras(gtx layout.Context, pg *wl.Page) {
 	eng := d.ceng()
 	if pg.Index < len(eng.Pages) {
 		cpg := eng.Pages[pg.Index]
+		d.drawComments(gtx, eng, cpg, rect)
 		d.drawMatches(gtx, eng, cpg, rect)
 		if d.hf.on && pg.Index == d.hf.page && !d.ed.Sel.Empty() {
 			a, b := d.ed.Sel.Ordered()

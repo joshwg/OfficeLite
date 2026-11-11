@@ -1,3 +1,6 @@
+// Tests for AutoSave in the document window: when the switch is
+// available, saving after edits, failures and the default setting.
+
 package ui
 
 import (
@@ -13,6 +16,7 @@ import (
 
 	"officelite/common/autorecover"
 	"officelite/common/autosave"
+	"officelite/common/gui"
 	"officelite/common/limits"
 	"officelite/word/fileio"
 	"officelite/word/model"
@@ -33,8 +37,8 @@ func (h *harness) startAutoSave(path string) *autosave.ManualClock {
 	}
 	d.startAutoSave()
 	clock := autosave.NewManualClock()
-	d.as.saver.Clock = clock
-	h.t.Cleanup(d.as.saver.Close)
+	d.as.Saver.Clock = clock
+	h.t.Cleanup(d.as.Saver.Close)
 	h.frame()
 	return clock
 }
@@ -43,7 +47,7 @@ func (h *harness) startAutoSave(path string) *autosave.ManualClock {
 // written the file and its end has been seen.
 func (h *harness) settle() {
 	for range 3 {
-		h.d.as.saver.Wait()
+		h.d.as.Saver.Wait()
 		h.d.calls.Run()
 		h.frame()
 	}
@@ -67,7 +71,7 @@ func fileText(t *testing.T, path string) string {
 	return model.NewEditor(doc).Para(0).Text()
 }
 
-// TestAutoSaveUnavailable: the switch is greyed, with the reason as its
+// TestAutoSaveUnavailable: the switch is grayed, with the reason as its
 // tooltip, for a new document, a .doc, a read-only or recovered document,
 // and clicking it does nothing.
 func TestAutoSaveUnavailable(t *testing.T) {
@@ -82,7 +86,7 @@ func TestAutoSaveUnavailable(t *testing.T) {
 		}
 		h.clickAutoSave()
 		d.setAutoSave(true)
-		if d.as.saver.On() {
+		if d.as.Saver.On() {
 			t.Errorf("%s: turned on", what)
 		}
 	}
@@ -96,9 +100,9 @@ func TestAutoSaveUnavailable(t *testing.T) {
 	d.lk.readOnly = true
 	check("read-only", "This document is read-only. Save a copy as .docx to turn AutoSave on.")
 	d.lk.readOnly = false
-	d.as.elsewhere = true
+	d.as.Elsewhere = true
 	check("open anyway", "Someone else has this file open, so AutoSave is off: it would overwrite their changes.")
-	d.as.elsewhere = false
+	d.as.Elsewhere = false
 	d.ar.recovered = &autorecover.Entry{Name: "Letter.docx"}
 	check("recovered", "This is a recovered document. Save it as .docx to turn AutoSave on.")
 	d.ar.recovered = nil
@@ -125,7 +129,7 @@ func TestAutoSave(t *testing.T) {
 		t.Fatalf("saved while off: %q", got)
 	}
 	h.clickAutoSave() // on: saves now
-	if !d.as.saver.On() {
+	if !d.as.Saver.On() {
 		t.Fatal("the switch didn't turn AutoSave on")
 	}
 	h.settle()
@@ -165,12 +169,12 @@ func TestAutoSave(t *testing.T) {
 	}
 	clock.Advance(limits.AutoSaveDelay)
 	h.settle()
-	if d.as.saver.Busy() || !d.as.saver.On() || d.errMsg != "" {
-		t.Errorf("after Ctrl+S: busy %v, on %v, %q", d.as.saver.Busy(), d.as.saver.On(), d.errMsg)
+	if d.as.Saver.Busy() || !d.as.Saver.On() || d.errMsg != "" {
+		t.Errorf("after Ctrl+S: busy %v, on %v, %q", d.as.Saver.Busy(), d.as.Saver.On(), d.errMsg)
 	}
 
 	h.clickAutoSave() // off
-	if d.as.saver.On() {
+	if d.as.Saver.On() {
 		t.Fatal("not turned off")
 	}
 	h.typeText("!")
@@ -195,8 +199,8 @@ func TestAutoSaveError(t *testing.T) {
 	}
 	clock.Advance(limits.AutoSaveDelay)
 	h.settle()
-	if d.as.saver.On() || !strings.HasPrefix(d.errMsg, "AutoSave turned off: Save failed") || !d.modified() || h.text() != "Dear" {
-		t.Errorf("on %v, error %q, modified %v", d.as.saver.On(), d.errMsg, d.modified())
+	if d.as.Saver.On() || !strings.HasPrefix(d.errMsg, "AutoSave turned off: Save failed") || !d.modified() || h.text() != "Dear" {
+		t.Errorf("on %v, error %q, modified %v", d.as.Saver.On(), d.errMsg, d.modified())
 	}
 }
 
@@ -219,17 +223,17 @@ func TestAutoSaveDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
-	d.savedAs(fileio.DOC, filepath.Join(dir, "Letter.doc"), false, d.ed.Version, nil)
-	if d.as.saver.On() {
+	d.savedAs(saveSnap{f: fileio.DOC, export: false, version: d.ed.Version}, gui.SaveAsResult{Path: filepath.Join(dir, "Letter.doc")})
+	if d.as.Saver.On() {
 		t.Error("on for a .doc")
 	}
-	d.savedAs(fileio.DOCX, filepath.Join(dir, "Letter.docx"), false, d.ed.Version, nil)
-	if !d.as.saver.On() {
+	d.savedAs(saveSnap{f: fileio.DOCX, export: false, version: d.ed.Version}, gui.SaveAsResult{Path: filepath.Join(dir, "Letter.docx")})
+	if !d.as.Saver.On() {
 		t.Error("off for a .docx saved as")
 	}
-	d.savedAs(fileio.DOC, filepath.Join(dir, "Letter.doc"), false, d.ed.Version, nil)
+	d.savedAs(saveSnap{f: fileio.DOC, export: false, version: d.ed.Version}, gui.SaveAsResult{Path: filepath.Join(dir, "Letter.doc")})
 	h.frame()
-	if d.as.saver.On() {
+	if d.as.Saver.On() {
 		t.Error("still on after saving as .doc")
 	}
 }

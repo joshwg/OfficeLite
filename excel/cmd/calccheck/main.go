@@ -20,6 +20,8 @@ import (
 	"officelite/excel/model"
 )
 
+// main checks each workbook named on the command line and exits 1 when any
+// of them differs or fails to open.
 func main() {
 	verbose := flag.Bool("v", false, "list every mismatch (default: first 20 per file)")
 	flag.Parse()
@@ -32,12 +34,15 @@ func main() {
 	os.Exit(status)
 }
 
+// saved is a formula cell's value as Excel saved it.
 type saved struct {
 	kind model.Kind
 	num  float64
 	text string
 }
 
+// check recalculates the workbook at path, prints a summary and the cells
+// whose results differ from the saved values, and reports whether none did.
 func check(path string, verbose bool) bool {
 	wb, err := fileio.Open(path)
 	if err != nil {
@@ -121,6 +126,7 @@ func same(want saved, got *model.Cell) bool {
 	return want.text == got.Text
 }
 
+// show formats a value for the report: a number with its text, or the text.
 func show(s saved) string {
 	if s.kind == model.KindNumber {
 		return fmt.Sprintf("%v (%q)", s.num, s.text)

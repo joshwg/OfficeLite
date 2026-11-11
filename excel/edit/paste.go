@@ -1,3 +1,6 @@
+// Paste Special (values, formulas or formats only) and the Format
+// Painter's copy of styles.
+
 package edit
 
 import (

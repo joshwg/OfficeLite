@@ -1,3 +1,5 @@
+// Tests for the Numbers import against the Samples/*.numbers documents.
+
 package numbersfile
 
 import (
@@ -11,6 +13,8 @@ import (
 	"officelite/excel/model"
 )
 
+// readSample imports Samples/name, skipping the test when the file is not
+// there.
 func readSample(t *testing.T, name string) *model.Workbook {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join("..", "..", "..", "Samples", name))
@@ -24,6 +28,8 @@ func readSample(t *testing.T, name string) *model.Workbook {
 	return wb
 }
 
+// TestDumpSamples logs every cell of the sample documents for inspection;
+// it runs only with NUMBERS_DUMP set.
 func TestDumpSamples(t *testing.T) {
 	if os.Getenv("NUMBERS_DUMP") == "" {
 		t.Skip("set NUMBERS_DUMP")
@@ -55,6 +61,9 @@ func TestDumpSamples(t *testing.T) {
 	}
 }
 
+// TestSample1Calendar checks that the calendar document gives one sheet per
+// table with its names, bold title, dates as serials shown by their format,
+// merges, hidden rows and frozen header rows.
 func TestSample1Calendar(t *testing.T) {
 	wb := readSample(t, "Sample1.numbers")
 	if len(wb.Sheets) != 17 {
@@ -101,6 +110,8 @@ func TestSample1Calendar(t *testing.T) {
 	}
 }
 
+// TestSample2Table checks a single-table document's cell texts, the bold
+// header column and the warning for its dropped chart.
 func TestSample2Table(t *testing.T) {
 	wb := readSample(t, "Sample2.numbers")
 	if len(wb.Sheets) != 1 || wb.Sheets[0].Name != "Table 1" {
@@ -127,6 +138,8 @@ func TestSample2Table(t *testing.T) {
 	}
 }
 
+// TestSample3Budget checks the budget document's sheet names, currency
+// values and display, the title row's fill and text color, and banded rows.
 func TestSample3Budget(t *testing.T) {
 	wb := readSample(t, "Sample3.numbers")
 	var names []string
@@ -157,6 +170,8 @@ func TestSample3Budget(t *testing.T) {
 	}
 }
 
+// TestNotNumbers checks that a Pages document is refused with an error
+// naming the application.
 func TestNotNumbers(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "..", "Samples", "PagesInvoice.pages"))
 	if err != nil {
@@ -167,6 +182,7 @@ func TestNotNumbers(t *testing.T) {
 	}
 }
 
+// hasWarning reports whether one of wb's warnings contains s.
 func hasWarning(wb *model.Workbook, s string) bool {
 	for _, w := range wb.Warnings {
 		if strings.Contains(w, s) {
@@ -176,6 +192,9 @@ func hasWarning(wb *model.Workbook, s string) bool {
 	return false
 }
 
+// TestFormulas checks that translatable formulas (column references, other
+// tables) come through as Excel text and that untranslatable ones keep
+// their values with a warning.
 func TestFormulas(t *testing.T) {
 	wb := readSample(t, "Sample3.numbers")
 	for _, tt := range []struct {
@@ -190,15 +209,16 @@ func TestFormulas(t *testing.T) {
 			t.Errorf("sheet %d %s formula %q, want %q", tt.sheet, model.CellName(tt.row, tt.col), got, tt.want)
 		}
 	}
-	// Numbers-only functions (DURATION, MONTHNAME...) keep their values.
+	// Numbers-only functions (DURATION, MONTHNAME…) keep their values.
 	wb = readSample(t, "Sample1.numbers")
 	if !hasWarning(wb, "imported as their values") {
 		t.Errorf("no warning for untranslated formulas in %q", wb.Warnings)
 	}
 }
 
-// A group that contains itself (directly or through another group)
-// overflowed the stack while tallying dropped objects.
+// TestCountDroppedGroupCycle checks that a group containing itself
+// (directly or through another group) is tallied once instead of
+// overflowing the stack.
 func TestCountDroppedGroupCycle(t *testing.T) {
 	children := func(ids ...uint64) iwork.Message {
 		var m iwork.Message

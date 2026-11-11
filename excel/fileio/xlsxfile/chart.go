@@ -1132,8 +1132,25 @@ func anchorOf(it *xAnchor) model.Anchor {
 }
 
 // readChart reads a chart part and keeps it (and the parts it uses) as
-// read.
+// read. A chart any of whose parts is over the size cap is dropped, with
+// a warning.
 func (r *reader) readChart(name string) *model.Chart {
+	hits, seen := r.oversizeHits, len(r.oversize)
+	c := r.readChartParts(name)
+	if r.oversizeHits == hits {
+		return c
+	}
+	// Report the parts first found here; a part already reported (shared
+	// with an earlier chart) only drops this chart too.
+	for _, e := range r.oversize[seen:] {
+		r.warned[e.part] = true
+		r.wb.Warnings = append(r.wb.Warnings, e.Error()+"; a chart was dropped")
+	}
+	return nil
+}
+
+// readChartParts reads a chart part and the parts it uses for readChart.
+func (r *reader) readChartParts(name string) *model.Chart {
 	rc, err := r.open(name)
 	if err != nil {
 		return nil

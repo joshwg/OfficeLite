@@ -45,7 +45,7 @@ func Write(wb *model.Workbook, w io.Writer) (err error) {
 	if err := x.build(); err != nil {
 		return err
 	}
-	if len(x.sheets) == 0 && x.normalFont == nil && len(x.pivots) == 0 && len(x.charts) == 0 && (wb.Theme == nil || len(wb.Theme.XML) == 0) {
+	if len(x.sheets) == 0 && x.normalFont == nil && len(x.pivots) == 0 && len(x.charts) == 0 && len(x.threads) == 0 && (wb.Theme == nil || len(wb.Theme.XML) == 0) {
 		return f.Write(w)
 	}
 	var buf bytes.Buffer
@@ -73,6 +73,10 @@ type writer struct {
 	dropParts   []string
 	activeSheet int
 	names       []string // the sheets' names as written (sheetNames)
+	// threads are the sheets' threaded comments and persons the
+	// authors' names and person IDs (threaded.go).
+	threads []*pendingThreads
+	persons [][2]string
 }
 
 // sheetPatch is what the second pass changes in one worksheet: the <cols>
@@ -272,7 +276,7 @@ func (x *writer) writeSheet(sh *model.Sheet, name, part string) error {
 		}
 	}
 
-	if err := x.writeAnnotations(sh, name); err != nil {
+	if err := x.writeAnnotations(sh, name, part); err != nil {
 		return err
 	}
 	if err := x.writeValidations(sh, name); err != nil {
@@ -829,6 +833,7 @@ func (x *writer) patch(data []byte, w io.Writer) error {
 		names[p.name] = true
 	}
 	newParts = append(newParts, x.chartParts(names, edits)...)
+	newParts = append(newParts, x.threadParts(names, edits)...)
 	done := 0
 	for _, zf := range zr.File {
 		if slices.Contains(x.dropParts, zf.Name) {
@@ -848,7 +853,7 @@ func (x *writer) patch(data []byte, w io.Writer) error {
 			continue
 		}
 
-		rc, err := zf.Open()
+		rc, err := openPart(zf, excel.XlsxMaxPartSize, nil)
 		if err != nil {
 			return err
 		}

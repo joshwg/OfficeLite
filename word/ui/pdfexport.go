@@ -1,3 +1,6 @@
+// PDF export and Print via PDF, and their rows on the backstage Export
+// and Print pages.
+
 package ui
 
 import (

@@ -1,3 +1,5 @@
+// Tests for the mouse edits: drag-moving text and dragging table borders.
+
 package model
 
 import (
@@ -5,6 +7,10 @@ import (
 	"testing"
 )
 
+// TestMoveText checks that dragging a selection moves it with its
+// formatting as one undo step, backward and forward, within and across
+// paragraphs, that Ctrl+drag copies, and that dropping inside the
+// selection does nothing.
 func TestMoveText(t *testing.T) {
 	d, e := newDoc("one two three", "four five")
 	// Make "two " bold so the move keeps formatting.
@@ -61,6 +67,8 @@ func TestMoveText(t *testing.T) {
 	}
 }
 
+// TestMoveTextRefusesTables checks that a selection holding a table can't
+// be dragged.
 func TestMoveTextRefusesTables(t *testing.T) {
 	e := typed(t, "before", "after")
 	e.SetCaret(Pos{1, 0}, false)
@@ -72,6 +80,10 @@ func TestMoveTextRefusesTables(t *testing.T) {
 	}
 }
 
+// TestMoveColumnBorder checks that dragging a column border shifts width
+// between its neighbors (only the last column at the right edge), keeps
+// the minimum width, updates cell widths, undoes, and that row heights
+// set and undo.
 func TestMoveColumnBorder(t *testing.T) {
 	e := typed(t, "")
 	e.InsertTable(2, 3)

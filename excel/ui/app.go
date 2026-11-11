@@ -4,7 +4,6 @@
 package ui
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -74,13 +73,13 @@ type App struct {
 	gtx    layout.Context // the frame being laid out, for backstage pages
 
 	wb       *model.Workbook
-	path     string      // file the workbook was loaded from or saved to
-	fileInfo os.FileInfo // of path, when loaded
-	modified bool        // unsaved changes
-	revision uint64      // increments for each workbook change
-	lk       lockState   // the file's registration, owner file, read-only (lock.go)
-	ar       autoRecover // the AutoRecover copy of unsaved changes (recover.go)
-	as       autoSave    // AutoSave into the file itself (autosave.go)
+	path     string       // file the workbook was loaded from or saved to
+	fileInfo os.FileInfo  // of path, when loaded
+	modified bool         // unsaved changes
+	revision uint64       // increments for each workbook change
+	lk       lockState    // the file's registration, owner file, read-only (lock.go)
+	ar       autoRecover  // the AutoRecover copy of unsaved changes (recover.go)
+	as       gui.AutoSave // AutoSave into the file itself (autosave.go)
 	shaper   *text.Shaper
 	active   int // index into wb.Sheets
 	states   map[int]*sheetState
@@ -185,12 +184,12 @@ func Run(w *app.Window, cfg Config) error {
 	a.drop.Window = w
 	a.vbar.Vertical = true
 	a.shaper = a.th.Shaper
-	a.lk.doc = lockfile.NewDoc(a.raise)
+	a.lk.doc = lockfile.NewDoc(gui.Raiser(a.calls, w))
 	defer a.lk.doc.Close()
 	a.startAutoRecover()
 	defer a.ar.saver.Close() // a normal close: the copy goes
 	a.startAutoSave()
-	defer a.as.saver.Close()
+	defer a.as.Saver.Close()
 	if cfg.Recovered != nil {
 		a.openRecovered(*cfg.Recovered)
 	} else if cfg.Path != "" {
@@ -227,6 +226,7 @@ func Run(w *app.Window, cfg Config) error {
 			a.takeResult()
 			gtx := app.NewContext(&ops, e)
 			a.layout(gtx)
+			gui.KeepKeyboard(gtx) // keys keep coming in the browser
 			e.Frame(gtx.Ops)
 		}
 	}
@@ -241,10 +241,19 @@ func emptyWorkbook() *model.Workbook {
 	}
 }
 
+// opening reports whether a file or recovery copy is loading into the
+// window: until it arrives the workbook shown is a placeholder that it
+// replaces, so editing input and commands are ignored (the window still
+// scrolls, zooms, shows its menus and closes).
+func (a *App) opening() bool { return a.loading.Load() }
+
 // openPath loads the file at path on a goroutine, checking its lock
 // first; takeResult shows it when done.
 func (a *App) openPath(path string) {
-	a.loading.Store(true)
+	if !a.startLoad() {
+		a.errMsg = busyLoading
+		return
+	}
 	a.lk.doc.Set(path, false) // opening it again raises this window
 	go func() {
 		st := lockfile.Check(path)
@@ -256,39 +265,47 @@ func (a *App) openPath(path string) {
 	}()
 }
 
-// openDialog asks for a file and opens it like a recent file. Where the
-// platform gives no path, the data is read into this window.
+// busyLoading is the message for a load refused because another is under
+// way.
+const busyLoading = "Another file is still opening in this window."
+
+// startLoad marks a load into the window (one whose result goes through
+// a.results) as begun, on the UI goroutine. It refuses (false) while one
+// is under way, so a second loader can't block on the results channel.
+func (a *App) startLoad() bool { return a.loading.CompareAndSwap(false, true) }
+
+// openDialog asks for a file and opens it like a recent file (openFile).
+// Where the platform gives no path, the data is read into this window if
+// it is pristine (openReader).
 func (a *App) openDialog() {
-	go func() {
+	gui.ChooseOpen{
+		Files: &a.files,
 		// The native dialog lists Excel files, then Word documents (which
 		// openFile routes to a WordLite window).
-		path, err := a.files.Open(gui.ExcelFilter, gui.WordFilter, gui.AllFilter)
-		switch {
-		case err == nil:
-			a.calls.Post(func() { a.openFile(path) })
-			return
-		case errors.Is(err, gui.ErrCancelled):
-			return
-		}
-		rc, err := a.expl.ChooseFile(openExtensions...)
-		if errors.Is(err, explorer.ErrUserDecline) {
-			return
-		}
-		if err != nil {
-			a.finishLoad("", nil, err)
-			return
-		}
-		if f, ok := rc.(*os.File); ok && filepath.IsAbs(f.Name()) {
-			if err := rc.Close(); err != nil {
-				a.finishLoad("", nil, err)
-				return
-			}
-			path := f.Name()
-			a.calls.Post(func() { a.openFile(path) })
-			return
-		}
-		a.loading.Store(true)
-		a.win.Invalidate()
+		Filters:  []gui.FileFilter{gui.ExcelFilter, gui.WordFilter, gui.AllFilter},
+		Choose:   a.expl.ChooseFile,
+		Exts:     openExtensions,
+		Declined: explorer.ErrUserDecline,
+		Calls:    a.calls,
+		Open:     a.openFile,
+		Read:     a.openReader,
+		Fail:     func(err error) { a.errMsg = "Can't open the file: " + err.Error() },
+	}.Start()
+}
+
+// openReader reads a file the Open dialog gave without a path into the
+// window, which then has no file of its own (Save goes to Save As). Only
+// a pristine window takes it; otherwise it is closed unread and the
+// status line says why.
+func (a *App) openReader(rc io.ReadCloser) {
+	a.back.Hide()
+	if !a.pristine() || !a.startLoad() {
+		gui.CloseChosen(rc)
+		a.errMsg = gui.OpenHereOnlyEmpty
+		return
+	}
+	a.lk.doc.Set("", false) // no file of its own to register
+	go func() {
 		data, err := io.ReadAll(rc)
 		if closeErr := rc.Close(); err == nil {
 			err = closeErr
@@ -397,8 +414,9 @@ func (a *App) applyLoad(r loadResult, readOnly bool) {
 	if r.rec != nil {
 		a.adoptRecovered(*r.rec) // recover.go
 	}
-	a.as.elsewhere = r.lock.Locked() && !readOnly // Open Anyway
+	a.as.Elsewhere = r.lock.Locked() && !readOnly // Open Anyway
 	a.autoSaveLoaded()                            // autosave.go
+	a.macroNotice()                               // macros.go
 }
 
 // setWorkbook makes wb the window's workbook, resetting the editing

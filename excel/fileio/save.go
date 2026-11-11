@@ -104,7 +104,7 @@ func SaveFile(wb *model.Workbook, path string, f Format, sheet int) error {
 }
 
 // Fits lists what of wb format f cannot hold (rows, columns, styles,
-// formulas ...); it is empty when nothing is lost beyond what any save in
+// formulas …); it is empty when nothing is lost beyond what any save in
 // that format loses.
 func Fits(wb *model.Workbook, f Format) []string {
 	if f == XLS {

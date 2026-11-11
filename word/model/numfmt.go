@@ -1,3 +1,6 @@
+// Number formats shared by list labels, page numbers and note marks:
+// decimal, letters and roman numerals.
+
 package model
 
 import (

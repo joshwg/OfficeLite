@@ -1,3 +1,5 @@
+// Tests for table editing, pictures and hyperlinks.
+
 package model
 
 import (
@@ -9,6 +11,8 @@ import (
 	"testing"
 )
 
+// typed returns an editor on a new document with texts typed as one
+// paragraph each.
 func typed(t *testing.T, texts ...string) *Editor {
 	t.Helper()
 	d := New("t")
@@ -22,6 +26,10 @@ func typed(t *testing.T, texts ...string) *Editor {
 	return e
 }
 
+// TestInsertTable checks that inserting a table mid-paragraph splits it,
+// uses Table Grid at the text width, puts the caret in the first cell,
+// that Tab moves between cells and adds a row in the last one, and that
+// undo brings the plain paragraph back.
 func TestInsertTable(t *testing.T) {
 	e := typed(t, "Hello world")
 	e.SetCaret(Pos{0, 5}, false)
@@ -72,6 +80,8 @@ func TestInsertTable(t *testing.T) {
 	}
 }
 
+// TestInsertTableEmptyPara checks that a table inserted in an empty
+// paragraph comes first and a paragraph follows it.
 func TestInsertTableEmptyPara(t *testing.T) {
 	e := typed(t, "")
 	e.InsertTable(1, 1)
@@ -86,10 +96,14 @@ func TestInsertTableEmptyPara(t *testing.T) {
 	}
 }
 
+// cellText is the text of the first paragraph of cell (r, c).
 func cellText(tb *Table, r, c int) string {
 	return tb.Rows[r].Cells[c].Blocks[0].(*Paragraph).Text()
 }
 
+// TestRowsAndColumns checks inserting and deleting rows and columns (the
+// table keeps its width, the caret lands in the new cell), deleting the
+// table, and undoing and redoing it all.
 func TestRowsAndColumns(t *testing.T) {
 	e := typed(t, "")
 	e.InsertTable(2, 2)
@@ -155,6 +169,8 @@ func TestRowsAndColumns(t *testing.T) {
 	}
 }
 
+// TestMergedCells checks that a column inserted or deleted under a merged
+// cell widens or narrows its span.
 func TestMergedCells(t *testing.T) {
 	e := typed(t, "")
 	e.InsertTable(3, 3)
@@ -174,6 +190,8 @@ func TestMergedCells(t *testing.T) {
 	}
 }
 
+// TestSnapToCells checks that a selection crossing cells widens to whole
+// cells and one within a cell is left alone.
 func TestSnapToCells(t *testing.T) {
 	e := typed(t, "")
 	e.InsertTable(2, 2)
@@ -189,6 +207,7 @@ func TestSnapToCells(t *testing.T) {
 	}
 }
 
+// testPNG returns the bytes of a w × h PNG with a color gradient.
 func testPNG(t *testing.T, w, h int) []byte {
 	t.Helper()
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
@@ -204,6 +223,8 @@ func testPNG(t *testing.T, w, h int) []byte {
 	return b.Bytes()
 }
 
+// TestInsertPicture checks that an inserted picture is scaled to the text
+// width and selected, decodes, resizes undoably and deletes.
 func TestInsertPicture(t *testing.T) {
 	e := typed(t, "ab")
 	e.SetCaret(Pos{0, 1}, false)
@@ -240,6 +261,9 @@ func TestInsertPicture(t *testing.T) {
 	}
 }
 
+// TestLinks checks inserting a hyperlink over a selection, editing its
+// address and text, undoing, removing it, inserting link text at the
+// caret, and that text typed right after a link is plain.
 func TestLinks(t *testing.T) {
 	e := typed(t, "see site here")
 	e.Select(Pos{0, 4}, Pos{0, 8})
@@ -283,6 +307,7 @@ func TestLinks(t *testing.T) {
 	}
 }
 
+// TestLinkTarget checks the URL made from each kind of typed address.
 func TestLinkTarget(t *testing.T) {
 	for in, want := range map[string]string{
 		"a@b.com": "mailto:a@b.com", "www.x.com": "http://www.x.com", "https://x": "https://x",

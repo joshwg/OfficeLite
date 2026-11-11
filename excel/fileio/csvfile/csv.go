@@ -24,7 +24,7 @@ func Read(name string, data []byte) (*model.Workbook, error) {
 		return nil, err
 	}
 
-	// Excel honours a "sep=;" first line naming the delimiter.
+	// Excel honors a "sep=;" first line naming the delimiter.
 	var delim rune
 	first, rest, _ := strings.Cut(text, "\n")
 	if f := strings.TrimRight(first, "\r"); strings.HasPrefix(strings.ToLower(f), "sep=") && utf8.RuneCountInString(f) == 5 {
@@ -106,6 +106,10 @@ func csvCell(s string) model.Cell {
 	return model.Cell{Text: s, Kind: model.KindText}
 }
 
+// parseDecoratedNumber reads a number written with Excel's decorations:
+// thousands separators in groups of three, a leading "$", a trailing "%"
+// (divided by 100) and parentheses or a leading "-" for negative, but not
+// both. It reports false for anything else, including exponents and hex.
 func parseDecoratedNumber(t string) (float64, bool) {
 	if t == "" || !strings.ContainsAny(t, "0123456789") {
 		return 0, false
@@ -183,6 +187,8 @@ func sniffDelimiter(text, ext string) rune {
 	return best
 }
 
+// countOutsideQuotes counts the occurrences of d in line that are not inside
+// double quotes.
 func countOutsideQuotes(line string, d rune) int {
 	n, quoted := 0, false
 	for _, c := range line {

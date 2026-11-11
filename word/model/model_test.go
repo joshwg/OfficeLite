@@ -1,7 +1,12 @@
+// Tests for style resolution and property merging.
+
 package model
 
 import "testing"
 
+// TestResolve checks that paragraph and run formatting resolve through the
+// style chain (Heading1, Strong) with direct formatting winning, and that
+// Normal falls back to Calibri 11.
 func TestResolve(t *testing.T) {
 	d := New("Doc")
 	p := &Paragraph{Style: "Heading1", Runs: []Run{
@@ -33,6 +38,8 @@ func TestResolve(t *testing.T) {
 	}
 }
 
+// TestMergeTabs checks that a Clear stop removes an inherited tab and new
+// stops are appended.
 func TestMergeTabs(t *testing.T) {
 	base := ParaProps{Tabs: []TabStop{{Pos: 36}, {Pos: 72}}}
 	got := base.Merge(ParaProps{Tabs: []TabStop{{Pos: 36, Clear: true}, {Pos: 100, Align: AlignRight}}})

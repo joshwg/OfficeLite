@@ -1,3 +1,6 @@
+// Dialogs: the modal test, the lossy-save (.doc) prompt, the "save
+// changes?" prompt on close, and the Modify Style dialog.
+
 package ui
 
 import (
@@ -40,12 +43,16 @@ func (d *window) checkLossy(f fileio.Format, save func()) {
 	d.lossy.Show("Save as Word 97-2003 Document?", msg, "Save", "Cancel")
 }
 
+// lossyLayout draws the lossy-save prompt and runs the pending save on
+// Save, or drops it on Cancel. A notice (the macro one) has only OK.
 func (d *window) lossyLayout(gtx layout.Context) {
 	switch d.lossy.Clicked(gtx) {
 	case 0:
 		if f := d.lossyGo; f != nil {
 			d.lossyGo = nil
 			f()
+		} else {
+			d.v.focusPending = true
 		}
 	case 1:
 		d.lossyGo = nil
@@ -63,6 +70,8 @@ type confirmState struct {
 	tag                    int
 }
 
+// layout draws the prompt: Save saves then closes, Don't Save closes
+// (discarding the recovery copy too), Cancel returns to the page.
 func (c *confirmState) layout(gtx layout.Context, d *window) {
 	for c.save.Clicked(gtx) {
 		c.show = false
@@ -156,6 +165,8 @@ func (s *styleDialog) base(doc *model.Document) (model.RunProps, model.ParaProps
 	return r, doc.Styles.DefaultPara
 }
 
+// layout handles the dialog's controls and draws it; the edits are kept
+// in s.run / s.para and applied to the style as one undoable step on OK.
 func (s *styleDialog) layout(gtx layout.Context, d *window) {
 	th := d.th
 	baseRun, basePara := s.base(d.doc)

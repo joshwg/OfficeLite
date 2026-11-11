@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"unicode/utf16"
@@ -283,6 +284,7 @@ func TestRoundTripFixtures(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			doc := readFixture(t, name)
 			back := roundTrip(t, doc)
+			dropComments(doc) // a .doc save leaves them out
 			diffLines(t, canon(doc), canon(back))
 			// And once more: the written file is stable.
 			again := roundTrip(t, back)
@@ -764,7 +766,7 @@ func TestFieldsAndLinks(t *testing.T) {
 
 func TestReadComplex(t *testing.T) {
 	doc := readFixture(t, "complex.doc")
-	if w := strings.Join(doc.Warnings, "|"); w != "Comments are not shown and are not kept when saving." {
+	if len(doc.Warnings) != 0 {
 		t.Errorf("warnings = %q", doc.Warnings)
 	}
 	secs := doc.Sections()
@@ -848,9 +850,10 @@ func TestReadComplex(t *testing.T) {
 // contents survive saving the complex document as .doc again.
 func TestRoundTripComplex(t *testing.T) {
 	doc := readFixture(t, "complex.doc")
-	if ws := Warnings(doc); len(ws) != 1 || ws[0] != WarnFloatsLost {
+	if ws := Warnings(doc); len(ws) != 2 || !slices.Contains(ws, WarnFloatsLost) || !slices.Contains(ws, WarnCommentsLost) {
 		t.Errorf("warnings = %q", ws)
 	}
+	dropComments(doc) // a .doc save leaves the comment out
 	back := roundTrip(t, doc)
 	want := strings.ReplaceAll(canon(doc), "Commented endnote", "Commented endnote")
 	diffLines(t, want, canon(back))

@@ -1,3 +1,5 @@
+// Tests for opening Pages documents through the format-sniffing Read.
+
 package fileio
 
 import (
@@ -8,8 +10,9 @@ import (
 	"testing"
 )
 
-// A .pages file opens through Read (by content) but can't be saved back:
-// Save goes to Save As.
+// TestOpenPages checks that a .pages file opens through Read (by
+// content) but can't be saved back — Save goes to Save As — and that an
+// iWork '09 package is refused with a "not supported" error.
 func TestOpenPages(t *testing.T) {
 	data, err := os.ReadFile("../../Samples/word-tests/PagesInvoice.pages")
 	if err != nil {

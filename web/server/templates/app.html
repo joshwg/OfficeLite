@@ -1,0 +1,14 @@
+{{define "app"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} · OfficeLite</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="app-page">
+<div id="status" class="status">Loading {{.Title}}…</div>
+<script src="/client/wasm_exec.js"></script>
+<script src="/static/app.js" data-app="{{.Data.App}}"></script>
+</body>
+</html>{{end}}

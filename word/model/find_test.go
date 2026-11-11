@@ -1,7 +1,11 @@
+// Find, Replace and Format Painter tests.
+
 package model
 
 import "testing"
 
+// TestFindAll checks case folding, Match Case, Whole Words and the
+// next/previous/wrapping behavior of MatchIndex.
 func TestFindAll(t *testing.T) {
 	_, e := newDoc("The cat sat on the mat.", "Catalog THE end")
 	ms := e.FindAll("the", FindOptions{})
@@ -28,6 +32,9 @@ func TestFindAll(t *testing.T) {
 	}
 }
 
+// TestFindAcrossRuns checks that a match may span differently formatted
+// runs and that Replace takes the first matched character's formatting,
+// selects the replacement and undoes.
 func TestFindAcrossRuns(t *testing.T) {
 	d, e := newDoc("")
 	p := d.Body[0].(*Paragraph)
@@ -55,6 +62,8 @@ func TestFindAcrossRuns(t *testing.T) {
 	}
 }
 
+// TestReplaceAllOneStep checks that ReplaceAll is one undo step and that
+// a run with no matches adds none.
 func TestReplaceAllOneStep(t *testing.T) {
 	d, e := newDoc("a b a", "x", "a")
 	n := e.ReplaceAll("a", "zz", FindOptions{WholeWords: true})
@@ -73,6 +82,9 @@ func TestReplaceAllOneStep(t *testing.T) {
 	}
 }
 
+// TestFormatPainter checks CopyFormat/PasteFormat: a caret paints the
+// word, a whole paragraph copies paragraph formatting too, and a partial
+// paste leaves the paragraph formatting alone.
 func TestFormatPainter(t *testing.T) {
 	d, e := newDoc("bold text here", "plain words", "")
 	p0 := d.Body[0].(*Paragraph)
@@ -115,8 +127,9 @@ func TestFormatPainter(t *testing.T) {
 	}
 }
 
-// Invisible markers (a bookmark inside a word, a comment range) don't
-// stop a match or count as word boundaries, and replacing keeps them.
+// TestFindAcrossMarkers checks that invisible markers (a bookmark inside a
+// word, a comment range) don't stop a match or count as word boundaries,
+// and that replacing keeps them.
 func TestFindAcrossMarkers(t *testing.T) {
 	d, e := newDoc("")
 	p := d.Body[0].(*Paragraph)

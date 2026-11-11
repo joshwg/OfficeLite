@@ -1,3 +1,6 @@
+// Tests for the Undo and Redo lists: the labels changes get and taking
+// back or repeating several at once.
+
 package edit
 
 import (
@@ -19,6 +22,10 @@ func (b *Book) dump() []string {
 	return out
 }
 
+// TestUndoLabels checks the labels commands record (typing names its
+// cell and shortened text, a caller's Op overrides, a group takes its
+// first change's), that UndoLabels and RedoLabels list them nearest
+// first, and that no label is left set afterwards.
 func TestUndoLabels(t *testing.T) {
 	b := newBook()
 	b.enter(t, 0, "B5", "Total")
@@ -53,6 +60,9 @@ func TestUndoLabels(t *testing.T) {
 	}
 }
 
+// TestUndoN checks that UndoN(n) and RedoN(n) match n single steps (a
+// group being one), report the last step's where, stop at the end of the
+// stack, and report false on an empty one.
 func TestUndoN(t *testing.T) {
 	build := func() *Book {
 		b := newBook()

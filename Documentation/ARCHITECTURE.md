@@ -151,8 +151,10 @@ window and in its AutoRecover copy.
 The switch works only for a saved `.xlsx` or `.docx` file — the formats
 that keep everything — and is greyed, with a tooltip saying why, for new
 documents, `.xls`/`.doc`/`.csv`/`.txt` files, imported `.numbers`/`.pages`
-files, `[Recovered]` and read-only windows and files opened with Open
-Anyway while someone else has them. Unlike OneDrive there is **no version
+files, `[Recovered]` and read-only windows, files opened with Open
+Anyway while someone else has them, and files that still have the macros
+they were opened with (a save would drop them without the warning a
+manual save gives; see [Macros](./README.md#macros)). Unlike OneDrive there is **no version
 history** behind it: what AutoSave writes replaces the file, and Undo is
 the only way back. That is why it is off for every document unless you
 turn it on; File ▸ Info ▸ AutoSave sets whether it starts on for the

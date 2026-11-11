@@ -1,3 +1,6 @@
+// Tests for the Insert menu: the table picker and dialog, cell selection
+// by drag, links, symbols, dates and pictures.
+
 package ui
 
 import (
@@ -23,6 +26,7 @@ func (h *harness) viewPoint(pg int, x, y float64) f32.Point {
 		float32(viewTop)+float32((d.eng.Pages[pg].Top+y-d.v.scrollY)*d.v.scale))
 }
 
+// mouse queues a primary-button pointer event at pt and runs a frame.
 func (h *harness) mouse(kind pointer.Kind, pt f32.Point, mods key.Modifiers) {
 	btn := pointer.ButtonPrimary
 	if kind == pointer.Release {
@@ -35,6 +39,10 @@ func (h *harness) mouse(kind pointer.Kind, pt f32.Point, mods key.Modifiers) {
 	h.frame()
 }
 
+// TestInsertMenuTable checks that the picker inserts the hovered size,
+// Tab moves between cells (adding a row at the end), the table commands
+// work and are disabled outside a table, and the Insert Table dialog
+// inserts what was typed.
 func TestInsertMenuTable(t *testing.T) {
 	h := newHarness(t)
 	d := h.d
@@ -110,6 +118,7 @@ func TestInsertMenuTable(t *testing.T) {
 	}
 }
 
+// TestDragSelectsCells checks that a drag across cells selects whole cells.
 func TestDragSelectsCells(t *testing.T) {
 	h := newHarness(t)
 	d := h.d
@@ -129,6 +138,9 @@ func TestDragSelectsCells(t *testing.T) {
 	}
 }
 
+// TestInsertLinkDialog checks that Ctrl+K links the selection (adding
+// http://), the dialog edits an existing link, Remove Link removes it and
+// Esc cancels.
 func TestInsertLinkDialog(t *testing.T) {
 	h := newHarness(t)
 	d := h.d
@@ -172,6 +184,8 @@ func TestInsertLinkDialog(t *testing.T) {
 	}
 }
 
+// TestSymbolAndDate checks that the Symbol and Date dialogs insert text
+// at the caret.
 func TestSymbolAndDate(t *testing.T) {
 	h := newHarness(t)
 	d := h.d
@@ -194,6 +208,9 @@ func TestSymbolAndDate(t *testing.T) {
 	}
 }
 
+// TestInsertPictureAndClick checks that a picture is inserted at 150pt
+// wide (bad data is reported), a click selects it, dragging a corner
+// handle resizes it undoably, and Delete removes it.
 func TestInsertPictureAndClick(t *testing.T) {
 	h := newHarness(t)
 	d := h.d

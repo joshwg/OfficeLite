@@ -1,3 +1,7 @@
+// Writing a .xls workbook: the writer, its formula context, the sheet
+// substreams, XF/font/format/palette tables, the workbook globals stream
+// and the record encoding helpers.
+
 package xlsfile
 
 import (
@@ -84,6 +88,8 @@ const (
 	icvAutoFont = 0x7FFF
 )
 
+// writer holds the state of one Write (or Fits): the tables built from the
+// workbook and the issues found on the way.
 type writer struct {
 	wb     *model.Workbook
 	sheets []*model.Sheet
@@ -91,13 +97,13 @@ type writer struct {
 	active int      // the sheet shown when the file opens
 	issues []string
 
-	// Formats: model style -> XF index, the styles in XF order, fonts and
+	// Formats: model style → XF index, the styles in XF order, fonts and
 	// number formats.
 	xfOf    map[uint32]int
 	styles  []model.Style
 	fonts   []model.Font // FONT records after the four default ones
 	fontOf  map[model.Font]int
-	formats []string // custom number formats, ids 164...
+	formats []string // custom number formats, ids 164 and up
 	fmtOf   map[string]int
 	pal     *palette
 
@@ -111,7 +117,7 @@ type writer struct {
 	addins   []string
 	addinOf  map[string]int
 	nameRecs []nameRec
-	fnNameOf map[string]int // hidden function NAME -> 1-based index
+	fnNameOf map[string]int // hidden function NAME → 1-based index
 
 	sheetData [][]byte
 }
@@ -124,11 +130,14 @@ type nameRec struct {
 	rgce, extra []byte
 }
 
+// SUPBOOK positions the writer uses in its EXTERNSHEET entries.
 const (
 	bookSelf  = 0
 	bookAddin = 1
 )
 
+// newWriter prepares a writer for wb: at least one sheet, at most 65,535,
+// valid sheet names and the active sheet (the first visible one).
 func newWriter(wb *model.Workbook) *writer {
 	x := &writer{
 		wb: wb, xfOf: map[uint32]int{}, fontOf: map[model.Font]int{}, fmtOf: map[string]int{},
@@ -150,6 +159,7 @@ func newWriter(wb *model.Workbook) *writer {
 	return x
 }
 
+// issue records something the file cannot hold, once per distinct message.
 func (x *writer) issue(format string, args ...any) {
 	s := fmt.Sprintf(format, args...)
 	if !slices.Contains(x.issues, s) {
@@ -219,6 +229,8 @@ func (x *writer) build() {
 
 // --- formula context ---
 
+// sheetIndex finds a sheet by its model name or its written name, ignoring
+// case; -1 if there is none.
 func (x *writer) sheetIndex(name string) int {
 	for i, sh := range x.sheets {
 		if strings.EqualFold(sh.Name, name) || strings.EqualFold(x.names[i], name) {
@@ -228,10 +240,13 @@ func (x *writer) sheetIndex(name string) int {
 	return -1
 }
 
+// xtiIndex is the EXTERNSHEET index of the sheet range first..last of this
+// workbook.
 func (x *writer) xtiIndex(first, last int) int {
 	return x.xtiFor(xti{bookSelf, first, last})
 }
 
+// xtiFor returns t's EXTERNSHEET index, adding the entry on first use.
 func (x *writer) xtiFor(t xti) int {
 	if i, ok := x.xtiOf[t]; ok {
 		return i
@@ -502,6 +517,7 @@ func (x *writer) sheetRecords(si int, sh *model.Sheet) []byte {
 	return rec(b, recEOF, nil)
 }
 
+// pxToTwips converts a pixel height at 96 dpi to twips (1/20 pt).
 func pxToTwips(px float32) int { return int(math.Round(float64(px) * 15)) }
 
 // colInfo writes COLINFO records for runs of columns with equal widths.
@@ -630,6 +646,7 @@ func (x *writer) text(sh *model.Sheet, s string) string {
 	return string(r)
 }
 
+// errorCode is the BIFF code of an error text, #VALUE! for an unknown one.
 func errorCode(s string) byte {
 	if c, ok := errorCodes[strings.ToUpper(s)]; ok {
 		return c
@@ -734,6 +751,8 @@ func (x *writer) merges(b []byte, sh *model.Sheet) []byte {
 	return b
 }
 
+// sstIndex returns s's index in the shared string table, adding it on
+// first use, and counts the reference.
 func (x *writer) sstIndex(s string) int {
 	x.sstUse++
 	if i, ok := x.sstOf[s]; ok {
@@ -810,6 +829,9 @@ func (x *writer) fontIndex(f model.Font) int {
 	return i
 }
 
+// numFormat returns the XF format index of st: a built-in id as is, a
+// custom code from 164 up (assigned on first use), General (0) for none
+// or a code too long to store.
 func (x *writer) numFormat(st model.Style) int {
 	code := st.NumFmtCode
 	if code == "" {
@@ -834,6 +856,8 @@ func (x *writer) numFormat(st model.Style) int {
 	return i
 }
 
+// fontRecord encodes f as a FONT record body; black text uses the
+// automatic color.
 func (x *writer) fontRecord(f model.Font) []byte {
 	grbit := 0
 	if f.Italic {
@@ -867,6 +891,7 @@ func (x *writer) fontRecord(f model.Font) []byte {
 	return appendShortString(b, truncUTF16(name, excel.XlsMaxShortString))
 }
 
+// truncUTF16 cuts s to at most n UTF-16 code units, at a rune boundary.
 func truncUTF16(s string, n int) string {
 	units := 0
 	for i, r := range s {
@@ -1198,6 +1223,7 @@ func le(v ...int) []byte {
 	return b
 }
 
+// le32 encodes 32-bit little-endian values.
 func le32(v ...uint32) []byte {
 	b := make([]byte, 0, 4*len(v))
 	for _, x := range v {

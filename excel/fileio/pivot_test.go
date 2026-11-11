@@ -1,3 +1,6 @@
+// Tests for PivotTables read from Excel's files and written back: the
+// saved report cells match what a refresh computes.
+
 package fileio
 
 import (
@@ -24,6 +27,8 @@ func areaTexts(sh *model.Sheet, a model.Range) [][]string {
 	return out
 }
 
+// sameTexts reports whether two cell-text grids have the same shape and
+// contents.
 func sameTexts(a, b [][]string) bool {
 	if len(a) != len(b) {
 		return false
@@ -42,7 +47,7 @@ func sameTexts(a, b [][]string) bool {
 }
 
 // TestExcelPivots opens a workbook Excel made with two PivotTables:
-// they are recognised, and refreshing them reproduces what Excel saved.
+// they are recognized, and refreshing them reproduces what Excel saved.
 func TestExcelPivots(t *testing.T) {
 	wb, err := Open(filepath.Join("..", "..", "Samples", "excel-pivots", "Pivot-Tables-and-Charts.xlsx"))
 	if err != nil {
@@ -177,6 +182,10 @@ func pivotSample(t *testing.T) (*model.Workbook, *edit.Book) {
 	return wb, b
 }
 
+// TestWritePivots checks that the three code-built reports survive a save
+// as .xlsx (layout, area, value fields, hidden items, sort) and refresh to
+// the cells that were saved. With OFFICELITE_SAMPLES set the file is also
+// written to Samples/PivotTables.xlsx.
 func TestWritePivots(t *testing.T) {
 	wb, b := pivotSample(t)
 	defer b.Close()

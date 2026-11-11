@@ -107,10 +107,12 @@ func hasPrefixFold(s, prefix string) bool {
 }
 
 // createOwner creates the owner file hidden and keeps it open, sharing
-// only reading: Office reads the name but sees the file as live.
+// only reading: Office reads the name but sees the file as live. The
+// create is exclusive (CREATE_NEW): if the file exists it fails with
+// ERROR_FILE_EXISTS (os.IsExist) and the file is left alone.
 func createOwner(path string, data []byte) (*os.File, error) {
 	h, err := createFile(path, syscall.GENERIC_READ|syscall.GENERIC_WRITE, syscall.FILE_SHARE_READ,
-		syscall.CREATE_ALWAYS, fileAttributeHidden)
+		syscall.CREATE_NEW, fileAttributeHidden)
 	if err != nil {
 		return nil, err
 	}

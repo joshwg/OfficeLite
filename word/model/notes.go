@@ -1,13 +1,13 @@
-package model
-
-import "slices"
-
 // Footnotes and endnotes. A note is referenced from the text by an
 // opaque run (Opaque.Note) showing its mark; the note's own blocks start
 // with the same mark. Automatically numbered notes (Mark "") are
 // numbered in document order: footnotes at the bottom of the page that
 // references them, endnotes after the last section, each after a short
 // separator line.
+
+package model
+
+import "slices"
 
 // Note is a footnote or an endnote.
 type Note struct {
@@ -29,8 +29,9 @@ type NoteSettings struct {
 	FootFormat, EndFormat string
 	// FootStart and EndStart are the first numbers (0 = 1).
 	FootStart, EndStart int
-	// DocxSep holds the separator notes of a .docx footnotes.xml and
-	// endnotes.xml (w:footnote elements with a w:type), kept as they were.
+	// DocxFootSep and DocxEndSep hold the separator notes of a .docx
+	// footnotes.xml and endnotes.xml (w:footnote elements with a w:type),
+	// kept as they were.
 	DocxFootSep, DocxEndSep [][]byte
 }
 
@@ -48,6 +49,7 @@ func (s *NoteSettings) Format(endnote bool) string {
 	return "decimal"
 }
 
+// start is the first number of footnotes or endnotes (at least 1).
 func (s *NoteSettings) start(endnote bool) int {
 	n := s.FootStart
 	if endnote {
@@ -110,9 +112,9 @@ func (d *Document) NumberNotes() []*Paragraph {
 	return changed
 }
 
-// NoteRefStyle and NoteTextStyle return the IDs of the footnote (or
-// endnote) reference and text styles, adding Word's definitions when the
-// style sheet lacks them.
+// NoteRefStyle returns the ID of the footnote (or endnote) reference
+// style, adding Word's definition (superscript) when the style sheet
+// lacks it.
 func NoteRefStyle(ss *StyleSheet, endnote bool) string {
 	name, id := "footnote reference", "FootnoteReference"
 	if endnote {
@@ -123,6 +125,9 @@ func NoteRefStyle(ss *StyleSheet, endnote bool) string {
 	})
 }
 
+// NoteTextStyle returns the ID of the footnote (or endnote) text style,
+// adding Word's definition (10 pt, single-spaced, no space after) when the
+// style sheet lacks it.
 func NoteTextStyle(ss *StyleSheet, endnote bool) string {
 	name, id := "footnote text", "FootnoteText"
 	if endnote {
@@ -134,6 +139,9 @@ func NoteTextStyle(ss *StyleSheet, endnote bool) string {
 	})
 }
 
+// ensureStyle returns the ID of the style of type t named name (or with ID
+// id), adding one based on the type's default style and set up by init
+// when there is none; the ID is made unique if id is taken.
 func ensureStyle(ss *StyleSheet, name, id string, t StyleType, init func(*Style)) string {
 	for _, st := range ss.Styles {
 		if st.Type == t && (st.ID == id || equalFold(st.Name, name)) {
@@ -157,6 +165,7 @@ func ensureStyle(ss *StyleSheet, name, id string, t StyleType, init func(*Style)
 	return id
 }
 
+// equalFold compares ASCII strings ignoring case.
 func equalFold(a, b string) bool {
 	if len(a) != len(b) {
 		return false

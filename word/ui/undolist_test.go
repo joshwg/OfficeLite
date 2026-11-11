@@ -1,3 +1,6 @@
+// Tests for the ribbon's Undo and Redo history lists, with helpers that
+// find ribbon buttons by hovering.
+
 package ui
 
 import (
@@ -64,6 +67,9 @@ func (h *harness) text() string {
 	return strings.Join(out, "|")
 }
 
+// TestUndoHistoryList checks the undo labels typing and commands produce,
+// that picking entry n of the Undo (or Redo) list takes back (or redoes)
+// n steps, and that a ribbon command's step is named after its button.
 func TestUndoHistoryList(t *testing.T) {
 	h := newHarness(t)
 	d := h.d

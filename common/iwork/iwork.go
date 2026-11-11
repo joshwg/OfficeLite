@@ -35,6 +35,14 @@ var ErrNotIWork = errors.New("not an iWork document")
 // ErrEncrypted is returned for password-protected documents.
 var ErrEncrypted = errors.New("password-protected iWork documents are not supported")
 
+// ErrTooLarge is wrapped by the error for a zip entry larger than
+// limits.IWorkMaxZipEntry: the file is damaged or a zip bomb.
+var ErrTooLarge = errors.New("the file is damaged or too large")
+
+// maxZipEntry is the largest zip entry readZipFile accepts:
+// limits.IWorkMaxZipEntry, a variable only so tests can lower it.
+var maxZipEntry int64 = limits.IWorkMaxZipEntry
+
 // App is the iWork application a document belongs to.
 type App int
 
@@ -74,6 +82,20 @@ type Document struct {
 	datas   map[uint64]string // data identifier -> zip path
 	styles  map[uint64]*Style
 	tables  map[uint64]*Table
+	// tooLarge is the first ErrTooLarge a read of a data file hit (see Err).
+	tooLarge error
+}
+
+// Err returns the first "entry too large" error any read of the document's
+// files hit, even one whose caller treated the file as optional and went
+// on without it; an importer returns it so the open fails.
+func (d *Document) Err() error { return d.tooLarge }
+
+// note remembers err in d.tooLarge when it is the first ErrTooLarge.
+func (d *Document) note(err error) {
+	if d.tooLarge == nil && errors.Is(err, ErrTooLarge) {
+		d.tooLarge = err
+	}
 }
 
 // Open reads an iWork document from the bytes of its file (a zip).
@@ -272,6 +294,7 @@ func (d *Document) Data(id uint64) ([]byte, string, error) {
 		return nil, "", fmt.Errorf("iwork: data %d is not in the package", id)
 	}
 	b, err := readZipFile(d.files[p])
+	d.note(err)
 	return b, path.Base(p), err
 }
 
@@ -281,11 +304,14 @@ func (d *Document) File(name string) []byte {
 	if f == nil {
 		return nil
 	}
-	b, _ := readZipFile(f)
+	b, err := readZipFile(f)
+	d.note(err)
 	return b
 }
 
-// readZipFile returns the contents of a zip entry, capped at 1 GiB.
+// readZipFile returns the contents of a zip entry. An entry larger than
+// maxZipEntry (1 GB) is an ErrTooLarge error; at most maxZipEntry+1 bytes
+// are read to tell.
 func readZipFile(f *zip.File) (data []byte, err error) {
 	rc, err := f.Open()
 	if err != nil {
@@ -296,7 +322,22 @@ func readZipFile(f *zip.File) (data []byte, err error) {
 			err = closeErr
 		}
 	}()
-	return io.ReadAll(io.LimitReader(rc, limits.IWorkMaxZipEntry))
+	data, err = io.ReadAll(io.LimitReader(rc, maxZipEntry+1))
+	if err == nil && int64(len(data)) > maxZipEntry {
+		return nil, fmt.Errorf("%w: %s is larger than %s", ErrTooLarge, f.Name, sizeText(maxZipEntry))
+	}
+	return data, err
+}
+
+// sizeText formats a byte count for an error message ("1 GB", "512 bytes").
+func sizeText(n int64) string {
+	switch {
+	case n >= 1<<30 && n%(1<<30) == 0:
+		return fmt.Sprintf("%d GB", n>>30)
+	case n >= 1<<20 && n%(1<<20) == 0:
+		return fmt.Sprintf("%d MB", n>>20)
+	}
+	return fmt.Sprintf("%d bytes", n)
 }
 
 // findDocument finds the Index/Document.iwa entry of a zip, and whether it

@@ -24,8 +24,11 @@ import (
 // template is built on). The template file is neither locked nor added to
 // the recent files.
 func (d *window) newFromTemplate(path string) {
+	if !d.startLoad() {
+		d.errMsg = busyLoading
+		return
+	}
 	name := newDocName()
-	d.loading.Store(true)
 	d.setDoc(model.New(name), d.th.Shaper, nil)
 	go func() {
 		doc, err := fileio.Open(path)

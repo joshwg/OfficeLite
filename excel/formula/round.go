@@ -1,3 +1,6 @@
+// Excel's decimal rounding: Round15 (15 significant digits) and RoundDigits
+// (ROUND / ROUNDUP / ROUNDDOWN on the 15-digit decimal representation).
+
 package formula
 
 import (
@@ -23,7 +26,7 @@ const (
 )
 
 // RoundDigits rounds x to d decimal places (d < 0 rounds to tens,
-// hundreds ...). Like Excel it works on the 15-significant-digit decimal
+// hundreds …). Like Excel it works on the 15-significant-digit decimal
 // representation of x, so ROUND(1.005,2) is 1.01 although the double
 // 1.005 is slightly below it.
 func RoundDigits(x float64, d int, mode RoundMode) float64 {

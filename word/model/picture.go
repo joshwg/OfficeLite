@@ -1,3 +1,6 @@
+// Pictures: the encoded image an opaque run shows, decoded once on demand,
+// and the run that inserts one.
+
 package model
 
 import (

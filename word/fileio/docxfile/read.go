@@ -1,3 +1,6 @@
+// Reading a .docx: document.xml's paragraphs, runs, fields and tables,
+// plus the theme, styles.xml and numbering.xml they depend on.
+
 package docxfile
 
 import (
@@ -14,11 +17,10 @@ import (
 
 // Warnings shown to the user for content WordLite reads but doesn't show.
 const (
-	warnComments = "Comments aren't shown (they are kept when saving as .docx)."
+	warnComments = "Some comment marks don't match a comment; they are kept when saving as .docx."
 	warnTracked  = "Tracked changes aren't shown: insertions appear as normal text and deletions are hidden."
 	warnPictures = "Charts, SmartArt, equations and pictures in formats WordLite can't draw (such as EMF) are shown as placeholders."
 	warnFields   = "Fields (page numbers, tables of contents...) show their last result and aren't updated."
-	warnMacros   = "This document contains macros. WordLite never runs them, and they are removed when the document is saved."
 )
 
 // Read decodes a .docx (or .docm/.dotx) document.
@@ -29,6 +31,9 @@ func Read(data []byte) (*model.Document, error) {
 	}
 	main := p.mainPart()
 	docXML, err := p.read(main)
+	if p.tooLarge != nil {
+		return nil, p.tooLarge
+	}
 	if err != nil {
 		return nil, fmt.Errorf("not a Word document: %w", err)
 	}
@@ -48,7 +53,7 @@ func Read(data []byte) (*model.Document, error) {
 				r.th = parseTheme(b)
 			}
 		case rl.is(relVBA):
-			r.warn(warnMacros)
+			r.doc.MarkMacros()
 		}
 	}
 	for _, rl := range r.rels {
@@ -84,6 +89,7 @@ func Read(data []byte) (*model.Document, error) {
 		return nil, fmt.Errorf("document.xml has no body")
 	}
 	r.loadNotes()
+	r.loadComments()
 	r.doc.Body = r.blocks(body, nil, true)
 	if len(r.doc.Body) == 0 {
 		p := &model.Paragraph{}
@@ -91,6 +97,7 @@ func Read(data []byte) (*model.Document, error) {
 		r.doc.Body = []model.Block{p}
 	}
 	r.flushTrailing(r.doc.Body)
+	r.dropReplyMarks()
 	if len(r.sects) == 0 || r.sections[len(r.sections)-1] != &r.doc.Section {
 		// No body-level w:sectPr: the last section has Word's defaults.
 		r.doc.Section = model.Section{Page: model.LetterPage()}
@@ -98,12 +105,17 @@ func Read(data []byte) (*model.Document, error) {
 		r.sections = append(r.sections, &r.doc.Section)
 	}
 	r.readHeaders(r.sects)
+	if p.tooLarge != nil { // an optional part was too large: fail the open
+		return nil, p.tooLarge
+	}
 	r.doc.NumberNotes()
 	r.doc.Source = data
 	r.doc.SourceFormat = "docx"
 	return r.doc, nil
 }
 
+// reader holds the state of one Read: the document being built, the
+// package and the content waiting to be attached to the next block.
 type reader struct {
 	doc    *model.Document
 	th     *theme
@@ -120,10 +132,14 @@ type reader struct {
 	sects    []*node          // every w:sectPr, in order (for headers and footers)
 	sections []*model.Section // their sections
 	np       noteParts        // footnotes and endnotes (sections.go)
+	cm       commentState     // comments (comments.go)
 }
 
+// fieldState is an open complex field: result is set once its separator
+// has been passed.
 type fieldState struct{ result bool }
 
+// warn adds s to the document's warnings the first time it is given.
 func (r *reader) warn(s string) {
 	if !r.warned[s] {
 		r.warned[s] = true
@@ -131,6 +147,7 @@ func (r *reader) warn(s string) {
 	}
 }
 
+// opaque wraps original XML in an Opaque the writer can put back as it is.
 func opaque(data []byte) *model.Opaque { return &model.Opaque{Format: "docx", Data: data} }
 
 // rangeMarkers are elements allowed both between and inside paragraphs that
@@ -147,8 +164,14 @@ var rangeMarkers = map[string]bool{
 // ignored are elements that only cache state Word recomputes.
 var ignored = map[string]bool{"w:proofErr": true, "w:lastRenderedPageBreak": true}
 
+// markerRun makes the opaque run for a range marker, warning about the
+// comments and tracked moves it may belong to.
 func (r *reader) markerRun(k *node) model.Run {
 	if strings.HasPrefix(k.name, "w:comment") {
+		run := model.Run{Kind: model.RunOpaque, Opaque: opaque(k.raw())}
+		if r.commentMark(k, &run) {
+			return run
+		}
 		r.warn(warnComments)
 	}
 	if strings.HasPrefix(k.name, "w:move") {
@@ -225,6 +248,8 @@ func contentOf(k *node) (kids []*node, span *node, first *node) {
 	return nil, nil, nil
 }
 
+// wrapper returns a wrapping element's content children and the Span that
+// stands for the element; nil, nil when it has no content.
 func (r *reader) wrapper(k *node, parent *model.Span) ([]*node, *model.Span) {
 	kids, sc, first := contentOf(k)
 	if len(kids) == 0 {
@@ -291,6 +316,8 @@ func (r *reader) section(s *node) *model.Section {
 	return sec
 }
 
+// parsePage reads w:pgSz and w:pgMar from a section's children; what they
+// don't set keeps the Letter defaults.
 func parsePage(kids []*node) model.PageSetup {
 	pg := model.LetterPage()
 	for _, k := range kids {
@@ -320,6 +347,8 @@ func parsePage(kids []*node) model.PageSetup {
 
 // ---- paragraphs ----
 
+// para reads a <w:p>: its properties, mark formatting, section break (if
+// any) and runs.
 func (r *reader) para(pn *node) *model.Paragraph {
 	p := &model.Paragraph{}
 	var content []*node
@@ -359,6 +388,7 @@ type token struct {
 	span  *model.Span
 }
 
+// The field part a token holds, if any.
 const (
 	fldNone = iota
 	fldBegin
@@ -367,6 +397,9 @@ const (
 	fldInstr
 )
 
+// inline reads a paragraph's inline content into tokens, descending into
+// hyperlinks and other wrappers (which become Spans) and flattening simple
+// fields into one run showing their result.
 func (r *reader) inline(kids []*node, span *model.Span) []token {
 	var out []token
 	single := func(k *node, run model.Run) {
@@ -449,6 +482,8 @@ func (r *reader) inline(kids []*node, span *model.Span) []token {
 	return out
 }
 
+// runText is the text a run contributes to a field's result: its Text, or
+// the control character for a tab or break.
 func runText(ir model.Run) string {
 	switch ir.Kind {
 	case model.RunTab:
@@ -610,6 +645,7 @@ func (r *reader) runToken(rn *node, span *model.Span) token {
 	return tok
 }
 
+// childList is n's children, or nil for a nil node.
 func (n *node) childList() []*node {
 	if n == nil {
 		return nil
@@ -617,6 +653,7 @@ func (n *node) childList() []*node {
 	return n.kids
 }
 
+// reStylePt matches the width and height of a VML shape's CSS style.
 var reStylePt = regexp.MustCompile(`(?i)(width|height)\s*:\s*([0-9.]+)\s*(pt|in|px|cm|mm)?`)
 
 // describe sets the placeholder text and size of an opaque inline element.
@@ -695,7 +732,9 @@ func (r *reader) describe(k *node, run *model.Run) {
 	case "w:footnoteRef", "w:endnoteRef":
 		o.NoteMark = true
 	case "w:commentReference":
-		r.warn(warnComments)
+		if !r.commentMark(k, run) {
+			r.warn(warnComments)
+		}
 	case "w:sym":
 		if v, err := strconv.ParseUint(k.attr("w:char"), 16, 32); err == nil {
 			if v < 0x100 && v >= 0x20 {
@@ -715,6 +754,8 @@ func (r *reader) describe(k *node, run *model.Run) {
 // customMark stands for a custom note mark until its text is read.
 const customMark = "\x00custom"
 
+// vmlSize sets the run's size from the style of the VML shape inside k,
+// converting to points, unless it already has one.
 func (r *reader) vmlSize(k *node, run *model.Run) {
 	if run.Opaque.Width > 0 {
 		return
@@ -824,6 +865,9 @@ func matchField(toks []token, i int) int {
 	return -1
 }
 
+// fieldUnit folds a complete complex field (begin through end) into one
+// opaque run: the original XML, the outermost instruction and the text of
+// the result (nested fields contribute only their results).
 func fieldUnit(toks []token) model.Run {
 	run := model.Run{Kind: model.RunOpaque, Span: toks[0].span, Opaque: &model.Opaque{Format: "docx"}}
 	var data []byte
@@ -880,6 +924,8 @@ func fieldUnit(toks []token) model.Run {
 
 // ---- tables ----
 
+// table reads a <w:tbl>: properties, grid and rows; the grid of a table
+// without a fixed width is corrected from its cells (cellGrid).
 func (r *reader) table(tn *node) *model.Table {
 	t := &model.Table{Before: r.before}
 	r.before = nil
@@ -932,6 +978,8 @@ func cellGrid(t *model.Table) {
 	}
 }
 
+// rows reads a table's rows, descending into content controls; other
+// content is kept for the next block.
 func (r *reader) rows(kids []*node, t *model.Table) {
 	for _, k := range kids {
 		switch k.name {
@@ -952,6 +1000,7 @@ func (r *reader) rows(kids []*node, t *model.Table) {
 	}
 }
 
+// row reads a <w:tr>; its property exceptions and trPr are kept as XML.
 func (r *reader) row(rn *node) *model.TableRow {
 	row := &model.TableRow{}
 	var extra []byte
@@ -971,6 +1020,8 @@ func (r *reader) row(rn *node) *model.TableRow {
 	return row
 }
 
+// cells reads a row's cells, descending into content controls; a cell
+// without blocks gets an empty paragraph.
 func (r *reader) cells(kids []*node, row *model.TableRow) {
 	for _, k := range kids {
 		switch k.name {
@@ -1005,6 +1056,7 @@ func (r *reader) cells(kids []*node, row *model.TableRow) {
 	}
 }
 
+// tblProps is what the model keeps of a <w:tblPr>.
 type tblProps struct {
 	style      string
 	align      model.Align
@@ -1048,6 +1100,7 @@ func parseTblPr(kids []*node, ss *model.StyleSheet) tblProps {
 	return tp
 }
 
+// hasBorders reports whether any edge of a borders element is drawn.
 func hasBorders(k *node) bool {
 	for _, b := range k.kids {
 		if v := b.attr("w:val"); v != "" && v != "nil" && v != "none" {
@@ -1057,6 +1110,8 @@ func hasBorders(k *node) bool {
 	return false
 }
 
+// styleBorders reports whether table style id (or the one it is based on,
+// or the default table style when id is unknown) draws borders.
 func styleBorders(id string, ss *model.StyleSheet) bool {
 	seen := map[string]bool{}
 	for id != "" && !seen[id] {
@@ -1114,6 +1169,7 @@ func parseBorder(k *node) *model.Border {
 	return b
 }
 
+// parseTrPr reads a row's height and header flag from its <w:trPr>.
 func parseTrPr(kids []*node) (height float64, header bool) {
 	for _, k := range kids {
 		switch k.name {
@@ -1126,6 +1182,7 @@ func parseTrPr(kids []*node) (height float64, header bool) {
 	return
 }
 
+// tcProps is what the model keeps of a <w:tcPr>.
 type tcProps struct {
 	width   float64
 	span    int
@@ -1135,6 +1192,8 @@ type tcProps struct {
 	borders [4]*model.Border
 }
 
+// parseTcPr reads a <w:tcPr>; a cell spans one column unless told
+// otherwise.
 func parseTcPr(kids []*node, th *theme) tcProps {
 	tc := tcProps{span: 1}
 	for _, k := range kids {
@@ -1175,6 +1234,9 @@ func parseTcPr(kids []*node, th *theme) tcProps {
 
 // ---- theme, styles, numbering ----
 
+// parseTheme reads the theme's major and minor Latin fonts and its color
+// scheme under the names w:color's w:themeColor uses; nil if the part
+// doesn't parse.
 func parseTheme(data []byte) *theme {
 	root, err := parseXML(data)
 	if err != nil {
@@ -1209,11 +1271,14 @@ func parseTheme(data []byte) *theme {
 	return th
 }
 
+// styleTypes maps w:type values to the model's style types.
 var styleTypes = map[string]model.StyleType{
 	"paragraph": model.ParagraphStyle, "character": model.CharacterStyle,
 	"table": model.TableStyle, "numbering": model.NumberingStyle,
 }
 
+// parseStyles reads styles.xml: the document defaults and every style, in
+// file order, with their unparsed XML kept for writing back.
 func parseStyles(root *node, th *theme) model.StyleSheet {
 	var ss model.StyleSheet
 	if dd := root.child("w:docDefaults"); dd != nil {
@@ -1269,6 +1334,7 @@ func parseStyleKids(st *model.Style, kids []*node) {
 	}
 }
 
+// onOffAttr reads a boolean attribute value ("1", "true", "on").
 func onOffAttr(v string) bool {
 	switch strings.ToLower(v) {
 	case "1", "true", "on":
@@ -1342,6 +1408,8 @@ func parseNumbering(root *node, ss *model.StyleSheet) map[int]*model.List {
 	return lists
 }
 
+// setLevel reads a <w:lvl> into the list level its w:ilvl names (0–8),
+// growing the list as needed.
 func setLevel(l *model.List, lv *node) {
 	i := atoi(lv.attr("w:ilvl"))
 	if i < 0 || i > 8 {

@@ -4,6 +4,7 @@
 package autorecover
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -77,12 +78,12 @@ func Orphans(dir string) []Entry {
 		}
 		out = append(out, e)
 	}
-	// Copies whose sidecar was never written, and atomicfile's temporary
-	// files, left by a crash in the middle of a write.
+	// Copies whose sidecar was never written, atomicfile's temporary
+	// files and claim files, left by a crash in the middle of a write.
 	for _, de := range des {
 		name := de.Name()
 		ext := filepath.Ext(name)
-		stray := ext == ".tmp" || ((ext == ".xlsx" || ext == ".docx") && !known[strings.TrimSuffix(name, ext)])
+		stray := ext == ".tmp" || ext == ".claim" || ((ext == ".xlsx" || ext == ".docx") && !known[strings.TrimSuffix(name, ext)])
 		if p := filepath.Join(dir, name); stray && !de.IsDir() && old(p, limits.RecoveryStrayAge) {
 			if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
 				log.Printf("remove stale AutoRecover file %s: %v", p, err)
@@ -106,21 +107,97 @@ func Claim(e Entry) error {
 	return writeEntry(e.Sidecar, e)
 }
 
-// ClaimAll claims each entry, then reads its sidecar back and returns the
-// ones that are still this process's: when two OfficeLites claim the same
-// copy at once the last writer keeps it and the other drops it. Entries that
-// can't be claimed are left out.
+// ClaimAll claims each entry that no other running OfficeLite holds and
+// returns the ones now this process's. Claiming is exclusive: each entry
+// is re-checked and claimed while holding its claim file (see claimOne),
+// so of two OfficeLites starting at once only one keeps an entry. Entries
+// that can't be claimed are left out.
 func ClaimAll(entries []Entry) []Entry {
+	return claimAll(entries, os.Getpid(), selfStart)
+}
+
+// claimAll is ClaimAll for the process pid started at started.
+func claimAll(entries []Entry, pid int, started int64) []Entry {
 	var mine []Entry
 	for _, e := range entries {
-		if Claim(e) != nil {
-			continue
-		}
-		if got, err := readEntry(e.Sidecar); err == nil && got.PID == os.Getpid() && got.Started == selfStart {
+		if claimOne(e, pid, started) {
 			mine = append(mine, e)
 		}
 	}
 	return mine
+}
+
+// claimPath is the claim file of the entry whose sidecar is at sidecar.
+func claimPath(sidecar string) string {
+	return strings.TrimSuffix(sidecar, ".json") + ".claim"
+}
+
+// claimOne claims e for process pid (started at started) and reports
+// whether it is now that process's. It creates e's claim file exclusively
+// (O_EXCL: of racing claimers only the creator goes on), re-reads the
+// sidecar, writes its own pid there unless another live process already
+// holds the entry, and removes the claim file again. A claim file left by
+// a claimer that died is removed and the exclusive create retried once.
+// (Two claimers taking over the same dead claimer's file at the same
+// moment could both succeed; that needs a crash inside this short window
+// first.)
+func claimOne(e Entry, pid int, started int64) bool {
+	claim := claimPath(e.Sidecar)
+	f, err := os.OpenFile(claim, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil && os.IsExist(err) && staleClaim(claim) {
+		removeClaim(claim)
+		f, err = os.OpenFile(claim, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
+	}
+	if err != nil {
+		return false // another process is claiming it, or the directory is unwritable
+	}
+	defer removeClaim(claim)
+	_, werr := fmt.Fprintf(f, "%d %d", pid, started)
+	if cerr := f.Close(); werr != nil || cerr != nil {
+		return false
+	}
+	got, err := readEntry(e.Sidecar)
+	if err != nil {
+		return false
+	}
+	if got.PID == pid && got.Started == started {
+		return true // already ours
+	}
+	if alive(got.PID, got.Started) {
+		return false // another OfficeLite claimed it first
+	}
+	e.PID, e.Started = pid, started
+	return writeEntry(e.Sidecar, e) == nil
+}
+
+// removeClaim deletes the claim file at path, retrying a while on
+// failure: on Windows another claimer reading it blocks deletion for a
+// moment.
+func removeClaim(path string) {
+	err := os.Remove(path)
+	for i := 1; i <= limits.RecoveryClaimRemoveRetries && err != nil && !os.IsNotExist(err); i++ {
+		time.Sleep(time.Duration(i) * limits.RecoveryClaimRemoveBackoff)
+		err = os.Remove(path)
+	}
+	if err != nil && !os.IsNotExist(err) {
+		log.Printf("remove AutoRecover claim %s: %v", path, err)
+	}
+}
+
+// staleClaim reports whether the claim file at path was left by a claimer
+// that no longer runs: the process it names is gone, or it names none and
+// is older than limits.RecoveryClaimStale.
+func staleClaim(path string) bool {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return false // gone already (the retry decides), or unreadable
+	}
+	var pid int
+	var started int64
+	if n, _ := fmt.Sscan(string(b), &pid, &started); n == 2 && pid > 0 {
+		return !alive(pid, started)
+	}
+	return old(path, limits.RecoveryClaimStale)
 }
 
 // Release lets e go again (Document Recovery's Close keeps it for the next

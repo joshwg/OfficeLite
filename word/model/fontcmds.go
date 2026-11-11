@@ -1,3 +1,6 @@
+// Font commands of the Home ribbon's Font group beyond those in edit.go:
+// Grow/Shrink Font, super/subscript, highlight and Change Case.
+
 package model
 
 import (
@@ -5,8 +8,6 @@ import (
 
 	"officelite/word"
 )
-
-// Font commands of the Home ribbon's Font group beyond those in edit.go.
 
 // growSizes are the steps of Grow Font / Shrink Font (Ctrl+Shift+> / <).
 var growSizes = []float64{1, 8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72}

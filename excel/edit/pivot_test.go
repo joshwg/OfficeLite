@@ -1,3 +1,7 @@
+// Tests for PivotTables: creating, renaming, refreshing and undoing
+// reports, their location guards, source changes, Show Details and
+// GETPIVOTDATA.
+
 package edit
 
 import (
@@ -48,6 +52,7 @@ func column(b *Book, sheet, col, r1, r2 int) []string {
 	return out
 }
 
+// eq reports whether two string slices hold the same texts.
 func eq(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
@@ -60,6 +65,9 @@ func eq(a, b []string) bool {
 	return true
 }
 
+// TestPivotCreateUndoRefresh checks a new report's cells and styles, that
+// typing into it is refused except to rename a value field, that a field
+// change is one undo step, and that Refresh picks up source edits.
 func TestPivotCreateUndoRefresh(t *testing.T) {
 	b := pivotBook(t)
 	sh := b.WB.Sheets[0]
@@ -121,6 +129,10 @@ func TestPivotCreateUndoRefresh(t *testing.T) {
 	}
 }
 
+// TestPivotLocationAndGuards checks that inserted rows move a report and
+// its source, that rows can't be inserted or deleted through it, that
+// growing over data needs overwrite, that reports can't overlap, and that
+// Delete PivotTable undoes.
 func TestPivotLocationAndGuards(t *testing.T) {
 	b := pivotBook(t)
 	sh := b.WB.Sheets[0]
@@ -184,6 +196,9 @@ func TestPivotLocationAndGuards(t *testing.T) {
 	}
 }
 
+// TestPivotSyncFieldsAndDetails checks that a renamed source column drops
+// out of the report on refresh, that Show Details puts the records on a
+// new sheet (undone with it), and pivot.GetData's lookup.
 func TestPivotSyncFieldsAndDetails(t *testing.T) {
 	b := pivotBook(t)
 	sh := b.WB.Sheets[0]
@@ -221,6 +236,8 @@ func TestPivotSyncFieldsAndDetails(t *testing.T) {
 	}
 }
 
+// TestGetPivotData checks GETPIVOTDATA with and without item arguments,
+// #REF! for a missing item, and that it follows a refresh.
 func TestGetPivotData(t *testing.T) {
 	b := pivotBook(t)
 	b.enter(t, 0, "E1", `=GETPIVOTDATA("Sum of Sales",$A$3,"Region","East")`)

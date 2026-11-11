@@ -1,12 +1,13 @@
+// recover.go is the window's AutoRecover side: periodic recovery copies
+// and opening a recovered document.
+
 package ui
 
 import (
 	"io"
-	"path/filepath"
-	"slices"
-	"strings"
 
 	"officelite/common/autorecover"
+	"officelite/common/gui"
 	"officelite/word/fileio"
 	"officelite/word/model"
 )
@@ -47,10 +48,7 @@ func (d *window) recoverySnapshot() *autorecover.Snapshot {
 		return nil
 	}
 	doc := d.doc.Clone()
-	path, format := d.path, strings.ToLower(filepath.Ext(d.path))
-	if r := d.ar.recovered; r != nil {
-		path, format = r.Path, r.Format
-	}
+	path, format := gui.RecoveryOrigin(d.path, d.ar.recovered)
 	return &autorecover.Snapshot{Rev: d.recoveryRev(), Path: path, Name: d.doc.Name, Format: format,
 		Write: func(w io.Writer) error { return fileio.Write(doc, w, fileio.DOCX) }}
 }
@@ -68,7 +66,10 @@ func (d *window) dropRecovery() {
 // openRecovered loads a recovery copy (from Document Recovery) into the
 // window.
 func (d *window) openRecovered(e autorecover.Entry) {
-	d.loading.Store(true)
+	if !d.startLoad() {
+		d.errMsg = busyLoading
+		return
+	}
 	d.setDoc(model.New(e.Name), d.th.Shaper, nil)
 	go func() {
 		doc, err := fileio.Open(e.Copy)
@@ -85,20 +86,12 @@ func (d *window) adoptRecovered(e autorecover.Entry) {
 	d.saved = -1 // modified
 	d.ar.saver.Adopt(e, d.recoveryRev())
 	f, ok := fileio.FormatFor(e.Path)
-	if i := slices.Index(saveFormats[:], f); ok && i >= 0 {
-		d.bs.saveFmt = i
-	} else {
-		d.bs.saveFmt = 0 // .docx (for .pages, .docm, new documents)
-	}
+	d.bs.saveFmt = gui.FormatIndex(saveFormats[:], f, ok) // else .docx (for .pages, .docm, new documents)
 	d.updateTitle()
 }
 
 // saveAsName is the name Save As suggests for format f: the document's,
 // in the original file's folder for a recovered document.
 func (d *window) saveAsName(f fileio.Format) string {
-	name := d.baseName() + f.Ext()
-	if r := d.ar.recovered; r != nil && r.Path != "" {
-		name = filepath.Join(filepath.Dir(r.Path), name)
-	}
-	return name
+	return gui.SaveAsName(d.baseName(), f.Ext(), d.ar.recovered)
 }

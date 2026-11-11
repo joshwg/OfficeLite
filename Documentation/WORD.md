@@ -6,7 +6,8 @@ build guides.
 WordLite opens and saves `.docx`, `.doc` (Word 97-2003) and `.txt` documents,
 and `.dotx` / `.dot` templates (see [Templates](#templates)).
 It can also open `.docm` files, but macros are never run; use Save As to
-keep changes, and macros are removed from the saved copy. Apple Pages
+keep changes, and macros are removed from the saved copy (see
+[Macros](./README.md#macros)). Apple Pages
 (`.pages`) files are imported read-only; use Save As to keep changes.
 Documents open in a paginated page view with Word's styles: style gallery,
 Modify Style, New Style, Update Style to Match Selection, deletion of custom
@@ -189,6 +190,10 @@ and shows its result before inserting it. Other fields (`REF`, `SEQ`,
 them.
 
 ## Keyboard shortcuts and mouse
+
+The full list, by context, is in the keyboard reference for
+[Windows and Linux](./KEYBOARD-WINDOWS.md#wordlite) or
+[macOS](./KEYBOARD-MAC.md#wordlite).
 
 **Keyboard shortcuts:** Ctrl+F find, Ctrl+H replace, Ctrl+G go to page, F3 /
 Shift+F3 next / previous match (Enter / Shift+Enter in the find box),

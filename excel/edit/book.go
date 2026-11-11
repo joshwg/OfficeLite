@@ -103,9 +103,10 @@ func (b *Book) now() time.Time {
 // Recalculate recalculates every formula (F9).
 func (b *Book) Recalculate() calc.Result { return b.calc.Full(b.now()) }
 
-// CanUndo and CanRedo report whether there is a change to take back or
-// repeat.
+// CanUndo reports whether there is a change to take back.
 func (b *Book) CanUndo() bool { return len(b.undo) > 0 }
+
+// CanRedo reports whether there is a change taken back to repeat.
 func (b *Book) CanRedo() bool { return len(b.redo) > 0 }
 
 // Undo takes back the last change.
@@ -150,9 +151,12 @@ func (b *Book) RedoN(n int) (Where, calc.Result, bool) {
 	return where, res, ok
 }
 
-// UndoLabels and RedoLabels name the changes Undo and Redo would take
-// back or repeat, the next one first, for the Undo and Redo lists.
+// UndoLabels names the changes Undo would take back, the next one first,
+// for the Undo list.
 func (b *Book) UndoLabels() []string { return labels(b.undo) }
+
+// RedoLabels names the changes Redo would repeat, the next one first, for
+// the Redo list.
 func (b *Book) RedoLabels() []string { return labels(b.redo) }
 
 // labels lists the labels of an undo or redo stack, top first.

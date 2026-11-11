@@ -1,3 +1,5 @@
+// Windows-only AutoSave test: the file held open by another program.
+
 package ui
 
 import (
@@ -29,8 +31,8 @@ func TestAutoSaveLocked(t *testing.T) {
 	h.typeText("Dear")
 	clock.Advance(limits.AutoSaveDelay)
 	h.settle()
-	if d.as.saver.On() || !strings.Contains(d.errMsg, "Letter.docx is open in another program") {
-		t.Errorf("on %v, error %q", d.as.saver.On(), d.errMsg)
+	if d.as.Saver.On() || !strings.Contains(d.errMsg, "Letter.docx is open in another program") {
+		t.Errorf("on %v, error %q", d.as.Saver.On(), d.errMsg)
 	}
 	if !d.modified() || h.text() != "Dear" {
 		t.Errorf("edits lost: modified %v, %q", d.modified(), h.text())

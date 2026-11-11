@@ -1,11 +1,11 @@
-package model
-
 // Floating objects: text boxes, shapes and pictures positioned on the
 // page instead of in a line. Each is anchored to a paragraph by an opaque
 // run (Opaque.Float) that takes no room in its line; its position is an
 // offset from a reference (the page, the margins, the column or the
 // anchor paragraph) and it is drawn over or behind the text, or pushes
 // the text around it.
+
+package model
 
 // FloatRel is what a floating object's position is measured from.
 type FloatRel int8

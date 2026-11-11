@@ -3,6 +3,7 @@
 package ui
 
 import (
+	"gioui.org/widget"
 	"testing"
 
 	"gioui.org/f32"
@@ -169,4 +170,46 @@ func TestInsertCellsDialog(t *testing.T) {
 	h.frame()
 	h.press(key.NameReturn, 0)
 	h.expect("deleted", map[string]string{"A2": "2", "A3": "3"})
+}
+
+// TestCommentThread starts a comment, replies, resolves it, checks
+// Shift+F2 opens a comment (not a note) and that undo steps back.
+func TestCommentThread(t *testing.T) {
+	h := newHarness(t)
+	a := h.a
+	post := func(text string, btn *widget.Clickable) {
+		t.Helper()
+		if a.ins.kind != dlgNote || !a.ins.note.thread {
+			t.Fatalf("comment dialog not open: kind %v thread %v", a.ins.kind, a.ins.note.thread)
+		}
+		a.ins.note.ed.SetText(text)
+		h.frame()
+		btn.Click()
+		h.frame()
+		h.frame()
+	}
+	a.selectRange(0, model.Range{R1: 1, C1: 1, R2: 1, C2: 1})
+	a.insertChosen(insComment)
+	post("first", &a.ins.ok)
+	n, ok := a.wb.Sheets[0].NoteAt(1, 1)
+	if !ok || !n.Threaded || n.Text != "first" || n.Time.IsZero() {
+		t.Fatalf("thread = %+v", n)
+	}
+	h.press(key.NameF2, key.ModShift) // a comment's cell opens the comment
+	post("second", &a.ins.ok)
+	a.newComment()
+	post("", &a.ins.extra2) // Resolve Thread
+	n, _ = a.wb.Sheets[0].NoteAt(1, 1)
+	if len(n.Replies) != 1 || n.Replies[0].Text != "second" || !n.Resolved {
+		t.Fatalf("after reply and resolve: %+v", n)
+	}
+	h.press("Z", key.ModShortcut)
+	if n, _ = a.wb.Sheets[0].NoteAt(1, 1); n.Resolved || len(n.Replies) != 1 {
+		t.Errorf("undo of resolve: %+v", n)
+	}
+	a.newComment()
+	post("", &a.ins.extra) // Delete Thread
+	if _, ok := a.wb.Sheets[0].NoteAt(1, 1); ok {
+		t.Error("thread not deleted")
+	}
 }

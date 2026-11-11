@@ -1,8 +1,11 @@
+// The File backstage for documents: New, Open, Info, Save, Save As and
+// Export, and the saving behind them.
+
 package ui
 
 import (
-	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -51,6 +54,8 @@ type infoCache struct {
 	styles  []string
 }
 
+// backstageConfig is the backstage's New tiles, recent files and page
+// content.
 func (d *window) backstageConfig() gui.BackstageConfig {
 	return gui.BackstageConfig{
 		Templates:    d.newTiles(), // template.go
@@ -60,6 +65,8 @@ func (d *window) backstageConfig() gui.BackstageConfig {
 	}
 }
 
+// handleBackstage carries out a backstage action: back, new, open, save
+// or close.
 func (d *window) handleBackstage(ev gui.BackstageEvent) {
 	switch ev.Action {
 	case gui.ActBack:
@@ -98,6 +105,10 @@ func (d *window) saveFormat() (fileio.Format, bool) {
 
 // save writes the document back to its file, or asks where to save it.
 func (d *window) save() {
+	if d.opening() {
+		d.closeAfterSave = false
+		return // nothing to save until the document arrives
+	}
 	f, ok := d.saveFormat()
 	if !ok {
 		d.back.Show(gui.PageSaveAs)
@@ -110,20 +121,21 @@ func (d *window) save() {
 		d.afterSave()
 		return
 	}
-	d.checkLossy(f, func() { d.saveTo(f) })
+	d.checkMacros(true, func() { d.checkLossy(f, func() { d.saveTo(f) }) })
 }
 
 // saveTo writes the document to its file in format f.
 func (d *window) saveTo(f fileio.Format) {
 	// After an AutoSave still writing, never under it (autosave.go).
-	if err := d.as.saver.Save(func() error { return fileio.SaveFile(d.doc, d.path, f) }); err != nil {
+	if err := d.as.Saver.Save(func() error { return fileio.SaveFile(d.doc, d.path, f) }); err != nil {
 		d.errMsg = lockfile.SaveError(d.path, err)
 		d.closeAfterSave = false
 		return
 	}
 	d.errMsg = ""
 	d.saved = d.bodyEd().Version
-	d.dropRecovery() // recover.go
+	d.doc.DropMacros() // the file has none now
+	d.dropRecovery()   // recover.go
 	d.fileInfo, _ = os.Stat(d.path)
 	d.notice = "Saved " + filepath.Base(d.path)
 	d.afterSave()
@@ -148,85 +160,101 @@ func (d *window) baseName() string {
 // f. A Save As makes the new file the window's document; an export does
 // not.
 func (d *window) saveAs(f fileio.Format, export bool) {
-	if d.saving.Load() || d.expl == nil {
+	if d.saving.Load() || d.expl == nil || d.opening() {
 		return
 	}
-	d.checkLossy(f, func() { d.writeAs(f, export) })
+	check := func() { d.checkLossy(f, func() { d.writeAs(f, export) }) }
+	if export {
+		check() // the window's file, and its macros, stay as they are
+		return
+	}
+	d.checkMacros(false, check)
 }
 
 // writeAs asks for a file name and writes a clone of the document there
-// in the background. d.saving stays set until the result is handled on
-// the UI goroutine, so the window isn't pristine (and its document can't
-// be replaced) in between.
+// in the background (gui.SaveAs). d.saving stays set until the result is
+// handled on the UI goroutine, so the window isn't pristine (and its
+// document can't be replaced) in between.
 func (d *window) writeAs(f fileio.Format, export bool) {
-	d.saving.Store(true)
-	owner := d.doc
-	doc, version := owner.Clone(), d.bodyEd().Version
-	name := d.saveAsName(f) // recover.go
-	go func() {
-		if f.IsTemplate() {
-			name = templateSaveName(name) // template.go
-		}
-		wc, err := d.expl.CreateFile(name)
-		if errors.Is(err, explorer.ErrUserDecline) {
-			d.calls.Post(func() {
-				d.saving.Store(false)
-				d.closeAfterSave = false
-			})
-			return
-		}
-		if err == nil {
-			err = fileio.Write(doc, wc, f)
-			if cerr := wc.Close(); err == nil {
-				err = cerr
-			}
-		}
-		path := name
-		if file, ok := wc.(*os.File); ok && err == nil {
-			path = file.Name()
-		}
-		d.calls.Post(func() { d.writeAsDone(owner, f, path, export, version, err) })
-	}()
+	d.saveAsJob(f, export).Start()
 }
 
-// writeAsDone runs on the UI goroutine when writeAs has written owner's
-// clone: the save ends, and when the window still shows owner it becomes
-// the saved file (savedAs). A document that replaced owner meanwhile
-// keeps its own path and name.
-func (d *window) writeAsDone(owner *model.Document, f fileio.Format, path string, export bool, version int, err error) {
-	d.saving.Store(false)
-	if owner != d.doc && err == nil && !export {
+// saveSnap is a Save As or export in progress: doc, a clone of owner
+// taken at the body editor's version, written in format f.
+type saveSnap struct {
+	owner, doc *model.Document
+	version    int
+	f          fileio.Format
+	export     bool
+}
+
+// saveAsJob is the Save As (or export, which leaves the window's file as
+// it is) of the document in format f.
+func (d *window) saveAsJob(f fileio.Format, export bool) gui.SaveAs[saveSnap] {
+	j := gui.SaveAs[saveSnap]{
+		Name:     d.saveAsName(f), // recover.go
+		Save:     d.files.Save,
+		Filters:  []gui.FileFilter{gui.FormatFilter(f.String(), f.Ext()), gui.AllFilter},
+		Create:   d.expl.CreateFile,
+		Declined: explorer.ErrUserDecline,
+		Calls:    d.calls,
+		Busy:     &d.saving,
+		Snapshot: func() saveSnap {
+			return saveSnap{owner: d.doc, doc: d.doc.Clone(), version: d.bodyEd().Version, f: f, export: export}
+		},
+		Write:  func(s saveSnap, w io.Writer) error { return fileio.Write(s.doc, w, s.f) },
+		Done:   d.writeAsDone,
+		Cancel: func() { d.closeAfterSave = false },
+	}
+	if f.IsTemplate() {
+		j.Locate = templateSaveName // template.go
+	}
+	if !export {
+		j.Ask = d.askSaveLocked // lock.go
+	}
+	return j
+}
+
+// writeAsDone runs on the UI goroutine when a Save As or export of
+// snapshot s has ended as r says: when the window still shows s's
+// document it becomes the saved file (savedAs). A document that replaced
+// it meanwhile keeps its own path and name.
+func (d *window) writeAsDone(s saveSnap, r gui.SaveAsResult) {
+	if s.owner != d.doc && r.Err == nil && !s.export {
 		d.errMsg = ""
-		d.notice = "Saved " + filepath.Base(path)
+		d.notice = "Saved " + filepath.Base(r.Path)
 		d.closeAfterSave = false
 		return
 	}
-	d.savedAs(f, path, export, version, err)
+	d.savedAs(s, r)
 }
 
-// savedAs runs on the UI goroutine after a Save As or export finishes.
-func (d *window) savedAs(f fileio.Format, path string, export bool, version int, err error) {
-	if err != nil {
-		d.errMsg = "Save failed: " + err.Error()
+// savedAs runs on the UI goroutine after a Save As or export of snapshot
+// s finishes as r says.
+func (d *window) savedAs(s saveSnap, r gui.SaveAsResult) {
+	if r.Err != nil {
+		d.errMsg = "Save failed: " + r.Err.Error()
 		d.closeAfterSave = false
 		return
 	}
+	path := r.Path
 	d.errMsg = ""
 	d.back.Hide()
 	d.v.focusPending = true
 	what := "Saved "
-	if export {
+	if s.export {
 		what = "Exported "
 	}
 	d.notice = what + filepath.Base(path)
-	if f == fileio.TXT {
+	if s.f == fileio.TXT {
 		d.notice += " (text only)"
 	}
-	if export {
+	if s.export {
 		d.closeAfterSave = false // an export isn't the save the close waits for
 		return
 	}
-	d.saved = version
+	d.saved = s.version
+	d.doc.DropMacros() // the window's file is the new one, without them
 	d.dropRecovery()
 	if filepath.IsAbs(path) {
 		d.path = path
@@ -235,12 +263,12 @@ func (d *window) savedAs(f fileio.Format, path string, export bool, version int,
 			log.Printf("add %s to recent documents: %v", path, err)
 		}
 		d.lk.readOnly = false
-		d.lk.doc.Set(path, true) // the new file's registration and owner file
-		d.as.elsewhere = false
+		d.lk.doc.Set(path, true)  // the new file's registration and owner file
+		d.as.Elsewhere = r.Shared // saved over a file open elsewhere: no AutoSave
 	}
 	d.doc.Name = filepath.Base(path)
 	d.updateTitle()
-	if !d.as.saver.On() {
+	if !d.as.Saver.On() {
 		d.autoSaveLoaded() // on for a .docx when that's the default (autosave.go)
 	}
 	d.afterSave()
@@ -307,6 +335,8 @@ func (d *window) backstagePage(p gui.Page) []layout.Widget {
 	return nil
 }
 
+// infoPage returns the rows of the Info page: the file's properties and
+// counts, what isn't shown, AutoRecover, AutoSave and About.
 func (d *window) infoPage() []layout.Widget {
 	th := d.th
 	doc := d.doc
@@ -379,6 +409,8 @@ func (d *window) stylesUsed() []string {
 	return out
 }
 
+// fileType is the Info page's description of path's file type, by its
+// extension.
 func fileType(path string) string {
 	switch strings.ToLower(filepath.Ext(path)) {
 	case "":
@@ -403,6 +435,7 @@ func fileType(path string) string {
 	return "Document"
 }
 
+// formatIcon is format f's icon: text for plain text, a page otherwise.
 func formatIcon(f fileio.Format) *gui.Icon {
 	if f == fileio.TXT {
 		return gui.IconText
@@ -410,6 +443,7 @@ func formatIcon(f fileio.Format) *gui.Icon {
 	return gui.IconFile
 }
 
+// formatDesc is the line under format f's name in Save As and Export.
 func formatDesc(f fileio.Format) string {
 	switch f {
 	case fileio.DOCX:

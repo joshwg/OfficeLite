@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image/color"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -355,6 +356,28 @@ type Workbook struct {
 	// Theme is the workbook's theme (charts use its colors and fonts);
 	// nil for Office's default.
 	Theme *Theme
+	// HasMacros: the file held VBA macros or Excel 4 macro sheets, which
+	// are never run and which a save leaves out (see DropMacros).
+	HasMacros bool
+}
+
+// MacroWarning is the load warning of a workbook with macros.
+const MacroWarning = "This workbook contains macros. ExcelLite never runs them, and they are lost when the workbook is saved."
+
+// MarkMacros records that the file being read has macros, with the load
+// warning.
+func (wb *Workbook) MarkMacros() {
+	if !wb.HasMacros {
+		wb.HasMacros = true
+		wb.Warnings = append(wb.Warnings, MacroWarning)
+	}
+}
+
+// DropMacros records that wb's file no longer has macros: it was saved
+// without them.
+func (wb *Workbook) DropMacros() {
+	wb.HasMacros = false
+	wb.Warnings = slices.DeleteFunc(wb.Warnings, func(w string) bool { return w == MacroWarning })
 }
 
 // DefinedName is a workbook or sheet-level name such as TaxRate =

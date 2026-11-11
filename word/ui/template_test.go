@@ -1,3 +1,7 @@
+// Tests for templates: new documents from them, editing them, the New
+// page's tiles, where Save As puts them, and the window-replacement races
+// around Save As.
+
 package ui
 
 import (
@@ -7,6 +11,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -93,6 +98,7 @@ func saveTemplate(t *testing.T, dir string, f fileio.Format) string {
 	return path
 }
 
+// untitled matches the names newDocName gives.
 var untitled = regexp.MustCompile(`^Document\d+$`)
 
 // TestNewFromTemplate starts a document from a .dotx and a .dot: it is
@@ -233,13 +239,13 @@ func TestNewTiles(t *testing.T) {
 	}
 	*launched = nil
 
-	// An untouched window takes the new document itself...
+	// An untouched window takes the new document itself…
 	d.newFromTile(tiles[len(blankTiles)])
 	waitLoaded(t, d)
 	if len(*launched) != 0 || d.doc.Body[0].(*model.Paragraph).Text() != "Company Letterhead" {
 		t.Fatalf("launched %v; first paragraph %q", *launched, d.doc.Body[0].(*model.Paragraph).Text())
 	}
-	// ...which, once edited, goes to a new window instead.
+	// …which, once edited, goes to a new window instead.
 	d.saved = -1
 	d.newFromTile(tiles[len(blankTiles)])
 	if want := "tpl:" + tpl; len(*launched) != 1 || (*launched)[0] != want {
@@ -319,23 +325,45 @@ func TestNewBlankTyping(t *testing.T) {
 }
 
 // TestSaveAsOfReplacedDocument finishes a Save As after the window's
-// document was replaced: the new document keeps its untitled name and no
-// path, and the save no longer keeps the window busy.
+// document was replaced while it was written: the new document keeps its
+// untitled name and no path, and the save no longer keeps the window busy.
 func TestSaveAsOfReplacedDocument(t *testing.T) {
 	templateEnv(t)
 	d, _ := templateWindow(t, t.TempDir())
-	owner := d.doc
+	f, err := os.Create(filepath.Join(t.TempDir(), "Saved.docx"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gate := &gatedFile{File: f, release: make(chan struct{})}
 	d.saving.Store(true)
+	d.saveAsJob(fileio.DOCX, false).WriteTo(gate, f.Name())
 	d.newBlank() // stands in for any load replacing the document
 	waitLoaded(t, d)
 	name := d.doc.Name
-	d.writeAsDone(owner, fileio.DOCX, filepath.Join(t.TempDir(), "Saved.docx"), false, 0, nil)
+	close(gate.release)
+	for end := time.Now().Add(5 * time.Second); d.saving.Load() && time.Now().Before(end); {
+		d.calls.Run()
+		time.Sleep(time.Millisecond)
+	}
 	if d.saving.Load() {
 		t.Error("still saving")
 	}
 	if d.path != "" || d.doc.Name != name {
 		t.Errorf("the replacing document took the save: path %q, name %q", d.path, d.doc.Name)
 	}
+}
+
+// gatedFile is a file whose first write waits for release.
+type gatedFile struct {
+	*os.File
+	release chan struct{}
+	once    sync.Once
+}
+
+// Write waits for release once, then writes p to the file.
+func (g *gatedFile) Write(p []byte) (int, error) {
+	g.once.Do(func() { <-g.release })
+	return g.File.Write(p)
 }
 
 // TestExportAbandonsClose checks that a close waiting for Save As (Save in
@@ -346,7 +374,9 @@ func TestExportAbandonsClose(t *testing.T) {
 	templateEnv(t)
 	d, _ := templateWindow(t, "")
 	for _, abandon := range []func(){
-		func() { d.savedAs(fileio.TXT, filepath.Join(t.TempDir(), "x.txt"), true, 0, nil) },
+		func() {
+			d.savedAs(saveSnap{f: fileio.TXT, export: true, version: 0}, gui.SaveAsResult{Path: filepath.Join(t.TempDir(), "x.txt")})
+		},
 		func() { d.handleBackstage(gui.BackstageEvent{Action: gui.ActNew, Template: 0}) },
 		func() { d.handleBackstage(gui.BackstageEvent{Action: gui.ActBrowse}) },
 	} {

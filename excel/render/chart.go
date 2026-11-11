@@ -1,3 +1,12 @@
+// Chart layout: a chart becomes a list of primitives (filled polygons,
+// stroked lines, text) in its own pixels (96 DPI, unzoomed, origin at its
+// top-left corner); the grid paints them with Gio (chartpaint.go) and the
+// PDF export with PDF paths (chartpdf.go). The look follows Excel 2013+'s
+// default chart style: theme accent colors, gray #595959 text at 9pt
+// (14pt titles), light gray #D9D9D9 gridlines and borders. This file holds
+// the types, the chart area, title, legend, pies and data labels; axes
+// plots are in chartaxes.go.
+
 package render
 
 import (
@@ -11,13 +20,7 @@ import (
 	"officelite/excel/numfmt"
 )
 
-// Charts are laid out into a list of primitives (filled polygons, stroked
-// lines, text) in the chart's own pixels (96 DPI, unzoomed, origin at its
-// top-left corner); the grid paints them with Gio (chartpaint.go) and the
-// PDF export with PDF paths (pdf.go). The look follows Excel 2013+'s
-// default chart style: theme accent colours, grey #595959 text at 9pt
-// (14pt titles), light grey #D9D9D9 gridlines and borders.
-
+// primKind is the kind of a primitive.
 type primKind uint8
 
 const (
@@ -26,6 +29,7 @@ const (
 	primText                   // one line of text
 )
 
+// chartPt is a point in chart pixels.
 type chartPt struct{ X, Y float32 }
 
 // chartFont is a resolved text format.
@@ -49,7 +53,7 @@ type prim struct {
 	width  float32   // stroke width, px
 	dash   []float32 // on/off lengths, px; nil for solid
 	// Text: drawn with its anchor point at x, y; ha and va align the
-	// text's box to it (-1 left/top, 0 centre, 1 right/bottom), and rot
+	// text's box to it (-1 left/top, 0 center, 1 right/bottom), and rot
 	// turns it (degrees clockwise) about that point.
 	text string
 	font chartFont
@@ -179,7 +183,7 @@ type numFormat struct {
 type series struct {
 	plot  *model.ChartPlot
 	s     *model.ChartSeries
-	index int // its place in the chart, for the automatic colours
+	index int // its place in the chart, for the automatic colors
 	name  string
 	vals  []float64
 	ok    []bool // false: blank (or text)
@@ -216,9 +220,13 @@ type chartLayout struct {
 	elem   ChartElem // what the primitives drawn now belong to
 }
 
+// rect32 is a rectangle in chart pixels, by its corners.
 type rect32 struct{ x0, y0, x1, y1 float32 }
 
+// w is the rectangle's width.
 func (r rect32) w() float32 { return r.x1 - r.x0 }
+
+// h is the rectangle's height.
 func (r rect32) h() float32 { return r.y1 - r.y0 }
 
 // axisInfo is an axis as laid out.
@@ -257,6 +265,8 @@ func layoutChart(c *model.Chart, env *chartEnv, w, h float32) []prim {
 
 // --- helpers ---
 
+// resolveFont is base with whatever t sets (size, bold, italic, a solid
+// color, a family) laid over it.
 func (l *chartLayout) resolveFont(t model.TextProps, base chartFont) chartFont {
 	f := base
 	if t.SizePt > 0 {
@@ -277,6 +287,8 @@ func (l *chartLayout) resolveFont(t model.TextProps, base chartFont) chartFont {
 	return f
 }
 
+// fillRect adds a filled rectangle; nothing for a transparent color or an
+// empty rectangle.
 func (l *chartLayout) fillRect(r rect32, c color.NRGBA) {
 	if c.A == 0 || r.w() <= 0 || r.h() <= 0 {
 		return
@@ -284,6 +296,8 @@ func (l *chartLayout) fillRect(r rect32, c color.NRGBA) {
 	l.out = append(l.out, prim{kind: primFill, color: c, pts: []chartPt{{r.x0, r.y0}, {r.x1, r.y0}, {r.x1, r.y1}, {r.x0, r.y1}}, elem: l.elem})
 }
 
+// poly adds a filled polygon; nothing for a transparent color or fewer
+// than three points.
 func (l *chartLayout) poly(pts []chartPt, c color.NRGBA) {
 	if c.A == 0 || len(pts) < 3 {
 		return
@@ -291,6 +305,9 @@ func (l *chartLayout) poly(pts []chartPt, c color.NRGBA) {
 	l.out = append(l.out, prim{kind: primFill, color: c, pts: pts, elem: l.elem})
 }
 
+// stroke adds a polyline (closed: a polygon's outline) of width w, dashed
+// by dash when not nil; nothing for a transparent color, zero width or
+// fewer than two points.
 func (l *chartLayout) stroke(pts []chartPt, closed bool, c color.NRGBA, w float32, dash []float32) {
 	if c.A == 0 || len(pts) < 2 || w <= 0 {
 		return
@@ -298,17 +315,20 @@ func (l *chartLayout) stroke(pts []chartPt, closed bool, c color.NRGBA, w float3
 	l.out = append(l.out, prim{kind: primStroke, pts: pts, closed: closed, color: c, width: w, dash: dash, elem: l.elem})
 }
 
+// line adds a solid line segment.
 func (l *chartLayout) line(x0, y0, x1, y1 float32, c color.NRGBA, w float32) {
 	l.stroke([]chartPt{{x0, y0}, {x1, y1}}, false, c, w, nil)
 }
 
+// text adds one line of text anchored at x, y (ha, va: -1 left/top, 0
+// center, 1 right/bottom) and turned by rot degrees, with its bounds for
+// picking it out with the pointer; nothing for empty or invisible text.
 func (l *chartLayout) text(s string, f chartFont, x, y float32, ha, va int8, rot float32) {
 	if s == "" || f.Color.A == 0 {
 		return
 	}
-	// The text's bounds, for picking it out with the pointer: the rectangle
-	// paintChartText draws (aligned on x, y by ha, va), turned by rot about
-	// (x, y).
+	// The bounds are the rectangle paintChartText draws (aligned on x, y by
+	// ha, va), turned by rot about (x, y).
 	w, h := l.measure(f, s)
 	dx, dy := -w*float32(ha+1)/2, -h*float32(va+1)/2
 	sin, cos := math.Sincos(float64(rot) * math.Pi / 180)
@@ -324,6 +344,9 @@ func (l *chartLayout) text(s string, f chartFont, x, y float32, ha, va int8, rot
 		box: rect32{x0, y0, x1, y1}})
 }
 
+// measure is one line's width and line height: the environment's
+// measurement, or an estimate (half an em per rune, 1.2 line spacing)
+// without one.
 func (l *chartLayout) measure(f chartFont, s string) (float32, float32) {
 	if l.env.measure == nil {
 		return float32(len([]rune(s))) * f.px() * 0.5, f.px() * 1.2
@@ -340,7 +363,7 @@ func (l *chartLayout) textBlock(f chartFont, s string) (w, h float32) {
 	return w, h
 }
 
-// multiText draws lines of text centred on x, the first one's top at y.
+// multiText draws lines of text centered on x, the first one's top at y.
 func (l *chartLayout) multiText(s string, f chartFont, x, y float32) {
 	for _, line := range strings.Split(s, "\n") {
 		_, lh := l.measure(f, line)
@@ -349,7 +372,7 @@ func (l *chartLayout) multiText(s string, f chartFont, x, y float32) {
 	}
 }
 
-// shapeFill is a shape's fill colour, def when automatic.
+// shapeFill is a shape's fill color, def when automatic.
 func shapeFill(sp model.ShapeProps, def color.NRGBA) color.NRGBA {
 	switch sp.Fill.Kind {
 	case model.FillNone:
@@ -360,7 +383,7 @@ func shapeFill(sp model.ShapeProps, def color.NRGBA) color.NRGBA {
 	return def
 }
 
-// shapeLine is a shape's outline colour and width (px), def when
+// shapeLine is a shape's outline color and width (px), def when
 // automatic.
 func shapeLine(sp model.ShapeProps, def color.NRGBA, defW float32) (color.NRGBA, float32) {
 	w := defW
@@ -394,6 +417,8 @@ func dashOf(name string, w float32) []float32 {
 	return nil
 }
 
+// formatNum renders v in number format f through the environment, or as
+// General without one.
 func (l *chartLayout) formatNum(v float64, f numFormat) string {
 	if l.env.format != nil {
 		return l.env.format(v, f.id, f.code)
@@ -493,6 +518,7 @@ func (l *chartLayout) values(d *model.ChartData) ([]model.ChartValue, numFormat)
 	return d.Cache, f
 }
 
+// seriesName is the series' name: its reference's text, else "Series n+1".
 func (l *chartLayout) seriesName(s *model.ChartSeries, n int) string {
 	return l.env.wb.SeriesName(s, l.env.home, n) // a nil workbook reads the cache
 }
@@ -500,12 +526,12 @@ func (l *chartLayout) seriesName(s *model.ChartSeries, n int) string {
 // autoMarkers is the marker cycle of Excel's default style.
 var autoMarkers = []string{"diamond", "square", "triangle", "x", "star", "circle", "plus"}
 
-// colors resolves each series' fill and line colour.
+// colors resolves each series' fill and line color.
 func (l *chartLayout) colors() {
 	for _, sd := range l.ser {
 		auto := l.theme.SeriesColor(sd.index)
 		if l.c.Style == 1 || l.c.Style == 9 || l.c.Style == 17 || l.c.Style == 25 || l.c.Style == 33 || l.c.Style == 41 {
-			// The greyscale styles.
+			// The grayscale styles.
 			auto = model.LumMod(colors.RGB(0x7F7F7F), 100000-(sd.index%6)*12000, (sd.index%6)*5000)
 		}
 		sd.fill = shapeFill(sd.s.Shape, auto)
@@ -525,7 +551,7 @@ func (l *chartLayout) colors() {
 }
 
 // pointFill is the fill of point i of a series (a pie slice, a bar of a
-// varied-colour series).
+// varied-color series).
 func (l *chartLayout) pointFill(sd *series, i int) color.NRGBA {
 	for _, p := range sd.s.Points {
 		if p.Idx == i && p.Shape.Fill.Kind != model.FillAuto {
@@ -540,6 +566,9 @@ func (l *chartLayout) pointFill(sd *series, i int) color.NRGBA {
 
 // --- layout ---
 
+// layout draws the whole chart: the chart area, title and legend, then
+// the plot (axes, pies, or a note for kinds not drawn yet) in what is
+// left, and the border over everything.
 func (l *chartLayout) layout() {
 	c := l.c
 	// The chart area.
@@ -642,9 +671,12 @@ func (l *chartLayout) titleText() (string, chartFont, bool) {
 type legendEntry struct {
 	text string
 	sd   *series
-	pt   int // the point (category) for a varied-colour series, else -1
+	pt   int // the point (category) for a varied-color series, else -1
 }
 
+// legendEntries lists the legend's lines: one per series, or one per
+// category for a pie or a lone varied-color series, less the entries the
+// legend has deleted.
 func (l *chartLayout) legendEntries() []legendEntry {
 	var out []legendEntry
 	for _, sd := range l.ser {
@@ -789,7 +821,7 @@ func (l *chartLayout) legend(inner rect32) rect32 {
 	return inner
 }
 
-// legendKey draws an entry's key centred on y.
+// legendKey draws an entry's key centered on y.
 func (l *chartLayout) legendKey(e legendEntry, x, y, w float32) {
 	sd := e.sd
 	t := sd.plot.Type
@@ -815,6 +847,9 @@ func (l *chartLayout) legendKey(e legendEntry, x, y, w float32) {
 
 // --- pies and doughnuts ---
 
+// piePlot draws a pie (the first series) or a doughnut (one ring per
+// series) in inner: slices clockwise from FirstSlice, exploded points
+// pulled out, and data labels inside or around.
 func (l *chartLayout) piePlot(inner rect32, pie []*series) {
 	l.elem = ChartElem{Kind: ElemPlotArea}
 	l.fillRect(inner, shapeFill(l.c.PlotArea, color.NRGBA{}))
@@ -931,6 +966,8 @@ func slicePoly(cx, cy, r0, r1 float32, a, sweep float64) []chartPt {
 
 // --- data labels ---
 
+// labelsOf is the data labels setting that applies to a series: its own,
+// else its plot's.
 func (l *chartLayout) labelsOf(sd *series) *model.DataLabels {
 	if sd.s.Labels != nil {
 		return sd.s.Labels
@@ -938,6 +975,7 @@ func (l *chartLayout) labelsOf(sd *series) *model.DataLabels {
 	return sd.plot.Labels
 }
 
+// anyLabels reports whether any of the series shows data labels.
 func (l *chartLayout) anyLabels(ss []*series) bool {
 	for _, sd := range ss {
 		if l.labelsOf(sd).Any() {
@@ -947,6 +985,8 @@ func (l *chartLayout) anyLabels(ss []*series) bool {
 	return false
 }
 
+// labelFont is the default font of data labels: the chart's text in the
+// darker label color, unless the chart sets its own text color.
 func (l *chartLayout) labelFont() chartFont {
 	f := l.font
 	f.Color = chartLabelText
@@ -990,7 +1030,7 @@ func (l *chartLayout) labelText(sd *series, lb *model.DataLabels, i int, pct flo
 	return strings.Join(parts, sep)
 }
 
-// labelBlock draws a label of one or more lines centred on y.
+// labelBlock draws a label of one or more lines centered on y.
 func (l *chartLayout) labelBlock(s string, f chartFont, x, y float32, ha int8) {
 	lines := strings.Split(s, "\n")
 	_, lh := l.measure(f, "Ag")

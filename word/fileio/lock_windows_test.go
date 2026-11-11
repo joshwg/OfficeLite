@@ -1,3 +1,5 @@
+// Windows-only test: saving over a file another program holds open.
+
 package fileio
 
 import (
@@ -11,8 +13,9 @@ import (
 	"officelite/word/model"
 )
 
-// TestSaveOverLockedFile: saving over a document Word holds open fails
-// with a message saying so, and leaves no temporary file behind.
+// TestSaveOverLockedFile checks that saving over a document Word holds
+// open fails with a message saying so, and leaves no temporary file
+// behind.
 func TestSaveOverLockedFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "Report.docx")

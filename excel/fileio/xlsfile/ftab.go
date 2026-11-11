@@ -1,11 +1,11 @@
-package xlsfile
-
-import "strings"
-
 // Built-in worksheet functions of BIFF8 ([MS-XLS] 2.5.198.17 Ftab), with
 // their argument counts and token classes. Functions added later (Analysis
 // ToolPak, Excel 2007+) have no id: they are called through id 255 with
 // the function's name as the first operand.
+
+package xlsfile
+
+import "strings"
 
 // funcInfo describes one function id.
 type funcInfo struct {
@@ -28,6 +28,7 @@ func (f *funcInfo) argClass(i int) byte {
 	return f.args[min(i, len(f.args)-1)]
 }
 
+// Function ids the encoder and decoder handle specially.
 const (
 	funcUser  = 255 // add-in / user-defined / future function call
 	funcIF    = 1
@@ -35,6 +36,7 @@ const (
 	funcCHOOS = 100
 )
 
+// funcTable is the Ftab, in id order.
 var funcTable = []funcInfo{
 	{0, "COUNT", 0, 30, 'V', "R"},
 	{1, "IF", 2, 3, 'V', "VR"},
@@ -297,11 +299,13 @@ var funcTable = []funcInfo{
 	{379, "RTD", 3, 30, 'V', "V"},
 }
 
+// funcByID and funcByName index funcTable; init fills them.
 var (
 	funcByID   = map[int]*funcInfo{}
 	funcByName = map[string]*funcInfo{}
 )
 
+// init indexes funcTable by id and by name.
 func init() {
 	for i := range funcTable {
 		f := &funcTable[i]

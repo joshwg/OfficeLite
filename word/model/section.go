@@ -1,5 +1,3 @@
-package model
-
 // Sections. A document is split into sections, each with its own page
 // setup, columns, headers and footers and page numbering. As in a .docx,
 // a section's properties are stored at its end: a body paragraph whose
@@ -7,6 +5,8 @@ package model
 // Document's own Section holds the last section's properties. Deleting a
 // section break's paragraph mark merges the two sections, and the
 // following section's properties win, as in Word.
+
+package model
 
 // SectionBreak is how a section starts.
 type SectionBreak int8
@@ -245,7 +245,9 @@ func (d *Document) UnlinkHeader(i int, kind HFKind, footer bool) *HeaderFooter {
 	}
 	if i > 0 {
 		if prev := HeaderFor(secs, i-1, kind, footer); prev != nil {
-			c := &HeaderFooter{Blocks: CopyBlocks(prev.Blocks)} // a part of its own when saved
+			// A part of its own when saved; Part names the part copied,
+			// whose relationships its pictures and drawings refer to.
+			c := &HeaderFooter{Blocks: CopyBlocks(prev.Blocks), Part: prev.Part}
 			*slot = c
 			return c
 		}

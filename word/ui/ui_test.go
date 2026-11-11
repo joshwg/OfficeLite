@@ -1,3 +1,7 @@
+// The test harness (a window laid out without a native window, driven
+// through an input router) and tests of typing, styles, clicks, typing
+// speed and caret movement.
+
 package ui
 
 import (
@@ -20,6 +24,8 @@ import (
 	"officelite/word/model"
 )
 
+// harness is a document window under test: it is laid out at 1100×760
+// with events queued through r.
 type harness struct {
 	t   *testing.T
 	d   *window
@@ -27,6 +33,8 @@ type harness struct {
 	ops op.Ops
 }
 
+// newHarness makes a window holding a new document "Test", laid out
+// twice so the page view has the focus.
 func newHarness(t *testing.T) *harness {
 	fonts := gui.NewFontLibrary(gui.DefaultFontDirs()...)
 	d := newWindow(nil, Config{Fonts: fonts, Recent: recent.Open("")})
@@ -38,6 +46,7 @@ func newHarness(t *testing.T) *harness {
 	return h
 }
 
+// frame lays the window out once and delivers the queued events.
 func (h *harness) frame() {
 	h.ops.Reset()
 	gtx := layout.Context{Ops: &h.ops, Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1},
@@ -46,18 +55,24 @@ func (h *harness) frame() {
 	h.r.Frame(gtx.Ops)
 }
 
+// typeText types s into the focused widget.
 func (h *harness) typeText(s string) {
 	h.r.Queue(key.EditEvent{Text: s})
 	h.frame()
 }
 
+// press presses a key with modifiers.
 func (h *harness) press(name key.Name, mods key.Modifiers) {
 	h.r.Queue(key.Event{Name: name, Modifiers: mods, State: key.Press})
 	h.frame()
 }
 
+// para is paragraph i of the document being edited.
 func (h *harness) para(i int) *model.Paragraph { return h.d.ed.Para(i) }
 
+// TestTypingAndStyles checks typing and Enter, the heading, Normal and
+// center shortcuts, Ctrl+B on a selection, undo and redo, Backspace
+// joining paragraphs, and that Ctrl+Space doesn't type a space.
 func TestTypingAndStyles(t *testing.T) {
 	h := newHarness(t)
 	d := h.d
@@ -129,6 +144,8 @@ func TestTypingAndStyles(t *testing.T) {
 	}
 }
 
+// TestClickPlacesCaret checks that a click puts the caret where the text
+// is drawn and a double-click selects the word.
 func TestClickPlacesCaret(t *testing.T) {
 	h := newHarness(t)
 	d := h.d
@@ -203,8 +220,9 @@ func TestTypingSpeed(t *testing.T) {
 	}
 }
 
-// Down in a table goes to the cell below; End on a line wrapped after a
-// hyphen goes to its end and shows the caret there.
+// TestTableDownAndHyphenEnd checks that Down in a table goes to the cell
+// below, and End on a line wrapped after a hyphen goes to its end and
+// shows the caret there (end-of-line affinity, dropped by typing).
 func TestTableDownAndHyphenEnd(t *testing.T) {
 	h := newHarness(t)
 	d := h.d

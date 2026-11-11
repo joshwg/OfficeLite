@@ -18,7 +18,7 @@ import (
 	"officelite/excel/model"
 )
 
-var magicZip = []byte{'P', 'K', 0x03, 0x04}
+var magicZip = []byte{'P', 'K', 0x03, 0x04} // zip local file header: .xlsx and .numbers
 
 // Open reads the file at path.
 func Open(path string) (*model.Workbook, error) {

@@ -51,6 +51,7 @@ func runRecovery(w *app.Window, fonts *gui.FontLibrary, entries []autorecover.En
 			r.Run()
 			gtx := app.NewContext(&ops, e)
 			r.Layout(gtx)
+			gui.KeepKeyboard(gtx) // keys keep coming in the browser
 			e.Frame(gtx.Ops)
 		}
 	}

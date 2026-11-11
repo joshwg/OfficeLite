@@ -43,6 +43,8 @@ import (
 	"officelite/excel/ui"
 )
 
+// main opens the workbook, draws the grid, one chart or the whole window
+// (ui.Preview) into a headless Gio window and writes it as a PNG.
 func main() {
 	out := flag.String("o", "excelshot.png", "output PNG")
 	sheet := flag.Int("sheet", 0, "sheet index")

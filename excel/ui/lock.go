@@ -3,10 +3,9 @@
 package ui
 
 import (
-	"path/filepath"
-
 	"gioui.org/io/system"
 
+	"officelite/common/gui"
 	"officelite/common/lockfile"
 )
 
@@ -21,36 +20,19 @@ type lockState struct {
 	closeOnCancel bool
 }
 
-// raise brings the window to the front, when its file is opened again.
-func (a *App) raise() {
-	a.calls.Post(func() {
-		if a.win != nil {
-			a.win.Perform(system.ActionRaise)
-		}
-	})
-}
-
 // docName is the workbook's name for the title, marked when read-only or
 // recovered.
 func (a *App) docName() string {
-	if a.lk.readOnly {
-		return a.wb.Name + " (Read-Only)"
-	}
-	if a.ar.recovered != nil {
-		return a.wb.Name + " [Recovered]"
-	}
-	return a.wb.Name
+	return gui.DocTitle(a.wb.Name, a.lk.readOnly, a.ar.recovered != nil)
 }
 
 // askLocked asks what to do with a loaded workbook whose file is open
 // elsewhere: open it read-only, open it anyway or not at all.
 func (a *App) askLocked(r loadResult) {
-	st := r.lock
 	a.menu.Close()
 	a.back.Hide()
-	a.dialog.Show(st.Title(), st.Message(filepath.Base(r.path)), st.Buttons()...)
-	a.answer = func(i int) {
-		switch st.Choice(i) {
+	a.answer = gui.AskLocked(&a.dialog, r.lock, r.path, func(c lockfile.Choice) {
+		switch c {
 		case lockfile.ReadOnly:
 			a.applyLoad(r, true)
 		case lockfile.Anyway:
@@ -62,5 +44,13 @@ func (a *App) askLocked(r loadResult) {
 				a.win.Perform(system.ActionClose)
 			}
 		}
-	}
+	})
+}
+
+// askSaveLocked asks whether to save over the file at path, which Save As
+// chose and lockfile.Check found st about (open elsewhere), and gives
+// answer the reply (gui.SaveAs.Ask).
+func (a *App) askSaveLocked(st lockfile.Status, path string, answer func(ok bool)) {
+	a.menu.Close()
+	a.answer = gui.AskSaveLocked(&a.dialog, st, path, answer)
 }

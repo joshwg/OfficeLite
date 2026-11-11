@@ -1,3 +1,7 @@
+// A small XML tree that keeps byte offsets into its source, so unmodeled
+// content can be copied out verbatim; namespace canonicalization and the
+// escaping helpers the writer uses.
+
 package docxfile
 
 import (
@@ -47,8 +51,10 @@ var stdNS = []struct{ prefix, url string }{
 	{"pic", "http://schemas.openxmlformats.org/drawingml/2006/picture"},
 }
 
+// stdIgnorable is the mc:Ignorable list written with stdNS.
 const stdIgnorable = "w14 w15 wp14"
 
+// stdByPrefix is stdNS as a map.
 var stdByPrefix = func() map[string]string {
 	m := map[string]string{}
 	for _, d := range stdNS {
@@ -57,7 +63,8 @@ var stdByPrefix = func() map[string]string {
 	return m
 }()
 
-// canonical prefixes by namespace URL (strict OOXML maps to transitional).
+// prefixByURL gives the canonical prefix of each known namespace URL
+// (strict OOXML maps to transitional).
 var prefixByURL = map[string]string{
 	nsW: "w", "http://purl.oclc.org/ooxml/wordprocessingml/main": "w",
 	nsR: "r", "http://purl.oclc.org/ooxml/officeDocument/relationships": "r",
@@ -92,6 +99,8 @@ type node struct {
 	src                     []byte
 }
 
+// canonName is the "prefix:local" name of an element or attribute, using
+// the canonical prefix for known namespaces and "{url}local" otherwise.
 func canonName(n xml.Name) string {
 	if n.Space == "" {
 		return n.Local
@@ -205,6 +214,8 @@ func parseXML(data []byte) (*node, error) {
 	return root, nil
 }
 
+// canonSpace is the canonical prefix for a namespace URL, or the URL
+// itself when it is unknown.
 func canonSpace(s string) string {
 	if s == "" {
 		return ""
@@ -222,6 +233,8 @@ func (n *node) attr(name string) string {
 	return v
 }
 
+// attrOK is attr with a flag telling whether the attribute is present
+// (nil node: absent).
 func (n *node) attrOK(name string) (string, bool) {
 	if n == nil {
 		return "", false
@@ -317,6 +330,8 @@ func (n *node) rawRange(from, to int) []byte {
 	return withDecls(n.src[from:to], n.ns)
 }
 
+// Patterns withDecls uses to find the prefixes a fragment uses and the
+// namespaces its first tag already declares.
 var (
 	rePrefixElem = regexp.MustCompile(`</?([A-Za-z_][\w.\-]*):[A-Za-z_]`)
 	rePrefixAttr = regexp.MustCompile(`\s([A-Za-z_][\w.\-]*):[\w.\-]+\s*=\s*["']`)
@@ -325,6 +340,9 @@ var (
 	reDecl       = regexp.MustCompile(`xmlns(?::([\w.\-]+))?\s*=`)
 )
 
+// withDecls returns frag with xmlns declarations added to its first tag
+// for every prefix it uses that is bound in ns but neither declared in the
+// tag nor part of the standard root declarations.
 func withDecls(frag []byte, ns map[string]string) []byte {
 	if len(frag) == 0 || frag[0] != '<' {
 		return append([]byte(nil), frag...)
@@ -386,6 +404,7 @@ func withDecls(frag []byte, ns map[string]string) []byte {
 	return out
 }
 
+// isSpaceOrEnd reports whether c ends an element name in a tag.
 func isSpaceOrEnd(c byte) bool {
 	return c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == '/' || c == '>'
 }
@@ -452,10 +471,15 @@ func parseFragment(frag string) []*node {
 
 // ---- writing helpers ----
 
+// Escapers for character data and for attribute values (which also escape
+// quotes and whitespace that attribute normalization would fold).
 var textEsc = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
 var attrEsc = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "\n", "&#10;", "\r", "&#13;", "\t", "&#9;")
 
+// escText escapes s for element content, dropping characters XML can't hold.
 func escText(s string) string { return textEsc.Replace(validXML(s)) }
+
+// escAttr escapes s for a double-quoted attribute value.
 func escAttr(s string) string { return attrEsc.Replace(validXML(s)) }
 
 // validXML removes characters XML 1.0 can't contain.
@@ -479,6 +503,7 @@ func validXML(s string) string {
 	return b.String()
 }
 
+// isXMLChar reports whether r is a character XML 1.0 allows.
 func isXMLChar(r rune) bool {
 	return r == 0x9 || r == 0xA || r == 0xD || (r >= 0x20 && r <= 0xD7FF) ||
 		(r >= 0xE000 && r <= 0xFFFD) || (r >= 0x10000 && r <= 0x10FFFF)

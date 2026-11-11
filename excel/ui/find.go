@@ -1,3 +1,5 @@
+// Find and Replace (Ctrl+F, Ctrl+H) and Go To (Ctrl+G, F5).
+
 package ui
 
 import (
@@ -16,8 +18,8 @@ import (
 	"officelite/excel/render"
 )
 
-// Find and Replace (Ctrl+F, Ctrl+H) and Go To (Ctrl+G, F5).
-
+// findDialog is the Find and Replace panel's state; its two tabs share
+// the fields.
 type findDialog struct {
 	replace    bool // the Replace tab
 	what, with widget.Editor
@@ -43,6 +45,8 @@ func (a *App) showFind() { a.openFind(false) }
 // showReplace opens Replace (Ctrl+H).
 func (a *App) showReplace() { a.openFind(true) }
 
+// openFind shows the panel on its Find or Replace tab, keeping the last
+// search text.
 func (a *App) openFind(replace bool) {
 	if !a.commitForCommand() {
 		return
@@ -101,6 +105,8 @@ func (a *App) goToFound(f edit.Found) {
 	a.state().view.EnsureVisible(f.Row, f.Col)
 }
 
+// layoutFindDialog draws the Find and Replace panel and runs its buttons;
+// Enter (k 1) finds the next match, Esc (k -1) closes it.
 func (a *App) layoutFindDialog(gtx layout.Context, k int) {
 	d := &a.ins.find
 	for _, e := range []*widget.Editor{&d.what, &d.with} {
@@ -285,6 +291,7 @@ func (a *App) smallButton(btn *widget.Clickable, label string) layout.Widget {
 
 // --- Go To ---
 
+// gotoDialog is Go To: the reference typed and the list of defined names.
 type gotoDialog struct {
 	ref   widget.Editor
 	list  widget.List
@@ -314,6 +321,8 @@ func (a *App) gotoNames() []string {
 	return out
 }
 
+// layoutGoToDialog draws Go To; a name clicked fills the reference, and OK
+// or a double-click (k 1) selects what it resolves to.
 func (a *App) layoutGoToDialog(gtx layout.Context, k int) {
 	d := &a.ins.gt
 	for {

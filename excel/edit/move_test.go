@@ -1,3 +1,6 @@
+// Tests for dragging cells (move and copy), grouped undo steps, and
+// defined names following moved cells.
+
 package edit
 
 import (
@@ -7,6 +10,10 @@ import (
 	"officelite/excel/model"
 )
 
+// TestMoveCells checks MoveOverwrites, then that a drag moves contents,
+// notes and merges, re-points formulas on every sheet, undoes and redoes;
+// that a Ctrl-drag copies with shifted references; that an overlapping
+// move works; and that a move past the sheet's edge fails.
 func TestMoveCells(t *testing.T) {
 	b := newBook()
 	for ref, v := range map[string]string{"A1": "1", "A2": "2", "B1": "=A1*10", "C1": "=SUM(A1:A2)", "D5": "old"} {
@@ -88,6 +95,8 @@ func TestMoveCells(t *testing.T) {
 	}
 }
 
+// TestGroupUndo checks that changes between BeginGroup and EndGroup undo
+// and redo as one step, selecting the last change's range.
 func TestGroupUndo(t *testing.T) {
 	b := newBook()
 	b.enter(t, 0, "A1", "1")
@@ -109,8 +118,8 @@ func TestGroupUndo(t *testing.T) {
 	b.expect(t, "undo entry", map[string]string{"A1": "1", "C3": ""})
 }
 
-// Cut and paste, and dragging, re-point the defined names that refer to
-// the moved cells, in the same undo step.
+// TestMoveNames checks that cut and paste, and dragging, re-point the
+// defined names that refer to the moved cells, in the same undo step.
 func TestMoveNames(t *testing.T) {
 	b := newBook()
 	b.WB.Names = []model.DefinedName{

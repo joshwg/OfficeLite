@@ -1,3 +1,7 @@
+// Tests for cell formatting: Format and its undo, borders, merging, Step
+// Decimals, Paste Special, saving formats to both file formats, and rows
+// that grow with a format change.
+
 package edit
 
 import (
@@ -10,8 +14,13 @@ import (
 	"officelite/excel/model"
 )
 
+// styleOf is the style of the cell at ref on the first sheet.
 func (b *Book) styleOf(ref string) model.Style { return b.style(b.cell(0, ref).Style) }
 
+// TestFormatAndUndo checks that Format restyles a block (empty cells
+// too) without touching content, that a number format redoes displayed
+// text, that undo and redo restore styles, and that a whole-column
+// selection formats only the used rows.
 func TestFormatAndUndo(t *testing.T) {
 	b := newBook()
 	b.enter(t, 0, "A1", "1234.5")
@@ -49,6 +58,9 @@ func TestFormatAndUndo(t *testing.T) {
 	}
 }
 
+// TestBordersAndMerge checks the Outside and No Border presets, Merge &
+// Center (dropping other values, centering), Unmerge, undo, Merge Across
+// and Clear Formats unmerging.
 func TestBordersAndMerge(t *testing.T) {
 	b := newBook()
 	b.enter(t, 0, "A1", "x")
@@ -90,6 +102,8 @@ func TestBordersAndMerge(t *testing.T) {
 	}
 }
 
+// TestStepDecimals checks the format one decimal step gives for General
+// cells, built-in and custom codes, and that a date format has none.
 func TestStepDecimals(t *testing.T) {
 	for _, tc := range []struct {
 		id         int
@@ -118,6 +132,9 @@ func TestStepDecimals(t *testing.T) {
 	}
 }
 
+// TestPasteSpecial checks that Paste Values drops formulas and formats,
+// Paste Formulas shifts formulas without formats, and Paste Formats
+// styles empty cells over the whole target.
 func TestPasteSpecial(t *testing.T) {
 	b := newBook()
 	b.enter(t, 0, "A1", "2")
@@ -197,6 +214,8 @@ func TestFormatsSave(t *testing.T) {
 	}
 }
 
+// TestGrowRows checks that GrowRows joins the last format change, so one
+// undo takes back both the font size and the row height.
 func TestGrowRows(t *testing.T) {
 	b := newBook()
 	b.enter(t, 0, "A1", "x")

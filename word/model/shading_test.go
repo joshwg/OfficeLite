@@ -1,3 +1,6 @@
+// Tests for the Shading command's target choice and its effect on text,
+// paragraphs and cells.
+
 package model
 
 import (
@@ -5,6 +8,10 @@ import (
 	"testing"
 )
 
+// TestShadingTargets checks that Shading colors the text for part of a
+// paragraph, the paragraphs for a caret or whole paragraphs, that No Color
+// hides a style's shading with "auto", and that each command undoes as one
+// "Shading" step.
 func TestShadingTargets(t *testing.T) {
 	d, e := newDoc("Hello world", "Second", "Third")
 	p0 := d.Body[0].(*Paragraph)
@@ -72,6 +79,9 @@ func TestShadingTargets(t *testing.T) {
 	}
 }
 
+// TestShadingCells checks that a caret in a cell shades its paragraph, a
+// selected cell or table shades the cells (not their text), and undo
+// restores the cells.
 func TestShadingCells(t *testing.T) {
 	e := typed(t, "Before")
 	e.InsertTable(2, 2)

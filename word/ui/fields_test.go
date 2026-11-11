@@ -1,3 +1,6 @@
+// Tests for fields in the window: date formats, inserting and updating
+// fields, field codes and the Field dialog.
+
 package ui
 
 import (

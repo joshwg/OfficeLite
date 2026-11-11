@@ -1,3 +1,7 @@
+// Cell editing: the in-cell editor and the formula bar's, Enter and Edit
+// modes, committing and canceling an entry, and the bookkeeping after any
+// change (changed).
+
 package ui
 
 import (
@@ -43,6 +47,7 @@ type cellEditor struct {
 	checked         bool           // the entry passed its validation alert (validation.go)
 }
 
+// editSelection is the translucent color of selected text in the editors.
 var editSelection = color.NRGBA{R: 0xA8, G: 0x5C, B: 0x00, A: 0x50}
 
 // editText is a cell's content as editing starts with it: the formula,
@@ -102,6 +107,18 @@ func (a *App) beginEdit(text string, enter, bar bool) {
 	a.errMsg = ""
 }
 
+// syncIME gives the platform's text input e's text and caret right after
+// e was asked for the focus. A focus change clears them (to an empty text,
+// caret at 0) and e reports its own only when it next sees a change, a
+// frame later; characters typed meanwhile went in at 0, in front of the
+// first ("12345" came out "23451"). The commands run in order, after the
+// focus change.
+func syncIME(gtx layout.Context, e *widget.Editor) {
+	start, end := e.Selection()
+	gtx.Execute(key.SnippetCmd{Tag: e, Snippet: key.Snippet{Range: key.Range{Start: 0, End: e.Len()}, Text: e.Text()}})
+	gtx.Execute(key.SelectionCmd{Tag: e, Range: key.Range{Start: start, End: end}})
+}
+
 // editingText is the entry being edited.
 func (a *App) editingText() string {
 	if a.ed.inBar {
@@ -159,6 +176,7 @@ func (a *App) editKeys(gtx layout.Context) {
 	ed := &a.ed
 	if ed.focus != nil {
 		requestFocus(gtx, ed.focus)
+		syncIME(gtx, ed.focus)
 		ed.focus = nil
 	}
 	// A click in the formula bar starts editing there; while editing, it
@@ -172,13 +190,34 @@ func (a *App) editKeys(gtx layout.Context) {
 	case ed.active && gtx.Focused(&ed.cell) && ed.inBar:
 		ed.inBar = false
 	}
-	if !ed.active {
+	if !ed.active || !a.editorKeys(gtx) {
 		return
 	}
+	// Let the editor with the caret take the typing now, so that the other
+	// one shows it in this frame.
+	focused := &ed.cell
+	if ed.inBar {
+		focused = &ed.bar
+	}
+	for {
+		if _, ok := focused.Update(gtx); !ok {
+			break
+		}
+	}
+	a.syncEditors()
+}
+
+// editorKeys handles the keys that end or steer an entry in either editor
+// and reports whether editing goes on. Its filters must be registered in
+// every frame of an entry, the first included: Gio drops a key that no
+// filter of the previous frame matched, so Ctrl+Enter (or Tab, or an
+// arrow in Enter mode) pressed right after the first character was lost.
+func (a *App) editorKeys(gtx layout.Context) bool {
+	ed := &a.ed
 	for _, tag := range []*widget.Editor{&ed.cell, &ed.bar} {
 		filters := []event.Filter{
-			key.Filter{Focus: tag, Name: key.NameReturn, Optional: key.ModShift | key.ModAlt | key.ModCtrl},
-			key.Filter{Focus: tag, Name: key.NameEnter, Optional: key.ModShift | key.ModAlt | key.ModCtrl},
+			key.Filter{Focus: tag, Name: key.NameReturn, Optional: key.ModShift | key.ModAlt | key.ModShortcut},
+			key.Filter{Focus: tag, Name: key.NameEnter, Optional: key.ModShift | key.ModAlt | key.ModShortcut},
 			key.Filter{Focus: tag, Name: key.NameTab, Optional: key.ModShift},
 			key.Filter{Focus: tag, Name: key.NameF2},
 		}
@@ -202,7 +241,7 @@ func (a *App) editKeys(gtx layout.Context) {
 				switch {
 				case e.Modifiers.Contain(key.ModAlt):
 					tag.Insert("\n") // a line break in the cell
-				case e.Modifiers.Contain(key.ModCtrl):
+				case e.Modifiers.Contain(key.ModShortcut): // Cmd on macOS
 					a.commitEdit(0, 0)
 				case shift:
 					a.commitEdit(-1, 0)
@@ -227,22 +266,11 @@ func (a *App) editKeys(gtx layout.Context) {
 				a.commitEdit(0, 1)
 			}
 			if !ed.active {
-				return
+				return false
 			}
 		}
 	}
-	// Let the editor with the caret take the typing now, so that the other
-	// one shows it in this frame.
-	focused := &ed.cell
-	if ed.inBar {
-		focused = &ed.bar
-	}
-	for {
-		if _, ok := focused.Update(gtx); !ok {
-			break
-		}
-	}
-	a.syncEditors()
+	return true
 }
 
 // syncEditors copies the text of the editor with the caret to the other.

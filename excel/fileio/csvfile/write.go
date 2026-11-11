@@ -1,3 +1,5 @@
+// Writing a sheet as delimited text the way Excel's "Save as CSV" does.
+
 package csvfile
 
 import (

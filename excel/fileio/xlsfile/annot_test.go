@@ -4,6 +4,7 @@ package xlsfile
 
 import (
 	"bytes"
+	"reflect"
 	"testing"
 
 	"officelite/excel/model"
@@ -52,7 +53,7 @@ func TestHyperlinksRoundTrip(t *testing.T) {
 		t.Errorf("notes = %+v", g.Notes)
 	}
 	for k, want := range sh.Notes {
-		if n, _ := g.NoteAt(k[0], k[1]); n != want {
+		if n, _ := g.NoteAt(k[0], k[1]); !reflect.DeepEqual(n, want) {
 			t.Errorf("note %v = %+v, want %+v", k, n, want)
 		}
 	}
@@ -74,10 +75,10 @@ func TestNoteControlCharsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n, _ := got.Sheets[0].NoteAt(1, 1); n != want {
-		t.Errorf("note = %+q, want %+q", n, want)
+	if n, _ := got.Sheets[0].NoteAt(1, 1); !reflect.DeepEqual(n, want) {
+		t.Errorf("note = %#v, want %#v", n, want)
 	}
-	if n, _ := got.Sheets[0].NoteAt(2, 2); n != (model.Note{Author: "Josh", Text: "€\x02\x00z"}) {
-		t.Errorf("note 2 = %+q", n)
+	if n, _ := got.Sheets[0].NoteAt(2, 2); !reflect.DeepEqual(n, model.Note{Author: "Josh", Text: "€\x02\x00z"}) {
+		t.Errorf("note 2 = %#v", n)
 	}
 }

@@ -1,3 +1,5 @@
+// Tests for files dropped onto the window.
+
 package ui
 
 import (
@@ -10,6 +12,7 @@ import (
 	"officelite/common/doctype"
 )
 
+// launched records one call of Config.Launch.
 type launched struct {
 	kind doctype.Kind
 	path string

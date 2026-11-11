@@ -1,5 +1,6 @@
 // Non-Windows stand-ins for the OS hooks: owner-file liveness by age,
-// no share-mode checks, no owner files written.
+// no share-mode checks, no owner files acquired (createOwner works but
+// isNetwork is always false).
 
 //go:build !windows
 
@@ -30,8 +31,22 @@ func sharingViolation(error) bool { return false }
 // isNetwork is always false: owner files are only written on Windows.
 func isNetwork(string) bool { return false }
 
-// createOwner always fails with errUnsupported.
-func createOwner(string, []byte) (*os.File, error) { return nil, errUnsupported }
+// createOwner creates the owner file exclusively (O_EXCL: an existing
+// one fails with os.IsExist and is left alone) and keeps it open. Nothing
+// calls it outside tests here: isNetwork is false, so no owner file is
+// acquired.
+func createOwner(path string, data []byte) (*os.File, error) {
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		_ = os.Remove(path)
+		return nil, err
+	}
+	return f, nil
+}
 
 // pidAlive reports whether process pid is running (signal 0 succeeds, or
 // is refused for a process of another user).

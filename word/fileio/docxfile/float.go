@@ -1,3 +1,11 @@
+// Floating objects: a w:drawing holding a wp:anchor (usually inside
+// mc:AlternateContent, whose mc:Fallback is the VML version), or a VML
+// w:pict whose shape is positioned absolutely. The anchor's position,
+// size and wrapping, the shape's geometry, fill and outline, and a text
+// box's content become a model.Floating; the original XML is kept to be
+// written back. Objects from other formats are written as DrawingML
+// anchors (wps shapes, text boxes and pictures).
+
 package docxfile
 
 import (
@@ -6,14 +14,6 @@ import (
 
 	"officelite/word/model"
 )
-
-// Floating objects: a w:drawing holding a wp:anchor (usually inside
-// mc:AlternateContent, whose mc:Fallback is the VML version), or a VML
-// w:pict whose shape is positioned absolutely. The anchor's position,
-// size and wrapping, the shape's geometry, fill and outline, and a text
-// box's content become a model.Floating; the original XML is kept to be
-// written back. Objects from other formats are written as DrawingML
-// anchors (wps shapes, text boxes and pictures).
 
 // floatOf reads the floating object of a w:drawing, mc:AlternateContent
 // or w:pict element, or returns nil when it is inline.
@@ -32,11 +32,14 @@ func (r *reader) floatOf(k *node) *model.Floating {
 	return nil
 }
 
+// emuPt converts an EMU attribute value to points (0 if not a number).
 func emuPt(s string) float64 {
 	v, _ := strconv.ParseFloat(s, 64)
 	return v / 12700
 }
 
+// relFroms maps wp:positionH/V relativeFrom values to the model's
+// references; the margin edges all count as the page.
 var relFroms = map[string]model.FloatRel{
 	"column": model.RelColumn, "paragraph": model.RelParagraph, "page": model.RelPage, "margin": model.RelMargin,
 	"line": model.RelLine, "character": model.RelCharacter, "text": model.RelColumn,
@@ -292,16 +295,20 @@ func vmlColor(s string) string {
 
 // ---- writing ----
 
+// relNames is the relativeFrom value for each FloatRel.
 var relNames = map[model.FloatRel]string{}
 
+// init fills relNames from model.FloatRelNames.
 func init() {
 	for i, n := range model.FloatRelNames {
 		relNames[model.FloatRel(i)] = n
 	}
 }
 
+// ptEMU formats points as a whole number of EMUs, rounded away from zero.
 func ptEMU(v float64) string { return strconv.FormatInt(int64(v*12700+0.5*sign(v)), 10) }
 
+// sign is −1 for a negative v, else 1.
 func sign(v float64) float64 {
 	if v < 0 {
 		return -1

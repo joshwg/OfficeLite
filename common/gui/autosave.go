@@ -7,6 +7,8 @@ import (
 	"image"
 	"image/color"
 	"log"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"gioui.org/font"
@@ -19,6 +21,7 @@ import (
 
 	"officelite/common/autosave"
 	"officelite/common/limits"
+	"officelite/common/lockfile"
 )
 
 // AutoSaveStatus is what a window's title says after the document's name:
@@ -179,4 +182,112 @@ func (b *Backstage) AutoSaveRows(th *Theme, ext string) []layout.Widget {
 		th.Paragraph("The AutoSave switch in the title bar saves into the file itself a few seconds after each edit. "+
 			"Unlike OneDrive there's no version history, so it's off unless you turn it on.", MutedText),
 	}
+}
+
+// AutoSave is a window's AutoSave state: when the title bar's switch is
+// on, the document is saved into its file a few seconds after each edit
+// (common/autosave), in the background from a clone. Rev is the app's
+// count of edits (it only grows).
+type AutoSave struct {
+	Saver  *autosave.Saver
+	Switch AutoSaveSwitch
+	Seen   int    // the edit count last seen, to notice edits
+	Rev    int    // the edit count being saved
+	Path   string // the file being saved
+	// SavedAt is when the last AutoSave ended well: the title says
+	// "Saved" for a moment.
+	SavedAt time.Time
+	// Elsewhere: the file was opened with Open Anyway, so it is someone
+	// else's to save.
+	Elsewhere bool
+}
+
+// AutoSaveFile is what decides whether AutoSave can be on for a window's
+// document, for AutoSaveBlocked.
+type AutoSaveFile struct {
+	Noun string // "document" or "workbook"
+	Ext  string // the format AutoSave writes: ".docx" or ".xlsx"
+	Path string // the window's file; "" for none
+	// Loading: the window's file is still being read.
+	Loading, Recovered, ReadOnly, Elsewhere bool
+	// Macros: the document still has the macros it was opened with,
+	// which an AutoSave would drop without the warning a save gives.
+	Macros bool
+}
+
+// AutoSaveBlocked is why AutoSave can't be on for f (the switch's
+// tooltip); "" when it can.
+func AutoSaveBlocked(f AutoSaveFile) string {
+	switch {
+	case f.Loading:
+		return "Opening the " + f.Noun + "…"
+	case f.Recovered:
+		return "This is a recovered " + f.Noun + ". Save it as " + f.Ext + " to turn AutoSave on."
+	case f.ReadOnly:
+		return "This " + f.Noun + " is read-only. Save a copy as " + f.Ext + " to turn AutoSave on."
+	case f.Elsewhere:
+		return "Someone else has this file open, so AutoSave is off: it would overwrite their changes."
+	case f.Macros:
+		return "This " + f.Noun + " contains macros, which AutoSave would remove. Save it once to turn AutoSave on."
+	case f.Path == "" || !strings.EqualFold(filepath.Ext(f.Path), f.Ext):
+		return AutoSaveWorksWith(f.Ext)
+	}
+	return ""
+}
+
+// Loaded sets AutoSave for a document just opened or saved as, which
+// blocked says why AutoSave can't be on for ("" when it can): off, or on
+// when that is the user's default.
+func (s *AutoSave) Loaded(blocked string) {
+	if blocked != "" {
+		s.Saver.SetOn(false)
+	} else if autosave.Default() {
+		s.Saver.SetOn(true)
+	}
+}
+
+// Frame ends every frame: a document that can no longer be AutoSaved
+// (blocked gives why) turns AutoSave off, and an edit since the last
+// frame (rev changed) of a modified document starts the countdown to a
+// save.
+func (s *AutoSave) Frame(blocked func() string, rev int, modified bool) {
+	if s.Saver.On() && blocked() != "" {
+		s.Saver.SetOn(false)
+	}
+	if rev != s.Seen {
+		s.Seen = rev
+		if modified {
+			s.Saver.Edited()
+		}
+	}
+}
+
+// Ended runs on the UI goroutine when an AutoSave ends with err, the
+// window's file being path now. It returns the message to show (an error
+// has turned AutoSave off; the edits are still in the window and its
+// AutoRecover copy) and whether the save counts for the window's file:
+// not after an error, nor when the window was saved as another file
+// meanwhile.
+func (s *AutoSave) Ended(err error, path string) (errMsg string, ok bool) {
+	if err != nil {
+		s.SavedAt = time.Time{}
+		return "AutoSave turned off: " + lockfile.SaveError(s.Path, err), false
+	}
+	if s.Path != path {
+		return "", false // saved as another file meanwhile
+	}
+	s.SavedAt = time.Now()
+	return "", true
+}
+
+// Status is what the title says after the name (AutoSaveStatus).
+func (s *AutoSave) Status(gtx layout.Context) string {
+	return AutoSaveStatus(gtx, s.Saver, s.SavedAt)
+}
+
+// LayoutSwitch draws the title bar's AutoSave switch on a title bar of
+// color bg (see AutoSaveSwitch.Layout) and reports whether it was
+// clicked to be turned on or off.
+func (s *AutoSave) LayoutSwitch(gtx layout.Context, th *Theme, blocked string, bg color.NRGBA) (bool, layout.Dimensions) {
+	return s.Switch.Layout(gtx, th, s.Saver.On(), blocked, bg)
 }

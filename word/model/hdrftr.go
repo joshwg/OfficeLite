@@ -1,3 +1,6 @@
+// Headers and footers: the per-kind slots of a section, sub-documents for
+// editing them, their styles, and the page fields they hold.
+
 package model
 
 import (

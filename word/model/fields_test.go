@@ -1,3 +1,6 @@
+// Tests for field instruction parsing, evaluation, number and date
+// pictures, and Update Field at the caret.
+
 package model
 
 import (
@@ -163,8 +166,9 @@ func TestFormatDateTime(t *testing.T) {
 	}
 }
 
-// TestUpdateFieldsCaret updates the field next to the caret (before or
-// after it) and nothing when there's none, and reports what it skipped.
+// TestUpdateFieldsCaret checks that UpdateFields updates the field next to
+// the caret (before or after it), nothing when there's none, and reports
+// what it skipped.
 func TestUpdateFieldsCaret(t *testing.T) {
 	doc := New("Doc.docx")
 	p := &Paragraph{Runs: []Run{{Text: "ab"},

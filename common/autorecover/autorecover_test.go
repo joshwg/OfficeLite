@@ -6,13 +6,16 @@ package autorecover
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"io"
 	"officelite/common/limits"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -295,15 +298,108 @@ func TestClaimAll(t *testing.T) {
 	if o := Orphans(dir); len(o) != 0 {
 		t.Errorf("claimed entries still orphans: %+v", o)
 	}
-	// Another process claims b afterward: a re-claim by the first is
-	// the last writer, so ClaimAll reports who holds it now.
+	// Another live process holds b: a re-claim leaves it to that one.
 	other := b
-	other.PID, other.Started = os.Getpid()+1, selfStart+1
+	other.PID, other.Started = 4242, 7
 	if err := writeEntry(other.Sidecar, other); err != nil {
 		t.Fatal(err)
 	}
+	fakeAlive(t, func(pid int, started int64) bool { return pid == 4242 || pid == os.Getpid() })
+	if got := ClaimAll([]Entry{b}); len(got) != 0 {
+		t.Errorf("claimed another live process's entry: %+v", got)
+	}
+	// Once it is gone, b is free again.
+	fakeAlive(t, func(pid int, started int64) bool { return pid == os.Getpid() })
 	if got := ClaimAll([]Entry{b}); len(got) != 1 {
-		t.Errorf("re-claim %+v", got)
+		t.Errorf("re-claim of a dead process's entry %+v", got)
+	}
+	if _, err := os.Stat(claimPath(b.Sidecar)); !os.IsNotExist(err) {
+		t.Errorf("claim file left behind: %v", err)
+	}
+}
+
+// fakeAlive replaces the process-liveness test for the rest of t.
+func fakeAlive(t *testing.T, f func(pid int, started int64) bool) {
+	t.Helper()
+	saved := alive
+	alive = f
+	t.Cleanup(func() { alive = saved })
+}
+
+// TestClaimAllConcurrent checks that when several OfficeLites (simulated
+// pids, all alive) claim the same entries at once, each entry ends up
+// claimed by exactly one of them, and the sidecar names that one.
+func TestClaimAllConcurrent(t *testing.T) {
+	const claimers, rounds = 8, 20
+	fakeAlive(t, func(pid int, started int64) bool { return pid >= 1000 && pid < 1000+claimers })
+	for r := range rounds {
+		dir := t.TempDir()
+		var entries []Entry
+		for i := range 6 {
+			entries = append(entries, writeFake(t, dir, fmt.Sprintf("E%d~%02d", r, i), Entry{Name: "E.docx", App: Word, Saved: time.Now()}))
+		}
+		got := make([][]Entry, claimers)
+		var wg sync.WaitGroup
+		for c := range claimers {
+			wg.Go(func() { got[c] = claimAll(entries, 1000+c, int64(c)) })
+		}
+		wg.Wait()
+		for _, e := range entries {
+			var by []int
+			for c := range claimers {
+				for _, g := range got[c] {
+					if g.Sidecar == e.Sidecar {
+						by = append(by, 1000+c)
+					}
+				}
+			}
+			if len(by) != 1 {
+				t.Fatalf("round %d: %s claimed by %v", r, filepath.Base(e.Sidecar), by)
+			}
+			if side, err := readEntry(e.Sidecar); err != nil || side.PID != by[0] || side.Started != int64(by[0]-1000) {
+				t.Errorf("round %d: sidecar names %d/%d, claimer %d (%v)", r, side.PID, side.Started, by[0], err)
+			}
+			if _, err := os.Stat(claimPath(e.Sidecar)); !os.IsNotExist(err) {
+				t.Errorf("claim file left behind: %v", err)
+			}
+		}
+	}
+}
+
+// TestStaleClaim checks that a claim file left by a dead claimer, or an
+// old one naming nobody, is taken over, and that a live claimer's or a
+// fresh empty one blocks the claim.
+func TestStaleClaim(t *testing.T) {
+	fakeAlive(t, func(pid int, started int64) bool { return pid == 77 })
+	dir := t.TempDir()
+	for _, tc := range []struct {
+		content string
+		age     time.Duration
+		want    bool
+	}{
+		{"66 1", 0, true},  // its claimer died
+		{"77 1", 0, false}, // its claimer is still claiming
+		{"", 0, false},     // being written
+		{"", limits.RecoveryClaimStale + time.Minute, true},
+	} {
+		e := writeFake(t, dir, "S~"+strconv.Itoa(len(files(t, dir))), Entry{Name: "S.docx", App: Word, Saved: time.Now()})
+		claim := claimPath(e.Sidecar)
+		if err := os.WriteFile(claim, []byte(tc.content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if tc.age > 0 {
+			at := time.Now().Add(-tc.age)
+			if err := os.Chtimes(claim, at, at); err != nil {
+				t.Fatal(err)
+			}
+		}
+		got := len(claimAll([]Entry{e}, 88, 0)) == 1
+		if got != tc.want {
+			t.Errorf("claim file %q aged %v: claimed %v", tc.content, tc.age, got)
+		}
+		if _, err := os.Stat(claim); tc.want != os.IsNotExist(err) {
+			t.Errorf("claim file %q aged %v: removed %v", tc.content, tc.age, os.IsNotExist(err))
+		}
 	}
 }
 

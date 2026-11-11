@@ -1,3 +1,5 @@
+// Tests for opening Apple Numbers files through the content-sniffing Read.
+
 package fileio
 
 import (
@@ -8,8 +10,9 @@ import (
 	"testing"
 )
 
-// A .numbers file opens through Read (by content) but can't be saved
-// back: Save goes to Save As.
+// TestOpenNumbers checks that a .numbers file opens through Read (by
+// content) but can't be saved back: Save goes to Save As. An iWork '09
+// package is refused as not supported.
 func TestOpenNumbers(t *testing.T) {
 	data, err := os.ReadFile("../../Samples/excel-tests/Sample3.numbers")
 	if err != nil {

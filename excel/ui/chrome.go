@@ -149,6 +149,9 @@ func (a *App) menus() []gui.Menu {
 
 // menuChosen runs the menu item or switches to the tab ev names.
 func (a *App) menuChosen(ev gui.MenuEvent) {
+	if a.opening() && ev.Item != gui.MenuTab && ev.Menu != menuFile && (ev.Menu != menuView || ev.Item > 2) {
+		return // editing commands wait for the workbook (app.go); zoom doesn't
+	}
 	if ev.Menu > menuView {
 		i := ev.Menu - menuView - 1
 		if n := len(a.pivotMenus()); i >= n {
@@ -257,9 +260,14 @@ func (a *App) layout(gtx layout.Context) {
 	a.insertDialogInput(gtx)
 	a.pivotDialogInput(gtx)
 	a.chartDialogInput(gtx)
-	a.insertKeys(gtx)
+	opening := a.opening() // a placeholder workbook: no editing (app.go)
+	if !opening {
+		a.insertKeys(gtx)
+	}
 	a.globalKeys(gtx)
-	a.editKeys(gtx)
+	if !opening {
+		a.editKeys(gtx)
+	}
 	defer a.autoSaveFrame() // after this frame's edits (autosave.go)
 	gui.FillRect(gtx.Ops, image.Rectangle{Max: gtx.Constraints.Max}, chromeBG)
 	if a.back.Visible {
@@ -277,13 +285,13 @@ func (a *App) layout(gtx layout.Context) {
 			return a.menu.Layout(gtx, a.ui, a.menus(), a.menuChosen)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			if a.onChartSheet() && a.tab < tabChartDesign {
-				gtx = gtx.Disabled() // no cells to format (chart.go)
+			if a.onChartSheet() && a.tab < tabChartDesign || opening {
+				gtx = gtx.Disabled() // no cells to format (chart.go), or none yet
 			}
 			return a.layoutRibbon(gtx)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			if a.onChartSheet() {
+			if a.onChartSheet() || opening {
 				gtx = gtx.Disabled()
 			}
 			return a.formulaBar(gtx)
@@ -292,7 +300,12 @@ func (a *App) layout(gtx layout.Context) {
 			return layout.Flex{}.Layout(gtx,
 				layout.Flexed(1, a.layoutGrid),
 				layout.Rigid(a.vScrollbar),
-				layout.Rigid(a.layoutPane), // PivotTable Fields (pivotpane.go)
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					if opening {
+						gtx = gtx.Disabled()
+					}
+					return a.layoutPane(gtx) // PivotTable Fields (pivotpane.go)
+				}),
 			)
 		}),
 		layout.Rigid(a.bottomBar),
@@ -334,6 +347,12 @@ func (a *App) globalKeys(gtx layout.Context) {
 			case key.NameF9, key.NameF11, key.NameF1, "+", "=", "-", "0":
 				if a.back.Visible {
 					continue // the File page has no sheet to act on
+				}
+			}
+			switch e.Name {
+			case key.NameF9, key.NameF11, key.NameF1:
+				if a.opening() {
+					continue // editing waits for the workbook (app.go)
 				}
 			}
 			if a.rename.active {
@@ -588,7 +607,12 @@ func (a *App) bottomBar(gtx layout.Context) layout.Dimensions {
 	gui.HLine(gtx.Ops, 0, gtx.Constraints.Max.X, 0, 1, chromeLine)
 	barW := gtx.Constraints.Max.X * 2 / 5
 	return layout.Flex{}.Layout(gtx,
-		layout.Flexed(1, a.sheetTabsWithMenu), // ctxmenu.go
+		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			if a.opening() {
+				gtx = gtx.Disabled() // no sheets to add or rename yet (app.go)
+			}
+			return a.sheetTabsWithMenu(gtx) // ctxmenu.go
+		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			gtx.Constraints = layout.Exact(image.Pt(barW, h))
 			st := a.state()

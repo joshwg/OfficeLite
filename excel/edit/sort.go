@@ -1,3 +1,6 @@
+// Sorting a range's rows by up to three keys, with Excel's ordering of
+// kinds; CurrentRegion and the header-row guess the Sort dialog uses.
+
 package edit
 
 import (
@@ -46,6 +49,10 @@ func (b *Book) Sort(sheet int, spec SortSpec) (calc.Result, error) {
 	return b.structural(op, Where{sheet, r})
 }
 
+// applySort carries out a sortRows operation: it saves the sheet for
+// revert, then moves the data rows (cells, notes, links, validation rules
+// and spill areas) into sorted order. ErrSortMerged when a merged area
+// touches the data.
 func (b *Book) applySort(op *structural) (calc.Result, error) {
 	sh := b.WB.Sheets[op.sheet]
 	spec := op.sort
@@ -136,6 +143,9 @@ func sortRank(c *model.Cell) int {
 	return 4
 }
 
+// compareSort orders two cells for one sort key: by kind rank, then
+// numbers (and logical values) by value and text by Compare, reversed
+// for desc; blanks stay last in either order.
 func compareSort(a, b *model.Cell, desc, matchCase bool) int {
 	ra, rb := sortRank(a), sortRank(b)
 	if ra == 4 || rb == 4 {

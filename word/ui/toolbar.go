@@ -1,3 +1,6 @@
+// The Home ribbon: its controls, tooltips, the formatting state they
+// show, and the font, size and style lists.
+
 package ui
 
 import (
@@ -33,6 +36,8 @@ func choiceHex(c gui.ColorChoice) string {
 
 var lineSpacings = []float64{1, 1.08, 1.15, 1.5, 2, 2.5, 3}
 
+// toolbar is the ribbon's state: its controls and the cached formatting
+// they show.
 type toolbar struct {
 	ribbon gui.Ribbon
 
@@ -116,6 +121,7 @@ type toolState struct {
 	super, sub                  bool
 }
 
+// toolKey is what the cached toolState was computed for.
 type toolKey struct {
 	version int
 	sel     model.Selection

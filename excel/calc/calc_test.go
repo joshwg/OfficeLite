@@ -1,3 +1,5 @@
+// Tests for Recalculate, and the workbook helpers the package's tests share.
+
 package calc
 
 import (
@@ -8,8 +10,11 @@ import (
 	"officelite/excel/model"
 )
 
+// now is the fixed clock every test recalculates at.
 var now = time.Date(2026, 10, 15, 13, 30, 0, 0, time.UTC)
 
+// book returns a two-sheet workbook ("Sheet1", "Data") with cells set on
+// the first by A1-style name; style 1 is a yyyy-mm-dd date format.
 func book(cells map[string]model.Cell) *model.Workbook {
 	sh := model.NewSheet("Sheet1")
 	for ref, c := range cells {
@@ -22,6 +27,7 @@ func book(cells map[string]model.Cell) *model.Workbook {
 		Styles: []model.Style{model.DefaultStyle(), dates}}
 }
 
+// cellPos converts an A1-style name to a zero-based row and column.
 func cellPos(ref string) (row, col int) {
 	i := 0
 	for ref[i] >= 'A' {
@@ -34,14 +40,20 @@ func cellPos(ref string) (row, col int) {
 	return n - 1, model.ParseColName(ref[:i])
 }
 
+// get returns the cell named ref on wb's first sheet.
 func get(wb *model.Workbook, ref string) *model.Cell {
 	row, col := cellPos(ref)
 	return wb.Sheets[0].Get(row, col)
 }
 
+// num and fx build a number cell (its text a placeholder "x", so a
+// recalculated text shows) and a formula cell.
 func num(v float64) model.Cell { return model.Cell{Kind: model.KindNumber, Num: v, Text: "x"} }
 func fx(f string) model.Cell   { return model.Cell{Formula: f} }
 
+// TestRecalculate checks that a full recalculation evaluates arithmetic,
+// chains, errors, empty cells, formats, cross-sheet references and defined
+// names, and reports circular references.
 func TestRecalculate(t *testing.T) {
 	wb := book(map[string]model.Cell{
 		"A1": num(2),
@@ -50,7 +62,7 @@ func TestRecalculate(t *testing.T) {
 		"B2": fx("B1+1"), // depends on B1
 		"B3": fx("IF(B2>5,\"big\",\"small\")"),
 		"B4": fx("1/0"),
-		"B5": fx("A9"), // empty cell -> 0
+		"B5": fx("A9"), // empty cell → 0
 		"B6": {Formula: "45000", Style: 1},
 		"B7": fx("Data!A1&\"!\""),
 		"B8": fx("TaxRate*100"),
@@ -78,6 +90,8 @@ func TestRecalculate(t *testing.T) {
 	}
 }
 
+// TestMissingModeKeepsCachedValues checks that Missing mode keeps a saved
+// value and calculates only the formulas without one.
 func TestMissingModeKeepsCachedValues(t *testing.T) {
 	cached := model.Cell{Formula: "1+1", Kind: model.KindNumber, Num: 99, Text: "99"}
 	wb := book(map[string]model.Cell{"A1": cached, "A2": fx("A1*2")})
@@ -90,6 +104,9 @@ func TestMissingModeKeepsCachedValues(t *testing.T) {
 	}
 }
 
+// TestSpill checks that dynamic arrays spill, are read by later formulas,
+// give #SPILL! when blocked, show one element when not dynamic, and clear
+// their old area when a result shrinks.
 func TestSpill(t *testing.T) {
 	wb := book(map[string]model.Cell{
 		"A1": {Formula: "{1,2;3,4}*10", Dynamic: true},

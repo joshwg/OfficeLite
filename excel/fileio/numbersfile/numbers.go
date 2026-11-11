@@ -1,8 +1,9 @@
 // Package numbersfile imports Apple Numbers spreadsheets (.numbers, 2013
 // and later) read-only: each table becomes a sheet with its values,
-// formats, merged cells, sizes and basic cell styles. Formulas come in as
-// their last computed values; charts, pictures and shapes are dropped
-// with a warning.
+// formats, merged cells, sizes and basic cell styles. Formulas are
+// translated to Excel's where they give the same value, and come in as
+// their last computed values otherwise; charts, pictures and shapes are
+// dropped with a warning.
 package numbersfile
 
 import (
@@ -35,16 +36,18 @@ const (
 	defaultSize = 10
 )
 
+// reader holds the state of one import: the document, the workbook being
+// built, the style cache and the warnings collected per table.
 type reader struct {
 	doc       *iwork.Document
 	wb        *model.Workbook
 	nf        *numfmt.Formatter
-	styles    map[model.Style]uint32
-	names     map[string]bool
-	formulas  int // cells whose formula came in as its value
+	styles    map[model.Style]uint32 // style → index in wb.Styles
+	names     map[string]bool        // sheet names used, lower-cased
+	formulas  int                    // cells whose formula came in as its value
 	tr        *translator
-	tableWarn map[string][]string // a table warning -> the sheets it applies to
-	warnOrder []string
+	tableWarn map[string][]string // a table warning → the sheets it applies to
+	warnOrder []string            // tableWarn keys in first-seen order
 }
 
 // Read imports a .numbers file.
@@ -182,6 +185,9 @@ func (r *reader) sheetName(name string) string {
 	return name
 }
 
+// addTable appends a sheet named name holding table t: its row and column
+// sizes, merges, frozen headers and cells, with formulas translated where
+// possible. Cells beyond the sheet limits are counted and warned about.
 func (r *reader) addTable(t *iwork.Table, name string) {
 	sh := model.NewSheet(name)
 	r.wb.Sheets = append(r.wb.Sheets, sh)

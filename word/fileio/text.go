@@ -1,3 +1,6 @@
+// Plain-text (.txt) reading and writing: one paragraph per line, table
+// cells separated by tabs.
+
 package fileio
 
 import (

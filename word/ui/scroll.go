@@ -1,3 +1,5 @@
+// Scrollbar settings for the page view.
+
 package ui
 
 import "fmt"

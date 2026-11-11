@@ -1,3 +1,5 @@
+// Tests for writing delimited text: quoting, padding and the round trip.
+
 package csvfile
 
 import (
@@ -7,6 +9,9 @@ import (
 	"officelite/excel/model"
 )
 
+// TestWrite checks that Write produces Excel's CSV: a BOM, CRLF rows padded
+// to the used width, quoting only for fields holding the delimiter, a quote
+// or a newline, and that the output reads back as the same text.
 func TestWrite(t *testing.T) {
 	sh := model.NewSheet("S")
 	text := func(r, c int, s string) { sh.Set(r, c, model.Cell{Text: s, Kind: model.KindText}) }
@@ -52,6 +57,8 @@ func TestWrite(t *testing.T) {
 	}
 }
 
+// bytesOf writes sh with delim and returns the bytes, failing the test on
+// error.
 func bytesOf(t *testing.T, sh *model.Sheet, delim rune) []byte {
 	t.Helper()
 	var buf bytes.Buffer
@@ -61,6 +68,7 @@ func bytesOf(t *testing.T, sh *model.Sheet, delim rune) []byte {
 	return buf.Bytes()
 }
 
+// TestWriteEmpty checks that an empty sheet writes as just the BOM.
 func TestWriteEmpty(t *testing.T) {
 	if got := bytesOf(t, model.NewSheet("S"), ','); string(got) != "\xEF\xBB\xBF" {
 		t.Errorf("empty sheet = %q", got)

@@ -1,3 +1,7 @@
+// Home commands added to the Home menu after Modify Style: find and
+// replace, paste options, the Format Painter, style management, field
+// updating and headers and footers.
+
 package ui
 
 import (
@@ -14,10 +18,6 @@ import (
 	"officelite/common/gui"
 	"officelite/word/model"
 )
-
-// Home commands added to the Home menu after Modify Style: find and
-// replace, paste options, the Format Painter, style management and
-// headers and footers.
 
 // Home menu items after homeModify (indexes into its Items).
 const (
@@ -43,6 +43,8 @@ const (
 	homeRemoveFooter
 )
 
+// homeExtraItems builds the Home menu items after Modify Style, in the
+// order of the constants above.
 func (d *window) homeExtraItems() []gui.MenuItem {
 	styleName := styleName(d.doc.Styles.Find(d.ed.ParaStyleID(d.ed.Sel.Caret.Para)))
 	return []gui.MenuItem{
@@ -316,6 +318,7 @@ type pasteSpecial struct {
 	tag        int
 }
 
+// layout draws the dialog and pastes the chosen way on OK.
 func (p *pasteSpecial) layout(gtx layout.Context, d *window) {
 	for i := range p.opts {
 		for p.opts[i].Clicked(gtx) {
@@ -386,6 +389,7 @@ func (d *window) painterClick(clicks int) {
 	}
 }
 
+// painterOff disarms the Format Painter and clears its notice.
 func (d *window) painterOff() {
 	if d.painter.armed {
 		d.painter.armed, d.painter.sticky = false, false

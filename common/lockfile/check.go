@@ -193,18 +193,34 @@ func acquireOwner(path string) *owner {
 	if holds(op) {
 		return nil // another window's (a document sharing the name)
 	}
+	file := takeOwner(op, Encode(f, UserName()))
+	if file == nil {
+		return nil
+	}
+	held.Store(key(op), true)
+	return &owner{path: op, f: file}
+}
+
+// takeOwner creates the owner file op holding data and returns it open,
+// or nil when someone else's is there or it can't be created. This user's
+// own leftover (stale, naming UserName) is removed first. The create is
+// exclusive, so an owner file that Office writes after the check is never
+// overwritten: the create then fails and the document counts as locked.
+func takeOwner(op string, data []byte) *os.File {
 	if _, err := os.Lstat(op); err == nil {
 		// Replace only this user's own leftover.
 		if name, ok := Decode(readOwner(op)); !ok || name != UserName() || ownerLive(op) {
 			return nil
 		}
+		if err := os.Remove(op); err != nil && !os.IsNotExist(err) {
+			return nil
+		}
 	}
-	file, err := createOwner(op, Encode(f, UserName()))
+	file, err := createOwner(op, data)
 	if err != nil {
-		return nil
+		return nil // os.IsExist: another program's appeared meanwhile
 	}
-	held.Store(key(op), true)
-	return &owner{path: op, f: file}
+	return file
 }
 
 // release closes and deletes the owner file.

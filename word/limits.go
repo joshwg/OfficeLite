@@ -25,6 +25,13 @@ const (
 // 1,638 pt, Word's largest font size.
 const MaxFontSize = 1638
 
+// UndoHistory is how many changes Undo can take back (as in ExcelLite);
+// the oldest steps past it are dropped.
+const UndoHistory = 100
+
+// MaxComments bounds how many comments are read from a .doc file.
+const MaxComments = 100_000
+
 // Number formats.
 const (
 	// MaxAlpha is the largest number Alpha spells in letters: z thirty
@@ -109,9 +116,9 @@ const (
 	// DocxMaxXMLDepth bounds element nesting: the readers walk the tree
 	// recursively, and no real document comes near it.
 	DocxMaxXMLDepth = 2000
-	// DocxMaxPartSize is the most bytes read from one part of the zip
-	// package: 1 GiB (2³⁰), well past any real part, so a zip bomb can't
-	// take all of memory.
+	// DocxMaxPartSize is the largest part of the zip package read: 1 GiB
+	// (2³⁰), well past any real part, so a zip bomb can't take all of
+	// memory; a larger part fails the open as damaged or too large.
 	DocxMaxPartSize = 1 << 30
 )
 

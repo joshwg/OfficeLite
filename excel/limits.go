@@ -43,6 +43,9 @@ const (
 	// MaxLinkCells bounds how many cells one hyperlink range
 	// (<hyperlink ref="A1:Z9999"> or an HLINK record) fills.
 	MaxLinkCells = 10000
+	// MaxCommentReplies bounds how many replies of one comment thread
+	// are read; the rest are dropped.
+	MaxCommentReplies = 1000
 	// MaxSheetLinkCells bounds how many cells all of a sheet's hyperlinks
 	// fill together.
 	MaxSheetLinkCells = 1 << 20
@@ -55,6 +58,14 @@ const (
 	// bomb can't fill memory or the temporary directory (excelize's own
 	// default is 16 GB). A larger workbook opens with unformatted values.
 	XlsxUnzipLimit = 1 << 30
+	// XlsxMaxPartSize caps the uncompressed size of each zip entry
+	// (part) the .xlsx reader and writer read themselves: 1 GB. A larger
+	// part is an error ("file is damaged or too large"), never cut short:
+	// at most this many bytes plus one are read to tell. A required part
+	// (workbook, relationships, shared strings, a worksheet) fails the
+	// open; an optional one (theme, chart, comments, pivot table) is left
+	// out with a warning.
+	XlsxMaxPartSize = 1 << 30
 	// XlsxMaxChartPartDepth is how many levels of a chart's relationships
 	// (chart → its parts → theirs ...) the reader follows to keep the
 	// parts the chart refers to.

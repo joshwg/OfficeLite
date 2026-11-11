@@ -1,3 +1,6 @@
+// Tests for the Home commands: find and replace, header editing by mouse,
+// the Format Painter, the Styles pane and dialogs, and Show/Hide ¶.
+
 package ui
 
 import (
@@ -10,6 +13,9 @@ import (
 	"officelite/word/model"
 )
 
+// TestFindReplace checks that Ctrl+F finds and counts matches, Enter /
+// Shift+Enter / F3 step through them, Match case narrows them, and
+// Replace / Replace All (one undo step) replace them.
 func TestFindReplace(t *testing.T) {
 	h := newHarness(t)
 	d := h.d
@@ -82,6 +88,9 @@ func TestFindReplace(t *testing.T) {
 	}
 }
 
+// TestHeaderFooterEditing checks that a double-click in the top margin
+// edits the header, typing goes there (and marks the document modified),
+// a page number field works in the footer, and Esc returns to the body.
 func TestHeaderFooterEditing(t *testing.T) {
 	h := newHarness(t)
 	d := h.d
@@ -146,6 +155,9 @@ func TestHeaderFooterEditing(t *testing.T) {
 	}
 }
 
+// TestFormatPainterAndPasteFormat checks that a single-click painter
+// applies once, a double-click one sticks until Esc, and Ctrl+Shift+C /
+// Ctrl+Shift+V copy and paste formatting.
 func TestFormatPainterAndPasteFormat(t *testing.T) {
 	h := newHarness(t)
 	d := h.d
@@ -189,6 +201,9 @@ func TestFormatPainterAndPasteFormat(t *testing.T) {
 	}
 }
 
+// TestStylesPaneAndDialogs checks the shortcuts that open the Styles
+// pane, New Style (Enter creates and applies the style), Paste Special
+// (Esc closes it) and Go To.
 func TestStylesPaneAndDialogs(t *testing.T) {
 	h := newHarness(t)
 	d := h.d
@@ -220,6 +235,8 @@ func TestStylesPaneAndDialogs(t *testing.T) {
 	}
 }
 
+// TestShowHideMarks checks that Ctrl+Shift+8, the ribbon's ¶ button and
+// the Home menu item toggle the marks together without changing the text.
 func TestShowHideMarks(t *testing.T) {
 	h := newHarness(t)
 	d := h.d

@@ -1,3 +1,6 @@
+// Text to Columns (Excel's three-step wizard as one dialog) and Remove
+// Duplicates.
+
 package ui
 
 import (
@@ -24,9 +27,6 @@ import (
 	"officelite/excel/model"
 )
 
-// Text to Columns (Excel's three-step wizard as one dialog) and Remove
-// Duplicates.
-
 // Text to Columns preview size.
 const (
 	ttcPreviewRows = 8
@@ -34,6 +34,8 @@ const (
 	ttcRulerH      = 18  // dp
 )
 
+// The Text qualifier and Date order drop-downs' items, and the preview's
+// fixed-pitch font.
 var (
 	qualifierNames = []string{`"`, `'`, "{none}"}
 	dateOrderNames = []string{"MDY", "DMY", "YMD", "MYD", "DYM", "YDM"}
@@ -135,6 +137,7 @@ func guessBreaks(lines []string) []int {
 	return out
 }
 
+// setBreaksText shows the current breaks in the list box ("10, 25").
 func (d *textToColsDialog) setBreaksText() {
 	parts := make([]string, len(d.breaks))
 	for i, b := range d.breaks {
@@ -172,6 +175,7 @@ func (d *textToColsDialog) formatOf(i int) edit.ColFormat {
 	return edit.ColGeneral
 }
 
+// setFormat sets preview column i's format, growing the list as needed.
 func (d *textToColsDialog) setFormat(i int, f edit.ColFormat) {
 	for len(d.formats) <= i {
 		d.formats = append(d.formats, edit.ColGeneral)
@@ -207,6 +211,8 @@ func (d *textToColsDialog) syncFormatControls(gtx layout.Context) {
 	}
 }
 
+// layoutTextToColsDialog draws Text to Columns with a live preview of the
+// split and runs it on Finish (k 1) or closes it on Cancel (k -1).
 func (a *App) layoutTextToColsDialog(gtx layout.Context, k int) {
 	d := &a.ins.ttc
 	for a.ins.ok.Clicked(gtx) {
@@ -569,6 +575,8 @@ func (a *App) removeDuplicatesDialog() {
 	a.showDialog(dlgRemoveDups)
 }
 
+// layoutRemoveDupsDialog draws Remove Duplicates and, on OK (k 1), removes
+// the rows repeating the checked columns and reports how many went.
 func (a *App) layoutRemoveDupsDialog(gtx layout.Context, k int) {
 	d := &a.ins.dup
 	for a.ins.ok.Clicked(gtx) {

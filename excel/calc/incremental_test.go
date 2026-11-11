@@ -1,3 +1,5 @@
+// Tests for the Calculator's incremental Update.
+
 package calc
 
 import (
@@ -20,6 +22,9 @@ func edit(c *Calculator, wb *model.Workbook, cells map[string]model.Cell) Result
 	return c.Update(areas, now)
 }
 
+// TestUpdateChain checks that an edit recalculates exactly its dependents:
+// through chains, ranges, defined names, other sheets, and formulas added
+// or replaced by constants.
 func TestUpdateChain(t *testing.T) {
 	wb := book(map[string]model.Cell{
 		"A1": num(1),
@@ -67,6 +72,7 @@ func TestUpdateChain(t *testing.T) {
 	}
 }
 
+// TestUpdateCircular checks that an edit creating a cycle reports it.
 func TestUpdateCircular(t *testing.T) {
 	wb := book(map[string]model.Cell{"A1": num(1), "B1": fx("A1+1")})
 	c := NewCalculator(wb, functions.Default())
@@ -77,8 +83,11 @@ func TestUpdateCircular(t *testing.T) {
 	}
 }
 
+// dyn builds a dynamic-array formula cell.
 func dyn(f string) model.Cell { return model.Cell{Formula: f, Dynamic: true} }
 
+// TestUpdateSpill checks that Update follows a spill as it grows, shrinks,
+// is blocked by a typed value and is unblocked again.
 func TestUpdateSpill(t *testing.T) {
 	wb := book(map[string]model.Cell{
 		"A1": num(3),
@@ -196,6 +205,7 @@ func spilled(sh *model.Sheet, r, c int) bool {
 	return false
 }
 
+// hasSpillError reports whether any cell of wb's first sheet shows #SPILL!.
 func hasSpillError(wb *model.Workbook) bool {
 	sh := wb.Sheets[0]
 	for r := 0; r < sh.UsedRows(); r++ {
@@ -208,9 +218,9 @@ func hasSpillError(wb *model.Workbook) bool {
 	return false
 }
 
-// OFFSET and INDIRECT read cells that don't appear in their formulas;
-// being volatile, they and their dependents are recalculated on every
-// update.
+// TestUpdateOffsetIndirect checks that OFFSET and INDIRECT, which read
+// cells that don't appear in their formulas, are recalculated with their
+// dependents on every update, being volatile.
 func TestUpdateOffsetIndirect(t *testing.T) {
 	wb := book(map[string]model.Cell{
 		"A1": num(1), "A2": num(2), "A3": num(3),
@@ -269,8 +279,8 @@ func TestUpdateOffsetIndirect(t *testing.T) {
 	check("recalculated", map[string]string{"D1": "40", "E1": "51", "L1": "51"})
 }
 
-// Array-shaping results spill and follow their inputs; TRIMRANGE(A:A)
-// grows with the column, and GROUPBY regroups.
+// TestUpdateShaping checks that array-shaping results spill and follow
+// their inputs: TRIMRANGE(A:A) grows with the column, and GROUPBY regroups.
 func TestUpdateShaping(t *testing.T) {
 	wb := book(map[string]model.Cell{
 		"A1": num(1), "A2": num(2), "A3": num(3),
@@ -299,8 +309,9 @@ func TestUpdateShaping(t *testing.T) {
 	check("A2 edited", map[string]string{"B2": "20", "C2": "20", "E1": "20", "G2": "23", "H1": "53"})
 }
 
-// A database function depends on its criteria range, including computed
-// criteria that read the database through relative references.
+// TestUpdateDatabase checks that a database function depends on its
+// criteria range, including computed criteria that read the database
+// through relative references.
 func TestUpdateDatabase(t *testing.T) {
 	text := func(s string) model.Cell { return model.Cell{Kind: model.KindText, Text: s} }
 	wb := book(map[string]model.Cell{

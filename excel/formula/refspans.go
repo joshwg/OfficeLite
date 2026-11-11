@@ -1,3 +1,6 @@
+// RefSpans locates the references in formula text (byte offsets + ranges)
+// so the editor can color them.
+
 package formula
 
 import (
@@ -6,7 +9,7 @@ import (
 	"officelite/excel"
 )
 
-// RefSpan is a reference found in formula text, for colouring the
+// RefSpan is a reference found in formula text, for coloring the
 // references of a formula being edited.
 type RefSpan struct {
 	Start, End int    // byte offsets in the text

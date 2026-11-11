@@ -50,6 +50,22 @@ const (
 	// in a recovery copy's file name, keeping the name (with its random
 	// suffix and extension) well short of what any file system allows.
 	RecoveryMaxStem = 60
+
+	// RecoveryClaimStale is how old a recovery entry's claim file must be
+	// to be taken over when it names no process (its claimer crashed
+	// between creating it and writing its pid). A claimer holds the file
+	// only while it re-checks and rewrites one sidecar.
+	RecoveryClaimStale = 10 * time.Second
+
+	// RecoveryClaimRemoveRetries is how many times a claimer retries
+	// removing its claim file on Windows, where another claimer reading it
+	// (to see whether it is stale) briefly blocks deletion. The i-th retry
+	// waits i×RecoveryClaimRemoveBackoff, about a third of a second in all.
+	RecoveryClaimRemoveRetries = 8
+
+	// RecoveryClaimRemoveBackoff is the step of the growing wait between
+	// RecoveryClaimRemoveRetries.
+	RecoveryClaimRemoveBackoff = 10 * time.Millisecond
 )
 
 // ---- autosave: saving a document into its own file as it is edited ----
@@ -150,8 +166,9 @@ const (
 // ---- iwork: Numbers, Pages and Keynote files ----
 
 const (
-	// IWorkMaxZipEntry is the most bytes read from one file inside an
-	// iWork package's zip (1 GB), so that a zip bomb can't exhaust memory.
+	// IWorkMaxZipEntry is the largest file read from inside an iWork
+	// package's zip (1 GB), so that a zip bomb can't exhaust memory; a
+	// larger one is an error (iwork.ErrTooLarge).
 	IWorkMaxZipEntry = 1 << 30
 
 	// IWorkSnappyMaxRatio bounds a Snappy block's claimed uncompressed

@@ -34,8 +34,8 @@ func (h *harness) startAutoSave(path string) *autosave.ManualClock {
 	}
 	a.startAutoSave()
 	clock := autosave.NewManualClock()
-	a.as.saver.Clock = clock
-	h.t.Cleanup(a.as.saver.Close)
+	a.as.Saver.Clock = clock
+	h.t.Cleanup(a.as.Saver.Close)
 	h.frame()
 	return clock
 }
@@ -44,7 +44,7 @@ func (h *harness) startAutoSave(path string) *autosave.ManualClock {
 // its end has been seen.
 func (h *harness) settle() {
 	for range 3 {
-		h.a.as.saver.Wait()
+		h.a.as.Saver.Wait()
 		h.frame()
 	}
 }
@@ -74,7 +74,7 @@ func TestAutoSaveUnavailable(t *testing.T) {
 		}
 		h.click(autoSaveX, autoSaveY)
 		a.setAutoSave(true)
-		if a.as.saver.On() {
+		if a.as.Saver.On() {
 			t.Errorf("%s: turned on", what)
 		}
 	}
@@ -88,9 +88,9 @@ func TestAutoSaveUnavailable(t *testing.T) {
 	a.lk.readOnly = true
 	check("read-only", "This workbook is read-only. Save a copy as .xlsx to turn AutoSave on.")
 	a.lk.readOnly = false
-	a.as.elsewhere = true
+	a.as.Elsewhere = true
 	check("open anyway", "Someone else has this file open, so AutoSave is off: it would overwrite their changes.")
-	a.as.elsewhere = false
+	a.as.Elsewhere = false
 	a.ar.recovered = &autorecover.Entry{Name: "Budget.xlsx"}
 	check("recovered", "This is a recovered workbook. Save it as .xlsx to turn AutoSave on.")
 	a.ar.recovered = nil
@@ -124,11 +124,11 @@ func TestAutoSave(t *testing.T) {
 		t.Fatalf("saved while off: A1 = %q", got)
 	}
 	h.click(autoSaveX, autoSaveY) // on: saves now
-	if !a.as.saver.On() {
+	if !a.as.Saver.On() {
 		t.Fatal("the switch didn't turn AutoSave on")
 	}
 	h.settle()
-	if got := fileA1(t, path); got != "42" || a.modified || a.as.savedAt.IsZero() {
+	if got := fileA1(t, path); got != "42" || a.modified || a.as.SavedAt.IsZero() {
 		t.Fatalf("turning on: A1 = %q, modified %v", got, a.modified)
 	}
 	if a.autoSaveStatus(a.gtx) != "Saved" {
@@ -177,13 +177,13 @@ func TestAutoSave(t *testing.T) {
 	}
 	clock.Advance(limits.AutoSaveDelay)
 	h.settle()
-	if a.as.saver.Busy() || !a.as.saver.On() || a.errMsg != "" {
-		t.Errorf("after Ctrl+S: busy %v, on %v, %q", a.as.saver.Busy(), a.as.saver.On(), a.errMsg)
+	if a.as.Saver.Busy() || !a.as.Saver.On() || a.errMsg != "" {
+		t.Errorf("after Ctrl+S: busy %v, on %v, %q", a.as.Saver.Busy(), a.as.Saver.On(), a.errMsg)
 	}
 
 	// Off: edits stay in the window.
 	h.click(autoSaveX, autoSaveY)
-	if a.as.saver.On() {
+	if a.as.Saver.On() {
 		t.Fatal("not turned off")
 	}
 	h.press(key.NameUpArrow, 0)
@@ -212,8 +212,8 @@ func TestAutoSaveError(t *testing.T) {
 	}
 	clock.Advance(limits.AutoSaveDelay)
 	h.settle()
-	if a.as.saver.On() || !strings.HasPrefix(a.errMsg, "AutoSave turned off: Save failed") || !a.modified || h.cell("A1").Text != "42" {
-		t.Errorf("on %v, error %q, modified %v", a.as.saver.On(), a.errMsg, a.modified)
+	if a.as.Saver.On() || !strings.HasPrefix(a.errMsg, "AutoSave turned off: Save failed") || !a.modified || h.cell("A1").Text != "42" {
+		t.Errorf("on %v, error %q, modified %v", a.as.Saver.On(), a.errMsg, a.modified)
 	}
 }
 
@@ -240,16 +240,16 @@ func TestAutoSaveDefault(t *testing.T) {
 	}
 	dir := t.TempDir()
 	a.saved(a.wb, fileio.XLS, filepath.Join(dir, "Book.xls"), false, nil)
-	if a.as.saver.On() {
+	if a.as.Saver.On() {
 		t.Error("on for a .xls")
 	}
 	a.saved(a.wb, fileio.XLSX, filepath.Join(dir, "Book.xlsx"), false, nil)
-	if !a.as.saver.On() {
+	if !a.as.Saver.On() {
 		t.Error("off for a .xlsx saved as")
 	}
 	a.saved(a.wb, fileio.XLS, filepath.Join(dir, "Book.xls"), false, nil)
 	h.frame()
-	if a.as.saver.On() {
+	if a.as.Saver.On() {
 		t.Error("still on after saving as .xls")
 	}
 }

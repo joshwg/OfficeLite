@@ -1,3 +1,6 @@
+// Tests for sections, columns, notes, the table of contents and header
+// linking.
+
 package model
 
 import (
@@ -6,6 +9,10 @@ import (
 	"testing"
 )
 
+// TestSectionsAndBreaks checks that a section break keeps the setup and
+// headers on the section it ends, links the next section's headers, stays
+// at the paragraph's end on Enter, merges on Delete with the following
+// section's properties winning, and undoes.
 func TestSectionsAndBreaks(t *testing.T) {
 	d, e := newDoc("one two", "three")
 	d.Page.Landscape, d.Page.Width, d.Page.Height = true, 792, 612
@@ -54,6 +61,8 @@ func TestSectionsAndBreaks(t *testing.T) {
 	}
 }
 
+// TestColumnsLayout checks the offsets and widths of equal and unequal
+// columns.
 func TestColumnsLayout(t *testing.T) {
 	c := Columns{Count: 2, Space: 36}
 	x, w := c.Layout(468)
@@ -67,6 +76,9 @@ func TestColumnsLayout(t *testing.T) {
 	}
 }
 
+// TestNotes checks that inserted notes are numbered in document order
+// (footnotes decimal, endnotes roman), their own marks follow, their
+// styles are added, and undo removes a note.
 func TestNotes(t *testing.T) {
 	d, e := newDoc("abc")
 	e.SetCaret(Pos{0, 1}, false)
@@ -94,6 +106,9 @@ func TestNotes(t *testing.T) {
 	}
 }
 
+// TestUpdateTOC checks that an existing TOC field is found as one range
+// and rebuilt from the headings with TOC styles, leaders and page numbers,
+// and that undo restores the old entries.
 func TestUpdateTOC(t *testing.T) {
 	d, e := newDoc("", "end", "Intro", "Body text", "Details")
 	h1, h2 := &Style{ID: "Heading1", Name: "heading 1", Type: ParagraphStyle, Para: ParaProps{OutlineLevel: 1}},

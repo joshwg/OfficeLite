@@ -1,3 +1,7 @@
+// Translating Numbers formulas (postfix AST node arrays) into Excel formula
+// text, and verifying by recalculation that the translation gives the value
+// Numbers saved.
+
 package numbersfile
 
 import (
@@ -50,6 +54,7 @@ const (
 	nodeColonTract   = 67
 )
 
+// binaryOps is the Excel operator of each binary node type.
 var binaryOps = map[uint64]string{
 	nodeAdd: "+", nodeSub: "-", nodeMul: "*", nodeDiv: "/", nodePow: "^", nodeConcat: "&",
 	nodeGT: ">", nodeGE: ">=", nodeLT: "<", nodeLE: "<=", nodeEQ: "=", nodeNE: "<>",
@@ -68,11 +73,13 @@ type operand struct {
 // of one document. Each table is a sheet with the table at A1, so a
 // table's own cell coordinates are the sheet's.
 type translator struct {
-	sheets map[string]string // table UUID (hex, no dashes) -> sheet name
+	sheets map[string]string // table UUID (hex, no dashes) → sheet name
 	tables map[string]*iwork.Table
 	reg    *formula.Registry
 }
 
+// newTranslator makes an empty translator using the default function
+// registry.
 func newTranslator() *translator {
 	return &translator{sheets: map[string]string{}, tables: map[string]*iwork.Table{}, reg: functions.Default()}
 }
@@ -99,7 +106,7 @@ func uuidKey(m iwork.Message) string {
 // translate converts the formula of the cell at row, col of table t; it
 // fails for anything Excel (or ExcelLite) can't express the same way:
 // Numbers-only functions, durations, references to whole columns of
-// other tables...
+// other tables…
 func (tr *translator) translate(f iwork.Message, t *iwork.Table, row, col int) (string, error) {
 	var stack []operand
 	pop := func() (operand, error) {
@@ -362,6 +369,9 @@ func verify(wb *model.Workbook, reg *formula.Registry) int {
 	return dropped
 }
 
+// sameValue reports whether a recalculated cell matches the saved one:
+// numbers within a relative 1e-9, text exactly, and an empty cell equal to
+// empty text.
 func sameValue(a, b *model.Cell) bool {
 	if a.Kind != b.Kind {
 		return a.Kind == model.KindEmpty && b.Kind == model.KindText && b.Text == "" ||

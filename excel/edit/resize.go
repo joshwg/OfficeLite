@@ -1,3 +1,6 @@
+// Column widths and row heights: resizing, hiding and unhiding rows and
+// columns, each as one undo step.
+
 package edit
 
 import (
@@ -23,6 +26,8 @@ type dimValue struct {
 	set bool
 }
 
+// sizes is the sheet's map the change works on: column widths or row
+// heights.
 func (d *dimChange) sizes(wb *model.Workbook) map[int]float32 {
 	sh := wb.Sheets[d.sheet]
 	if d.cols {
@@ -31,6 +36,8 @@ func (d *dimChange) sizes(wb *model.Workbook) map[int]float32 {
 	return sh.RowHeight
 }
 
+// set gives each index its after size, or its before size (the default
+// again when it had none).
 func (d *dimChange) set(wb *model.Workbook, after bool) {
 	m := d.sizes(wb)
 	for i, x := range d.idx {
@@ -129,6 +136,7 @@ func (b *Book) Unhide(sheet int, rows bool, lo, hi int) bool {
 	})
 }
 
+// repeat is n copies of v.
 func repeat(v float32, n int) []float32 {
 	out := make([]float32, n)
 	for i := range out {
@@ -137,6 +145,8 @@ func repeat(v float32, n int) []float32 {
 	return out
 }
 
+// resize fills in d's before sizes, applies it and records it as one
+// change selecting where.
 func (b *Book) resize(d *dimChange, where Where) {
 	if len(d.idx) == 0 {
 		return
@@ -152,6 +162,7 @@ func (b *Book) resize(d *dimChange, where Where) {
 	b.record(&change{where: where, dims: d})
 }
 
+// minOf is the smallest of xs, which must not be empty.
 func minOf(xs []int) int {
 	m := xs[0]
 	for _, x := range xs {
@@ -160,6 +171,7 @@ func minOf(xs []int) int {
 	return m
 }
 
+// maxOf is the largest of xs, which must not be empty.
 func maxOf(xs []int) int {
 	m := xs[0]
 	for _, x := range xs {

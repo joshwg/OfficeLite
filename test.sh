@@ -3,6 +3,8 @@
 #
 #   ./test.sh [go test flags]     e.g. ./test.sh -v   or   ./test.sh -run TestSubtotal
 #   ./test.sh --all [flags]       include the GUI packages (needs the Gio system libraries)
+#   ./test.sh --all -race         with the race detector; the timeout is raised to
+#                                 45m (excel/ui alone takes ~11m under -race)
 #
 # Packages that link the Gio window system (gioui.org/app) need wayland and
 # xkbcommon headers to build; without them they are skipped and listed.
@@ -29,6 +31,20 @@ else
 			pkgs+=("$pkg")
 		fi
 	done < <(go list -f '{{.ImportPath}} {{range .Deps}}{{.}} {{end}}' ./...)
+fi
+
+# -race slows the UI packages far past go test's default 10-minute timeout;
+# give it room unless a -timeout was passed.
+race=0
+timeout_given=0
+for arg in "$@"; do
+	case "$arg" in
+	-race) race=1 ;;
+	-timeout | -timeout=*) timeout_given=1 ;;
+	esac
+done
+if [ "$race" = 1 ] && [ "$timeout_given" = 0 ]; then
+	set -- -timeout 45m "$@"
 fi
 
 render_pkg=officelite/excel/render

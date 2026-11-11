@@ -1,14 +1,14 @@
+// Fields whose result spans paragraphs (a table of contents) keep their
+// result as ordinary paragraphs between the field's begin and end runs
+// (Opaque.FieldChar). UpdateTOC regenerates a table of contents from the
+// document's headings, as Word's Update Field (F9) does.
+
 package model
 
 import (
 	"strconv"
 	"strings"
 )
-
-// Fields whose result spans paragraphs (a table of contents) keep their
-// result as ordinary paragraphs between the field's begin and end runs
-// (Opaque.FieldChar). UpdateTOC regenerates a table of contents from the
-// document's headings, as Word's Update Field (F9) does.
 
 // FieldRange is a field kept around its result: from its begin run to
 // its end run (inclusive), with its instruction.

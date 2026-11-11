@@ -126,6 +126,7 @@ func (p RunProps) Merge(over RunProps) RunProps {
 	return p
 }
 
+// mergeTri sets *dst to over unless over is Unset.
 func mergeTri(dst *Tri, over Tri) {
 	if over != Unset {
 		*dst = over
@@ -230,6 +231,8 @@ func (p ParaProps) Merge(over ParaProps) ParaProps {
 	return p
 }
 
+// mergeTabs layers over's tab stops on base's: a stop at the same position
+// replaces the inherited one, and a Clear stop removes it.
 func mergeTabs(base, over []TabStop) []TabStop {
 	out := make([]TabStop, 0, len(base)+len(over))
 	for _, b := range base {
@@ -379,6 +382,10 @@ type Opaque struct {
 	// FieldBegin (or FieldStart) run and a FieldEnd run. Field is set on
 	// FieldInstr and FieldStart runs.
 	FieldChar FieldChar
+	// Comment is the comment this zero-width run anchors, and CommentMark
+	// which of its anchors it is (see comments.go).
+	Comment     *Comment
+	CommentMark CommentMark
 }
 
 // FieldChar is a part of a field kept around a result in ordinary runs.
@@ -411,6 +418,7 @@ type Paragraph struct {
 	Sect *Section
 }
 
+// isBlock makes Paragraph a Block.
 func (*Paragraph) isBlock() {}
 
 // Text is the paragraph's plain text (tabs as '\t', breaks as '\n').
@@ -446,6 +454,7 @@ type Table struct {
 	DocxXML string    // original <w:tblPr> content (see RunProps.DocxXML)
 }
 
+// isBlock makes Table a Block.
 func (*Table) isBlock() {}
 
 // TableRow is one row of a table.
@@ -536,6 +545,9 @@ type Document struct {
 	// paragraphs that end them (see section.go).
 	Section
 	Warnings []string // things not shown or not kept
+	// HasMacros: the file held VBA macros, which are never run and which a
+	// save leaves out (see DropMacros).
+	HasMacros bool
 	// Source holds the original file's bytes and format so a writer for the
 	// same format can carry over parts WordLite doesn't model (headers,
 	// footers, images, settings). Writers must not depend on it.
@@ -599,6 +611,8 @@ func WalkBlocks(blocks []Block, f func(*Paragraph) bool) bool {
 	return walk(blocks, f)
 }
 
+// walk is WalkBlocks' recursion: it descends into table cells and reports
+// whether f never returned false.
 func walk(blocks []Block, f func(*Paragraph) bool) bool {
 	for _, b := range blocks {
 		switch b := b.(type) {

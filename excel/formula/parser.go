@@ -281,6 +281,8 @@ func (p *parser) spillOperand() (Node, error) {
 	return x, nil
 }
 
+// primary parses a literal, reference, name, function call, parenthesized
+// expression or array constant.
 func (p *parser) primary() (Node, error) {
 	t := p.next()
 	switch t.kind {
@@ -348,6 +350,9 @@ func (p *parser) args() ([]Node, error) {
 	}
 }
 
+// arrayConst parses the body of {1,2;3,4} after its '{': signed numbers,
+// strings, booleans and errors, ',' between columns and ';' between rows;
+// a ragged constant is an error.
 func (p *parser) arrayConst() (Node, error) {
 	var rows [][]Node
 	row := []Node{}
@@ -395,6 +400,9 @@ func (p *parser) arrayConst() (Node, error) {
 	}
 }
 
+// parseRef turns a tRef token (a cell A1, whole columns A:B or whole rows
+// 1:3; A1:B2 is two tokens joined by the ':' operator) into a refNode;
+// $ anchors are dropped.
 func parseRef(t token) (Node, error) {
 	s := strings.ReplaceAll(t.text, "$", "")
 	r := refNode{sheet: t.sheet}
@@ -423,6 +431,8 @@ func parseRef(t token) (Node, error) {
 	return r, nil
 }
 
+// colIndex converts column letters (A … XFD, any case) to a zero-based
+// column; false for anything else.
 func colIndex(s string) (int, bool) {
 	if s == "" || len(s) > excel.ExcelMaxColLetters {
 		return 0, false

@@ -4,7 +4,6 @@
 package ui
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -109,34 +108,30 @@ func (a *App) pristine() bool {
 }
 
 // openFile opens path in this window if it is pristine, otherwise in a new
-// window; documents go to a WordLite window.
+// window; documents go to a WordLite window (gui.OpenFile).
 func (a *App) openFile(path string) {
-	if _, err := os.Stat(path); err != nil {
-		if removeErr := a.recent.Remove(path); removeErr != nil {
-			log.Printf("remove %s from recent workbooks: %v", path, removeErr)
-		}
-		a.errMsg = fmt.Sprintf("Can't open %s: %v", filepath.Base(path), err)
-		a.back.Hide()
-		return
-	}
 	a.back.Hide()
-	if lockfile.Activate(path) {
-		return // open in a window already, which comes to the front
-	}
-	kind, _ := doctype.DetectFile(path)
-	switch {
-	case kind == doctype.Document:
-		a.launch(doctype.Document, path)
-	case a.pristine():
-		a.openPath(path)
-	default:
-		a.launch(doctype.Spreadsheet, path)
+	msg := gui.OpenFile(gui.OpenRequest{
+		Path:     path,
+		Recent:   a.recent,
+		Own:      doctype.Spreadsheet,
+		Takes:    func(k doctype.Kind) bool { return k != doctype.Document },
+		Pristine: a.pristine,
+		OpenHere: a.openPath,
+		Launch:   a.launch,
+	})
+	if msg != "" {
+		a.errMsg = msg
 	}
 }
 
 // save writes the workbook back to its file in the file's format, or
 // asks where to save it (a new workbook).
 func (a *App) save() {
+	if a.opening() {
+		a.closing = false
+		return // nothing to save until the workbook arrives
+	}
 	if a.ed.active && !a.commitEdit(0, 0) {
 		a.closing = false
 		return
@@ -154,15 +149,22 @@ func (a *App) save() {
 		return
 	}
 	path := a.path
+	a.confirmMacros(true, func() { a.saveInPlace(f, path) })
+}
+
+// saveInPlace writes the workbook to path, its file, in format f, once
+// the user has agreed to lose what f can't hold.
+func (a *App) saveInPlace(f fileio.Format, path string) {
 	a.confirmFormat(f, path, func() {
 		// After an AutoSave still writing, never under it (autosave.go).
-		if err := a.as.saver.Save(func() error { return fileio.SaveFile(a.wb, path, f, a.active) }); err != nil {
+		if err := a.as.Saver.Save(func() error { return fileio.SaveFile(a.wb, path, f, a.active) }); err != nil {
 			a.errMsg = lockfile.SaveError(path, err)
 			a.closing = false
 			return
 		}
 		a.modified = false
-		a.dropRecovery() // recover.go
+		a.wb.DropMacros() // the file has none now
+		a.dropRecovery()  // recover.go
 		a.fileInfo, _ = os.Stat(path)
 		a.errMsg = ""
 		a.notice = "Saved " + filepath.Base(path) + lossNote(a.wb, f, a.active)
@@ -256,76 +258,67 @@ func (a *App) baseName() string {
 // saveAs asks for a file name and writes the workbook in format f. A Save
 // As makes the new file the window's document; an export does not.
 func (a *App) saveAs(f fileio.Format, export bool) {
-	if a.saving.Load() {
+	if a.saving.Load() || a.opening() {
 		return
 	}
 	if a.ed.active && !a.commitEdit(0, 0) {
 		return
 	}
 	if !export {
-		a.confirmFormat(f, "", func() { a.writeAs(f, false) })
+		a.confirmMacros(false, func() {
+			a.confirmFormat(f, "", func() { a.writeAs(f, false) })
+		})
 		return
 	}
 	a.writeAs(f, true)
 }
 
 // writeAs asks for a file name, then writes a workbook snapshot in the
-// background.
+// background (gui.SaveAs).
 func (a *App) writeAs(f fileio.Format, export bool) {
-	a.saving.Store(true)
-	name := a.saveAsName(f) // recover.go
-	go func() {
-		wc, err := a.expl.CreateFile(name)
-		if errors.Is(err, explorer.ErrUserDecline) {
-			a.calls.Post(func() {
-				a.saving.Store(false)
-				a.closing = false
-			})
-			return
-		}
-		a.calls.Post(func() {
-			if err != nil {
-				defer a.saving.Store(false)
-				a.savedSnapshot(a.wb, a.wb, a.revision, a.active, f, name, export, err)
-				return
-			}
-			a.writeAsFile(wc, name, f, export)
-		})
-	}()
+	a.saveAsJob(f, export).Start()
 }
 
-// writeAsFile writes a snapshot in the background so a large workbook
-// doesn't block input while Save As or Export is in progress.
-func (a *App) writeAsFile(wc io.WriteCloser, name string, f fileio.Format, export bool) {
-	owner := a.wb
-	wb := owner.Clone()
-	revision, sheet := a.revision, a.active
-	go func() {
-		err := fileio.Write(wb, wc, f, sheet)
-		if cerr := wc.Close(); err == nil {
-			err = cerr
-		}
-		path := name
-		if file, ok := wc.(*os.File); ok && err == nil {
-			path = file.Name()
-		}
-		a.calls.Post(func() {
-			defer a.saving.Store(false)
-			a.savedSnapshot(owner, wb, revision, sheet, f, path, export, err)
-		})
-	}()
+// saveSnap is a Save As or export in progress: wb, a clone of owner taken
+// at revision with sheet active, written in format f.
+type saveSnap struct {
+	owner, wb *model.Workbook
+	revision  uint64
+	sheet     int
+	f         fileio.Format
+	export    bool
 }
 
-// saved runs on the UI goroutine after a Save As or export finishes.
-func (a *App) saved(wb *model.Workbook, f fileio.Format, path string, export bool, err error) {
-	a.savedSnapshot(wb, wb, a.revision, a.active, f, path, export, err)
+// saveAsJob is the Save As (or export, which leaves the window's file as
+// it is) of the workbook in format f.
+func (a *App) saveAsJob(f fileio.Format, export bool) gui.SaveAs[saveSnap] {
+	j := gui.SaveAs[saveSnap]{
+		Name:     a.saveAsName(f), // recover.go
+		Save:     a.files.Save,
+		Filters:  []gui.FileFilter{gui.FormatFilter(f.String(), f.Ext()), gui.AllFilter},
+		Create:   a.expl.CreateFile,
+		Declined: explorer.ErrUserDecline,
+		Calls:    a.calls,
+		Busy:     &a.saving,
+		Snapshot: func() saveSnap {
+			return saveSnap{owner: a.wb, wb: a.wb.Clone(), revision: a.revision, sheet: a.active, f: f, export: export}
+		},
+		Write:  func(s saveSnap, w io.Writer) error { return fileio.Write(s.wb, w, s.f, s.sheet) },
+		Done:   a.savedSnapshot,
+		Cancel: func() { a.closing = false },
+	}
+	if !export {
+		j.Ask = a.askSaveLocked // lock.go
+	}
+	return j
 }
 
-// savedSnapshot runs on the UI goroutine after a Save As or export of wb,
-// a snapshot of owner taken at revision with sheet active, finishes.
-func (a *App) savedSnapshot(owner, wb *model.Workbook, revision uint64, sheet int, f fileio.Format, path string, export bool, err error) {
-	if err != nil {
-		a.errMsg = "Save failed: " + err.Error()
+// savedSnapshot runs on the UI goroutine after the Save As or export of
+// snapshot s finishes as r says.
+func (a *App) savedSnapshot(s saveSnap, r gui.SaveAsResult) {
+	path := r.Path
+	if r.Err != nil {
+		a.errMsg = "Save failed: " + r.Err.Error()
 		a.closing = false
 		return
 	}
@@ -333,20 +326,21 @@ func (a *App) savedSnapshot(owner, wb *model.Workbook, revision uint64, sheet in
 	a.back.Hide()
 	a.grid.focusPending = true
 	what := "Saved "
-	if export {
+	if s.export {
 		what = "Exported "
 	}
-	a.notice = what + filepath.Base(path) + lossNote(wb, f, sheet)
-	if export {
+	a.notice = what + filepath.Base(path) + lossNote(s.wb, s.f, s.sheet)
+	if s.export {
 		// An export isn't the save a close waits for, and it leaves the
 		// backstage, which abandons the close.
 		a.closing = false
 		return
 	}
-	if owner != a.wb {
+	if s.owner != a.wb {
 		return
 	}
-	if a.revision == revision {
+	a.wb.DropMacros() // the window's file is the new one, without them
+	if a.revision == s.revision {
 		a.modified = false
 		a.dropRecovery()
 	}
@@ -357,8 +351,8 @@ func (a *App) savedSnapshot(owner, wb *model.Workbook, revision uint64, sheet in
 			log.Printf("add %s to recent workbooks: %v", path, err)
 		}
 		a.lk.readOnly = false
-		a.lk.doc.Set(path, true) // the new file's registration and owner file
-		a.as.elsewhere = false
+		a.lk.doc.Set(path, true)  // the new file's registration and owner file
+		a.as.Elsewhere = r.Shared // saved over a file open elsewhere: no AutoSave
 		// No longer a recovered workbook, even with edits made during the
 		// write (which keep their recovery copy, now for this file).
 		a.ar.recovered = nil
@@ -368,7 +362,7 @@ func (a *App) savedSnapshot(owner, wb *model.Workbook, revision uint64, sheet in
 	if a.win != nil {
 		a.win.Option(windowTitle(a.wb.Name))
 	}
-	if !a.as.saver.On() {
+	if !a.as.Saver.On() {
 		a.autoSaveLoaded() // on for a .xlsx when that's the default (autosave.go)
 	}
 	a.closeIfClosing()

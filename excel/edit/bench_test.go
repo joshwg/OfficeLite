@@ -1,3 +1,6 @@
+// Timing tests: how long edits, undo and recalculation take on a large
+// workbook (run with -v to see them).
+
 package edit
 
 import (

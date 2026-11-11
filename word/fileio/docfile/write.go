@@ -620,6 +620,10 @@ func (w *writer) run(r *model.Run, inTable bool) {
 // opaque writes a preserved run: .doc fields and pictures go back as they
 // were; anything else becomes its placeholder text.
 func (w *writer) opaque(r *model.Run, chpx []byte, inTable bool) {
+	if model.IsCommentMark(r) {
+		w.warn(WarnCommentsLost)
+		return
+	}
 	if o := r.Opaque; o != nil && (o.Note != nil || o.NoteMark) {
 		w.noteRun(r, chpx)
 		return

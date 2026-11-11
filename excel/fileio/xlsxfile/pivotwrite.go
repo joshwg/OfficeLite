@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"officelite/excel"
 	"officelite/excel/model"
 	"officelite/excel/numfmt"
 	"officelite/excel/pivot"
@@ -78,7 +79,7 @@ func (x *writer) pivotParts(zr *zip.Reader, edits map[string][]func([]byte) ([]b
 	fmtIDs := map[string]int{}
 	for _, zf := range zr.File {
 		if zf.Name == "xl/styles.xml" {
-			rc, err := zf.Open()
+			rc, err := openPart(zf, excel.XlsxMaxPartSize, nil)
 			if err != nil {
 				return nil, err
 			}

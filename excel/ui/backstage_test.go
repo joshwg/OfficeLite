@@ -11,6 +11,7 @@ import (
 
 	"officelite/common/gui"
 	"officelite/excel/fileio"
+	"officelite/excel/model"
 )
 
 type blockingWriteCloser struct {
@@ -34,12 +35,18 @@ type failingWriteCloser struct{ err error }
 func (w failingWriteCloser) Write([]byte) (int, error) { return 0, w.err }
 func (w failingWriteCloser) Close() error              { return nil }
 
+// saved finishes a Save As or export of wb (the window's workbook, as it
+// is now) to path in format f, as the background write would.
+func (a *App) saved(wb *model.Workbook, f fileio.Format, path string, export bool, err error) {
+	a.savedSnapshot(saveSnap{owner: wb, wb: wb, revision: a.revision, sheet: a.active, f: f, export: export}, gui.SaveAsResult{Path: path, Err: err})
+}
+
 func TestSaveAsWritesInBackgroundAndKeepsLaterEdits(t *testing.T) {
 	h := newHarness(t)
 	a := h.a
 	w := &blockingWriteCloser{started: make(chan struct{}), release: make(chan struct{})}
 	a.saving.Store(true)
-	a.writeAsFile(w, "saved.xlsx", fileio.XLSX, false)
+	a.saveAsJob(fileio.XLSX, false).WriteTo(w, "saved.xlsx")
 
 	select {
 	case <-w.started:
@@ -75,7 +82,7 @@ func TestSaveAsWriteFailureReenablesUIAndReportsError(t *testing.T) {
 	a := h.a
 	wantErr := errors.New("disk full")
 	a.saving.Store(true)
-	a.writeAsFile(failingWriteCloser{err: wantErr}, "saved.xlsx", fileio.XLSX, false)
+	a.saveAsJob(fileio.XLSX, false).WriteTo(failingWriteCloser{err: wantErr}, "saved.xlsx")
 
 	deadline := time.Now().Add(5 * time.Second)
 	for a.saving.Load() && time.Now().Before(deadline) {
@@ -100,7 +107,7 @@ func TestExportAbandonsClose(t *testing.T) {
 	h.press(key.NameReturn, 0)
 	a.closing = true
 	a.save() // untitled: the Save As page
-	a.savedSnapshot(a.wb, a.wb, a.revision, a.active, fileio.CSV, "out.csv", true, nil)
+	a.saved(a.wb, fileio.CSV, "out.csv", true, nil)
 	if a.closing {
 		t.Error("closing still set after an export")
 	}

@@ -1,3 +1,6 @@
+// Tests for the outline (Group, Ungroup, collapsing, level buttons, Show
+// and Hide Detail, sizes and moves) and for Subtotal.
+
 package edit
 
 import (
@@ -28,6 +31,10 @@ func hiddenIn(sh *model.Sheet, rows bool, lo, hi int) []int {
 	return out
 }
 
+// TestGroupUngroup checks nested grouping and the groups it makes, the
+// level cap, collapsing and expanding (an inner collapsed group stays
+// so), the level buttons, undo, Ungroup showing hidden rows, and Clear
+// Outline.
 func TestGroupUngroup(t *testing.T) {
 	b := newBook()
 	sh := b.WB.Sheets[0]
@@ -104,6 +111,9 @@ func TestGroupUngroup(t *testing.T) {
 	}
 }
 
+// TestOutlineKeepsSizesAndMoves checks that expanding a group gives rows
+// their heights back, and that rows inserted or deleted inside or above a
+// group move its levels and collapsed state, with undo.
 func TestOutlineKeepsSizesAndMoves(t *testing.T) {
 	b := newBook()
 	sh := b.WB.Sheets[0]
@@ -149,6 +159,9 @@ func TestOutlineKeepsSizesAndMoves(t *testing.T) {
 	}
 }
 
+// TestShowHideDetail checks which groups Hide Detail and Show Detail pick
+// for a cell, a summary row and a whole-row selection (which leaves
+// columns alone), and that a selection outside the outline does nothing.
 func TestShowHideDetail(t *testing.T) {
 	b := newBook()
 	sh := b.WB.Sheets[0]
@@ -203,6 +216,10 @@ func subtotalBook(t *testing.T) *Book {
 	return b
 }
 
+// TestSubtotal checks the rows, formulas, styles and outline levels
+// Subtotal makes, that formulas over the list adjust, Replace with
+// another function, nesting without Replace, one undo step each, and
+// Remove All.
 func TestSubtotal(t *testing.T) {
 	b := subtotalBook(t)
 	sh := b.WB.Sheets[0]
@@ -293,6 +310,9 @@ func TestSubtotal(t *testing.T) {
 	}
 }
 
+// TestSubtotalAbove checks Summary rows above detail: the summary rows'
+// placement, SummaryAbove on the outline, the groups' summaries, and the
+// error for a range without data.
 func TestSubtotalAbove(t *testing.T) {
 	b := subtotalBook(t)
 	sh := b.WB.Sheets[0]

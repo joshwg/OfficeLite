@@ -1,3 +1,6 @@
+// Tests for data validation: every rule type and comparison, undo, rules
+// following structural edits and moves, and bound parsing.
+
 package edit
 
 import (
@@ -7,6 +10,10 @@ import (
 	"officelite/excel/model"
 )
 
+// TestValidationRules checks CheckEntry against every rule type and
+// comparison (bounds from cells, formulas and names; relative references
+// shifted for cells below the rule's first; blanks), ListItems for the
+// drop-down, and InvalidCells and CellValid for Circle Invalid Data.
 func TestValidationRules(t *testing.T) {
 	b := newBook()
 	b.enter(t, 0, "H1", "Red")
@@ -103,6 +110,10 @@ func TestValidationRules(t *testing.T) {
 	}
 }
 
+// TestValidationUndoAndMove checks that a later rule takes cells from an
+// earlier one (undoable), and that rules follow inserted and deleted rows
+// and columns, shifted cells, moved cells and sorted rows; Clear All
+// removes them.
 func TestValidationUndoAndMove(t *testing.T) {
 	b := newBook()
 	sh := b.WB.Sheets[0]
@@ -193,6 +204,9 @@ func TestValidationUndoAndMove(t *testing.T) {
 	}
 }
 
+// TestValidationBound checks that ValidationBound turns typed bounds
+// (numbers, dates, times, references, list text) into rule formulas, and
+// ValidationBoundText shows them back as typed.
 func TestValidationBound(t *testing.T) {
 	for _, tc := range []struct {
 		in       string

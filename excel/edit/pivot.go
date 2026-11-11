@@ -1,3 +1,9 @@
+// PivotTables: creating one, changing its fields and options, refreshing
+// it from its source and moving or deleting it. Every change lays the
+// report out again (excel/pivot) and writes its cells, as one undo step
+// that also restores the definition (kept with the sheet's properties).
+// A report's cells can't be edited by hand.
+
 package edit
 
 import (
@@ -16,12 +22,6 @@ import (
 	"officelite/excel/pivot"
 )
 
-// PivotTables: creating one, changing its fields and options, refreshing
-// it from its source and moving or deleting it. Every change lays the
-// report out again (excel/pivot) and writes its cells, as one undo step
-// that also restores the definition (kept with the sheet's properties).
-// A report's cells can't be edited by hand.
-
 var (
 	// ErrPivotChange is Excel's refusal to edit a report's cells.
 	ErrPivotChange = errors.New("you can't change this part of a PivotTable report")
@@ -35,8 +35,9 @@ var (
 	ErrPivotSource = errors.New("reference isn't valid")
 )
 
-// The PivotStyleLight16 colors: the header and total bands and their
-// lines (Office theme accent 1, 80% and 40% lighter).
+// pivotBand and pivotLine are the PivotStyleLight16 colors: the header
+// and total bands and their lines (Office theme accent 1, 80% and 40%
+// lighter).
 var (
 	pivotBand = colors.RGB(0xDDEBF7)
 	pivotLine = colors.RGB(0x9BC2E6)
@@ -65,6 +66,7 @@ func (b *Book) PivotSource(sheet int, pt *model.PivotTable) (*pivot.Source, erro
 	return pivot.ReadSource(b.WB.Sheets[si], si, r, b.isDateStyle)
 }
 
+// isDateStyle reports whether style i's number format shows dates.
 func (b *Book) isDateStyle(i uint32) bool {
 	st := b.style(i)
 	return numfmt.IsDate(st.NumFmtID, st.NumFmtCode)
@@ -111,8 +113,10 @@ func (b *Book) nextPivotName() string {
 	}
 }
 
-// pivotChange is the cells of a report laid out on sheet with the sheet's
-// reports after the change; overwrite allows covering other data.
+// pivotCells lays out report i of pts (the sheet's reports after the
+// change) and lists the cell changes that write it and clear what its old
+// area no longer covers; overwrite allows covering other data. It fails
+// when the report doesn't fit, overlaps another or would cover data.
 func (b *Book) pivotCells(sheet int, pts []*model.PivotTable, i int, overwrite bool) ([]cellChange, error) {
 	sh := b.WB.Sheets[sheet]
 	pt := pts[i]

@@ -1,3 +1,5 @@
+// Tests for opening a document whose file is locked elsewhere.
+
 package ui
 
 import (

@@ -1,3 +1,5 @@
+// Benchmarks for full and incremental recalculation of a large workbook.
+
 package calc
 
 import (
@@ -24,6 +26,7 @@ func bigBook(n int) *model.Workbook {
 	return &model.Workbook{Sheets: []*model.Sheet{sh}, Styles: []model.Style{model.DefaultStyle()}}
 }
 
+// BenchmarkFullRecalc100k times Recalculate over 100k formulas.
 func BenchmarkFullRecalc100k(b *testing.B) {
 	wb := bigBook(50000)
 	for b.Loop() {
@@ -31,6 +34,8 @@ func BenchmarkFullRecalc100k(b *testing.B) {
 	}
 }
 
+// BenchmarkIncrementalEdit100k times Update after an edit near the bottom
+// of 100k formulas, where few dependents follow.
 func BenchmarkIncrementalEdit100k(b *testing.B) {
 	wb := bigBook(50000)
 	c := NewCalculator(wb, functions.Default())
@@ -46,6 +51,8 @@ func BenchmarkIncrementalEdit100k(b *testing.B) {
 	}
 }
 
+// BenchmarkIncrementalEditTop100k times Update after an edit to A1, which
+// every running total depends on.
 func BenchmarkIncrementalEditTop100k(b *testing.B) {
 	wb := bigBook(50000)
 	c := NewCalculator(wb, functions.Default())
@@ -60,6 +67,7 @@ func BenchmarkIncrementalEditTop100k(b *testing.B) {
 	}
 }
 
+// BenchmarkBuild100k times building the dependency index of 100k formulas.
 func BenchmarkBuild100k(b *testing.B) {
 	wb := bigBook(50000)
 	for b.Loop() {

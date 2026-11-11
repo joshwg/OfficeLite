@@ -1,3 +1,6 @@
+// created.go builds the Charts-Created sample: charts made through the
+// editing commands rather than straight from the model.
+
 package chartsample
 
 import (
@@ -7,7 +10,7 @@ import (
 
 // Created builds Samples/excel-charts/Charts-Created.xlsx: charts made the way the
 // Insert menu and the Chart Design tab make them (through edit), each
-// kind, with titles, legends, labels, colours and styles changed, a
+// kind, with titles, legends, labels, colors and styles changed, a
 // switched row/column, a combo with per-series kinds and a chart moved
 // to a chart sheet, for checking in Excel that they open without repair
 // and look as ExcelLite draws them.

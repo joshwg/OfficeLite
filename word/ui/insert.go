@@ -1,3 +1,6 @@
+// The Insert menu and its dialogs: the table picker and Insert Table,
+// Link, Symbol and Date & Time dialogs, and picture insertion.
+
 package ui
 
 import (
@@ -43,6 +46,9 @@ const (
 	insDate
 	insField
 	_
+	insComment
+	insShowComments
+	_
 	insPageBreak
 	insLineBreak
 	insTab
@@ -76,6 +82,9 @@ func (d *window) insertMenu() []gui.MenuItem {
 		insSymbol:     {Label: "Symbol…", Tip: "Insert a symbol or special character."},
 		insDate:       {Label: "Date & Time…", Tip: "Insert today's date or the time in a format you pick."},
 		insField:      {Label: "Field…", Shortcut: "Ctrl+F9", Tip: "Insert a field: a page number, date, file name or other value Word computes."},
+		{Separator: true},
+		insComment:      {Label: "New Comment", Shortcut: "Ctrl+Alt+M", Disabled: d.hf.on, Tip: "Add a note about the selection in the Comments pane."},
+		insShowComments: {Label: "Show Comments", Checked: d.cm.open, Tip: "Show or hide the Comments pane."},
 		{Separator: true},
 		insPageBreak: {Label: "Page Break", Shortcut: "Ctrl+Enter", Tip: "Start the next page here."},
 		insLineBreak: {Label: "Line Break", Shortcut: "Shift+Enter", Tip: "Start a new line in the same paragraph."},
@@ -115,6 +124,10 @@ func (d *window) insertChosen(item int) {
 		d.ins.dateSel = 0
 	case insField:
 		d.openFieldDialog() // fielddlg.go
+	case insComment:
+		d.newComment() // comments.go
+	case insShowComments:
+		d.toggleComments()
 	case insPageBreak:
 		ed.InsertSpecial(model.RunPageBreak)
 	case insLineBreak:
@@ -183,6 +196,8 @@ type insertState struct {
 	resNow   wl.Rect   // the box being dragged
 }
 
+// show opens dialog or popup k, resetting the picker and focusing the
+// dialog's first box.
 func (s *insertState) show(k insertKind) {
 	s.kind = k
 	s.pickRows, s.pickCols = 0, 0
@@ -200,6 +215,7 @@ func (s *insertState) show(k insertKind) {
 // modal reports whether an Insert dialog takes the input.
 func (s *insertState) modal() bool { return s.kind != insNone }
 
+// close hides the open dialog and gives the keyboard back to the page.
 func (s *insertState) close(d *window) {
 	s.kind = insNone
 	d.v.focusPending = true
@@ -232,6 +248,8 @@ func (s *insertState) layout(gtx layout.Context, d *window) {
 
 const pickerRows, pickerCols = 8, 10
 
+// pickerLayout draws the table picker under the Insert menu and inserts
+// the hovered size on a click; a click anywhere else closes it.
 func (s *insertState) pickerLayout(gtx layout.Context, d *window) {
 	cell := gtx.Dp(20)
 	pad := gtx.Dp(10)
@@ -398,12 +416,15 @@ func (s *insertState) buttons(th *gui.Theme, okLabel string, extra layout.Widget
 	})
 }
 
+// dialogTitle is a dialog's heading row.
 func dialogTitle(th *gui.Theme, s string) layout.FlexChild {
 	return layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 		return layout.Inset{Bottom: 14}.Layout(gtx, th.Label(18, s, gui.ChromeText, font.SemiBold).Layout)
 	})
 }
 
+// tableDialog is Insert Table: rows and columns typed in, checked
+// against the word package's limits.
 func (s *insertState) tableDialog(gtx layout.Context, d *window) {
 	th := d.th
 	if s.ok.Clicked(gtx) || submitted(gtx, &s.rows, &s.cols) {
@@ -451,6 +472,8 @@ func (d *window) openLinkDialog() {
 	}
 }
 
+// linkDialog is Insert / Edit Hyperlink: text and address, with Remove
+// Link when editing an existing one. An empty address just refocuses.
 func (s *insertState) linkDialog(gtx layout.Context, d *window) {
 	th := d.th
 	if s.ok.Clicked(gtx) || submitted(gtx, &s.text, &s.addr) {
@@ -501,6 +524,7 @@ var symbolSet = []rune(
 		"ΑΒΓΔΘΛΞΠΣΦΨΩαβγδεζηθικλμνξπρστυφχψω" +
 		"✓✔✗✘★☆♠♣♥♦●○■□▲►▼◄◆◊☺☎✉♪")
 
+// symbolDialog is the Symbol grid; a click inserts the symbol at the caret.
 func (s *insertState) symbolDialog(gtx layout.Context, d *window) {
 	th := d.th
 	if len(s.symbols) != len(symbolSet) {
@@ -595,6 +619,9 @@ func dateField(pic string) string {
 	return name + ` \@ "` + pic + `"`
 }
 
+// dateDialog is Date and Time: a list of today's date in each format,
+// chosen by click, arrows or Enter; Update automatically inserts a field
+// instead of text.
 func (s *insertState) dateDialog(gtx layout.Context, d *window) {
 	th := d.th
 	choices := DateChoices(time.Now())

@@ -1,17 +1,19 @@
-// notes.go handles cell notes (the note dialog, markers and hover popups) and following hyperlinks.
+// notes.go handles cell notes and Excel 365 comment threads (their
+// dialog, markers and hover popups) and following hyperlinks.
 
 package ui
 
 import (
 	"image"
-	"os"
 	"strings"
+	"time"
 
 	"gioui.org/font"
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
+	"gioui.org/unit"
 	"gioui.org/widget"
 
 	"officelite/common/colors"
@@ -22,21 +24,27 @@ import (
 )
 
 // Notes (red corner triangles, shown on hover or when the cell is
-// selected) and hyperlinks (Ctrl+click to follow).
+// selected), comment threads (purple corners, shown the same way) and
+// hyperlinks (Ctrl+click to follow).
 
 var (
-	noteRed    = colors.RGB(0xC00000)
-	noteBG     = colors.RGB(0xFFFFE1)
-	noteBorder = colors.RGB(0x767676)
+	noteRed       = colors.RGB(0xC00000)
+	commentPurple = colors.RGB(0x7030A0)
+	noteBG        = colors.RGB(0xFFFFE1)
+	noteBorder    = colors.RGB(0x767676)
 )
 
-// noteDialog is the New / Edit Note dialog's state: the text, the cell it
-// belongs to, whether the cell already had a note, and the note's author.
+// noteDialog is the state of the New / Edit Note dialog, which is also
+// the comment dialog: the text, the cell it belongs to, whether the cell
+// already had a note, and the note's author. For a comment (thread set)
+// the text is the new post, and base the thread being replied to.
 type noteDialog struct {
 	ed              widget.Editor
 	sheet, row, col int
 	existing        bool
 	author          string
+	thread          bool
+	base            model.Note
 }
 
 // hoverNote is the cell under the pointer, whose note shows.
@@ -46,37 +54,71 @@ type hoverNote struct {
 }
 
 // newNote adds a note to the active cell, or edits its note (Shift+F2).
-func (a *App) newNote() {
+// On a cell with a comment it opens the comment to reply.
+func (a *App) newNote() { a.openNoteDialog(false) }
+
+// newComment starts a comment thread on the active cell, or replies to
+// its thread. A cell with a note can't also have a comment.
+func (a *App) newComment() { a.openNoteDialog(true) }
+
+// openNoteDialog opens the note dialog (thread false) or the comment
+// dialog for the active cell; what the cell has decides on a cell that
+// has either.
+func (a *App) openNoteDialog(thread bool) {
 	if !a.commitForCommand() {
 		return
 	}
 	v := &a.state().view
-	p := v.Sel.Active
-	if m, ok := v.Sheet.MergeAt(p.Row, p.Col); ok {
-		p = render.Pos{Row: m.R1, Col: m.C1}
-	}
+	p := activeCell(v)
 	d := &a.ins.note
 	d.sheet, d.row, d.col = a.active, p.Row, p.Col
 	n, ok := v.Sheet.NoteAt(p.Row, p.Col)
-	d.existing, d.author = ok, n.Author
-	if !ok {
+	if ok {
+		thread = n.Threaded
+	}
+	d.existing, d.author, d.thread, d.base = ok, n.Author, thread, n
+	if !ok || thread {
 		d.author = noteAuthor()
 	}
 	d.ed.SingleLine, d.ed.Submit = false, false
-	d.ed.SetText(n.Text)
+	if thread {
+		d.ed.SetText("")
+	} else {
+		d.ed.SetText(n.Text)
+	}
 	d.ed.SetCaret(d.ed.Len(), d.ed.Len())
 	a.showDialog(dlgNote)
 }
 
-// noteAuthor is the user's name for new notes.
-func noteAuthor() string {
-	for _, k := range []string{"USERNAME", "USER"} {
-		if s := strings.TrimSpace(os.Getenv(k)); s != "" {
-			return s
-		}
+// activeCell is the active cell, or the top-left cell of the merged
+// cell it is in.
+func activeCell(v *render.View) render.Pos {
+	p := v.Sel.Active
+	if m, ok := v.Sheet.MergeAt(p.Row, p.Col); ok {
+		p = render.Pos{Row: m.R1, Col: m.C1}
 	}
-	return ""
+	return p
 }
+
+// toggleResolved marks the active cell's comment thread resolved, or
+// reopens it.
+func (a *App) toggleResolved() {
+	if !a.commitForCommand() {
+		return
+	}
+	v := &a.state().view
+	p := activeCell(v)
+	n, ok := v.Sheet.NoteAt(p.Row, p.Col)
+	if !ok || !n.Threaded {
+		return
+	}
+	n.Resolved = !n.Resolved
+	a.book.SetNote(a.active, p.Row, p.Col, &n)
+	a.changed(calc.Result{})
+}
+
+// noteAuthor is the user's name for new notes and comments.
+func noteAuthor() string { return gui.UserName() }
 
 // clearNotes deletes the notes in the selection.
 func (a *App) clearNotes() {
@@ -101,9 +143,16 @@ func (a *App) layoutNoteDialog(gtx layout.Context, k int) {
 	for a.ins.cancel.Clicked(gtx) {
 		k = -1
 	}
-	del := false
+	del, resolve := false, false
 	for a.ins.extra.Clicked(gtx) {
 		del = true
+	}
+	for a.ins.extra2.Clicked(gtx) {
+		resolve = true
+	}
+	if d.thread {
+		a.layoutCommentDialog(gtx, k, del, resolve)
+		return
 	}
 	switch {
 	case k < 0:
@@ -148,20 +197,141 @@ func (a *App) layoutNoteDialog(gtx layout.Context, k int) {
 	a.ui.ModalDialog(gtx, &a.ins.block, title, 420, body, btns...)
 }
 
+// layoutCommentDialog lays out the comment dialog and applies it: Post
+// starts the thread or adds the typed reply (which reopens a resolved
+// thread), Resolve / Reopen marks it (keeping a typed reply), Delete
+// Thread removes it, Cancel or Esc closes. k is as for the note dialog.
+func (a *App) layoutCommentDialog(gtx layout.Context, k int, del, resolve bool) {
+	d := &a.ins.note
+	text := strings.TrimSpace(d.ed.Text())
+	post := func(n model.Note) model.Note {
+		if text == "" {
+			return n
+		}
+		p := model.Post{Author: d.author, Text: text, Time: time.Now()}
+		if !d.existing {
+			return model.Note{Threaded: true, Author: p.Author, Text: p.Text, Time: p.Time}
+		}
+		n = n.WithReply(p)
+		n.Resolved = false
+		return n
+	}
+	switch {
+	case k < 0:
+		a.closeDialog()
+		return
+	case del && d.existing:
+		a.closeDialog()
+		a.book.SetNote(d.sheet, d.row, d.col, nil)
+		a.changed(calc.Result{})
+		return
+	case resolve && d.existing:
+		a.closeDialog()
+		n := post(d.base)
+		n.Resolved = !d.base.Resolved
+		a.book.SetNote(d.sheet, d.row, d.col, &n)
+		a.changed(calc.Result{})
+		return
+	case k > 0:
+		a.closeDialog()
+		if text == "" {
+			return
+		}
+		n := post(d.base)
+		a.book.SetNote(d.sheet, d.row, d.col, &n)
+		a.changed(calc.Result{})
+		return
+	}
+	title := "New Comment — " + model.CellName(d.row, d.col)
+	hint := "Start a conversation"
+	if d.existing {
+		title = "Comment — " + model.CellName(d.row, d.col)
+		if d.base.Resolved {
+			title += " (resolved)"
+		}
+		hint = "Reply"
+	}
+	body := func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				if !d.existing {
+					return layout.Dimensions{}
+				}
+				gtx.Constraints.Max.Y = gtx.Dp(260)
+				return layout.Inset{Bottom: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return a.threadPosts(gtx, d.base, 12)
+				})
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return gui.TextField(gtx, a.ui, &d.ed, 380, 4, hint)
+			}),
+		)
+	}
+	btns := []layout.Widget{a.accentButton(&a.ins.ok, "Post"), a.plainButton(&a.ins.cancel, "Cancel")}
+	if d.existing {
+		label := "Resolve Thread"
+		if d.base.Resolved {
+			label = "Reopen Thread"
+		}
+		btns = append([]layout.Widget{a.plainButton(&a.ins.extra, "Delete Thread"), a.plainButton(&a.ins.extra2, label)}, btns...)
+	}
+	a.ui.ModalDialog(gtx, &a.ins.block, title, 420, body, btns...)
+}
+
+// threadPosts lists a thread's posts: each author (with the post's date)
+// over its text, the most recent last; maxLines caps each post's text.
+func (a *App) threadPosts(gtx layout.Context, n model.Note, maxLines int) layout.Dimensions {
+	th := a.ui
+	posts := n.Posts()
+	children := make([]layout.FlexChild, 0, 2*len(posts)+1)
+	for i, p := range posts {
+		head := p.Author
+		if head == "" {
+			head = "Unknown"
+		}
+		if !p.Time.IsZero() {
+			head += " · " + p.Time.Local().Format("Jan 2, 2006 3:04 PM")
+		}
+		var top unit.Dp
+		if i > 0 {
+			top = 6
+		}
+		children = append(children,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Top: top}.Layout(gtx, th.Label(12, head, chromeText, font.Bold).Layout)
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				l := th.Label(12, p.Text, chromeText, font.Normal)
+				l.MaxLines = maxLines
+				return l.Layout(gtx)
+			}))
+	}
+	if n.Resolved {
+		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: 6}.Layout(gtx, th.Label(11, "Resolved", mutedText, font.Normal).Layout)
+		}))
+	}
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
+}
+
 // drawAnnots draws note markers, the note under the pointer or of the
 // active cell, the fill handle's drag outline, and the hand cursor over
 // links. It runs right after the grid is drawn, in grid coordinates.
 func (a *App) drawAnnots(gtx layout.Context, v *render.View) {
 	sh := v.Sheet
 	tri := max(gtx.Dp(6), 4)
-	for k := range sh.Notes {
+	for k, n := range sh.Notes {
 		rc, pane, ok := v.CellRect(k[0], k[1])
 		if !ok || !rc.Overlaps(pane) {
 			continue
 		}
+		c := noteRed
+		if n.Threaded {
+			c = commentPurple
+		}
 		cs := clip.Rect(pane).Push(gtx.Ops)
 		for i := 0; i < tri; i++ {
-			gui.HLine(gtx.Ops, rc.Max.X-1-tri+i, rc.Max.X-1, rc.Min.Y+i, 1, noteRed)
+			gui.HLine(gtx.Ops, rc.Max.X-1-tri+i, rc.Max.X-1, rc.Min.Y+i, 1, c)
 		}
 		cs.Pop()
 	}
@@ -206,10 +376,16 @@ func (a *App) drawAnnots(gtx layout.Context, v *render.View) {
 func (a *App) notePopup(gtx layout.Context, n model.Note, pt image.Point) {
 	th := a.ui
 	w := gtx.Dp(200)
+	if n.Threaded {
+		w = gtx.Dp(260)
+	}
 	g := gtx
 	g.Constraints = layout.Constraints{Min: image.Pt(w, 0), Max: image.Pt(w, gtx.Dp(300))}
 	m := op.Record(gtx.Ops)
 	dims := layout.UniformInset(6).Layout(g, func(gtx layout.Context) layout.Dimensions {
+		if n.Threaded {
+			return a.threadPosts(gtx, n, 6)
+		}
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				if n.Author == "" {

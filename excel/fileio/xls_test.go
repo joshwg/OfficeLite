@@ -1,3 +1,6 @@
+// Tests for saving as .xls: a code-built workbook and the samples round
+// trip, and Fits reports what the format cannot hold.
+
 package fileio
 
 import (
@@ -190,6 +193,9 @@ func writeXLS(t *testing.T, wb *model.Workbook) *model.Workbook {
 	return got
 }
 
+// TestXLSRoundTrip checks that the code-built workbook fits .xls and comes
+// back from a save without warnings, with its cells, styles, layout and
+// defined names intact.
 func TestXLSRoundTrip(t *testing.T) {
 	wb := buildXLSWorkbook()
 	if fits := Fits(wb, XLS); len(fits) != 0 {
@@ -208,6 +214,9 @@ func TestXLSRoundTrip(t *testing.T) {
 	}
 }
 
+// TestXLSSamples checks that the sample workbooks survive a save as .xls,
+// apart from what the format is known not to hold (pivots, charts, dynamic
+// arrays, the Function-Tests demos).
 func TestXLSSamples(t *testing.T) {
 	paths := []string{"xlsfile/testdata/sample.xls"}
 	if m, _ := filepath.Glob("../../Samples/excel*/*.xls*"); len(m) > 0 {
@@ -242,6 +251,10 @@ func TestXLSSamples(t *testing.T) {
 	}
 }
 
+// TestXLSFits checks that Fits names each thing .xls cannot hold (sheet
+// name length, rows and columns beyond BIFF8, formulas over the limits or
+// using unknown functions, dynamic arrays), that the other formats report
+// nothing, and that a save drops exactly those things and keeps the rest.
 func TestXLSFits(t *testing.T) {
 	wb := &model.Workbook{Styles: []model.Style{model.DefaultStyle()}}
 	sh := model.NewSheet("A very long sheet name that Excel cuts")

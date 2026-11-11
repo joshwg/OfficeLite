@@ -1,3 +1,6 @@
+// Converting the BIFF palette, fonts and XFs read from a workbook into
+// model styles.
+
 package xlsfile
 
 import (
@@ -85,6 +88,8 @@ func (p *parser) buildStyles() {
 	}
 }
 
+// modelFont converts a FONT record to a model font, taking the family and
+// size from def when the record leaves them empty.
 func (p *parser) modelFont(f font, def model.Font) model.Font {
 	mf := model.Font{
 		Family:    f.name,

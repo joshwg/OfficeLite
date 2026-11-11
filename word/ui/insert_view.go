@@ -1,3 +1,8 @@
+// Page view interactions for inserted content: clicking a picture
+// selects it and its handles resize it, Ctrl+click follows a link, a drag
+// across table cells selects whole cells, Tab moves between cells and
+// Ctrl+K opens Insert Link.
+
 package ui
 
 import (
@@ -15,15 +20,20 @@ import (
 	"officelite/word/model"
 )
 
-// Page view interactions for inserted content: clicking a picture
-// selects it and its handles resize it, Ctrl+click follows a link, a drag
-// across table cells selects whole cells, Tab moves between cells and
-// Ctrl+K opens Insert Link.
-
+// resizeOutline is the color of the dashed outline of a picture being resized.
 var resizeOutline = colors.RGB(0x404040)
 
 // insertKeys handles the Insert shortcuts in the page view.
 func (d *window) insertKeys(gtx layout.Context) {
+	for {
+		ev, ok := gtx.Event(key.Filter{Focus: &d.v, Name: "M", Required: key.ModShortcut | key.ModAlt})
+		if !ok {
+			break
+		}
+		if e, ok := ev.(key.Event); ok && e.State == key.Press && !d.modalOpen() {
+			d.newComment()
+		}
+	}
 	for {
 		ev, ok := gtx.Event(key.Filter{Focus: &d.v, Name: "K", Required: key.ModShortcut})
 		if !ok {

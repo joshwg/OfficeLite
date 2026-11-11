@@ -34,8 +34,8 @@ func TestAutoSaveLocked(t *testing.T) {
 	h.press(key.NameReturn, 0)
 	clock.Advance(limits.AutoSaveDelay)
 	h.settle()
-	if a.as.saver.On() || !strings.Contains(a.errMsg, "Budget.xlsx is open in another program") {
-		t.Errorf("on %v, error %q", a.as.saver.On(), a.errMsg)
+	if a.as.Saver.On() || !strings.Contains(a.errMsg, "Budget.xlsx is open in another program") {
+		t.Errorf("on %v, error %q", a.as.Saver.On(), a.errMsg)
 	}
 	if !a.modified || h.cell("A1").Text != "42" || !a.askBeforeClose() {
 		t.Errorf("edits lost: modified %v, A1 %q", a.modified, h.cell("A1").Text)

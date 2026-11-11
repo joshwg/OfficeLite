@@ -1,3 +1,6 @@
+// Pages tables → Word tables: columns, merges, header rows and cell
+// styling.
+
 package pagesfile
 
 import (
@@ -22,7 +25,7 @@ func (r *reader) table(t *iwork.Table) *model.Table {
 		}
 		tbl.Columns = append(tbl.Columns, w)
 	}
-	merged := map[[2]int]iwork.Range{} // every cell of a merge -> the merge
+	merged := map[[2]int]iwork.Range{} // every cell of a merge → the merge
 	for _, m := range t.Merges {
 		for row := m.R1; row <= m.R2; row++ {
 			for col := m.C1; col <= m.C2; col++ {

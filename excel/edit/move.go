@@ -1,3 +1,8 @@
+// Dragging a selection's border: the cells move (or with Ctrl, are
+// copied) by whole rows and columns, with their formats, notes, links and
+// merged areas, as one undoable change. Also cellEdits, which collects a
+// command's cell changes by position, and the defined-name change.
+
 package edit
 
 import (
@@ -8,10 +13,6 @@ import (
 	"officelite/excel/formula"
 	"officelite/excel/model"
 )
-
-// Dragging a selection's border: the cells move (or with Ctrl, are
-// copied) by whole rows and columns, with their formats, notes, links and
-// merged areas, as one undoable change.
 
 // MoveTarget is where src lands when dragged by dRow, dCol; ok is false
 // when that would go past the sheet's edge.
@@ -198,6 +199,7 @@ type namesChange struct {
 	before, after []model.DefinedName
 }
 
+// set puts the workbook's defined names back to the after or before list.
 func (c *namesChange) set(wb *model.Workbook, after bool) {
 	if after {
 		wb.Names = slices.Clone(c.after)

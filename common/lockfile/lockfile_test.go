@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"officelite/common/limits"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -161,6 +162,73 @@ func TestSaveError(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "a.docx")
 	if got := SaveError(p, errors.New("disk full")); got != "Save failed: disk full" {
 		t.Errorf("plain error: %q", got)
+	}
+}
+
+// TestTakeOwnerExclusive checks that taking an owner file never
+// overwrites one another program created (before the check, or between
+// the check and the create), and that this user's own stale leftover is
+// replaced.
+func TestTakeOwnerExclusive(t *testing.T) {
+	dir := t.TempDir()
+	mine := Encode(Word, UserName())
+	stale := time.Now().Add(-limits.OwnerFileStaleAfter - time.Hour)
+
+	// Office's file appearing after the check: the create step itself
+	// refuses to replace it.
+	raced := filepath.Join(dir, "~$raced.docx")
+	theirs := Encode(Word, "Alice "+UserName())
+	if err := os.WriteFile(raced, theirs, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if f, err := createOwner(raced, mine); err == nil {
+		f.Close()
+		t.Error("createOwner replaced an existing owner file")
+	} else if !os.IsExist(err) {
+		t.Errorf("createOwner on an existing file: %v, want os.IsExist", err)
+	}
+	if b, _ := os.ReadFile(raced); !bytes.Equal(b, theirs) {
+		t.Error("existing owner file overwritten by createOwner")
+	}
+
+	// Someone else's, even a stale one, is left alone.
+	if err := os.Chtimes(raced, stale, stale); err != nil {
+		t.Fatal(err)
+	}
+	if f := takeOwner(raced, mine); f != nil {
+		f.Close()
+		t.Error("took another user's owner file")
+	}
+	if b, _ := os.ReadFile(raced); !bytes.Equal(b, theirs) {
+		t.Error("another user's owner file overwritten")
+	}
+
+	// This user's own stale leftover is replaced.
+	own := filepath.Join(dir, "~$own.docx")
+	if err := os.WriteFile(own, append(mine[:len(mine):len(mine)], "junk"...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(own, stale, stale); err != nil {
+		t.Fatal(err)
+	}
+	f := takeOwner(own, mine)
+	if f == nil {
+		t.Fatal("own stale owner file not replaced")
+	}
+	b, _ := os.ReadFile(own)
+	if err := f.Close(); err != nil {
+		t.Error(err)
+	}
+	if !bytes.Equal(b, mine) {
+		t.Errorf("replaced owner file holds %q", b)
+	}
+
+	// None there: created.
+	fresh := filepath.Join(dir, "~$fresh.docx")
+	if f := takeOwner(fresh, mine); f == nil {
+		t.Error("no owner file created")
+	} else {
+		f.Close()
 	}
 }
 

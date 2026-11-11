@@ -1,3 +1,8 @@
+// Headers and footers: header*.xml / footer*.xml parts referenced from
+// each section's w:sectPr (w:headerReference / w:footerReference with
+// w:type default, first or even), w:titlePg in the sectPr and
+// w:evenAndOddHeaders in settings.xml.
+
 package docxfile
 
 import (
@@ -9,16 +14,14 @@ import (
 	"officelite/word/model"
 )
 
-// Headers and footers: header*.xml / footer*.xml parts referenced from the
-// last section's w:sectPr (w:headerReference / w:footerReference with
-// w:type default, first or even), w:titlePg in the sectPr and
-// w:evenAndOddHeaders in settings.xml.
-
+// Content types of header and footer parts.
 const (
 	ctHeader = "application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"
 	ctFooter = "application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"
 )
 
+// hfKind maps a w:type attribute (default when empty) to its HFKind;
+// false for an unknown value.
 func hfKind(t string) (model.HFKind, bool) {
 	for k, n := range model.HFKindNames {
 		if n == t || t == "" && k == 0 {
@@ -213,9 +216,17 @@ func (w *writer) hfXML(h *model.HeaderFooter, p hfPart) ([]byte, []byte) {
 		}
 		partRels = w.src.rels(p.name)
 	}
+	copied := false
+	if p.isNew && w.src != nil && h.Part != "" && w.src.find(h.Part) != nil {
+		// A copy of a source part's header written to a new part: its
+		// raw XML (pictures, shapes, charts) refers to the source part's
+		// relationships, so the new part gets them too.
+		partRels = movedRels(w.src.rels(h.Part), h.Part, p.name)
+		copied = len(partRels) > 0
+	}
 	// Opaque content refers to this part's relationships.
 	mainRels, mainDirty, mainPart, mainPics := w.rels, w.relsDirty, w.main, w.picRels
-	w.rels, w.relsDirty, w.main, w.picRels = partRels, false, p.name, nil
+	w.rels, w.relsDirty, w.main, w.picRels = partRels, copied, p.name, nil
 	tag := "w:hdr"
 	if p.footer {
 		tag = "w:ftr"
@@ -237,6 +248,30 @@ func (w *writer) hfXML(h *model.HeaderFooter, p hfPart) ([]byte, []byte) {
 	}
 	w.rels, w.relsDirty, w.main, w.picRels = mainRels, mainDirty, mainPart, mainPics
 	return []byte(b.String()), relsData
+}
+
+// movedRels returns the relationships of part from rewritten for part to:
+// internal targets point at the same parts, relative to to's folder when
+// they are inside it (always so for a header moved within word/), else
+// from the package root; external ones (links) are unchanged.
+func movedRels(rels []rel, from, to string) []rel {
+	out := make([]rel, len(rels))
+	dir := path.Dir(to)
+	for i, rl := range rels {
+		if !strings.EqualFold(rl.Mode, "External") {
+			abs := opc.Resolve(from, rl.Target)
+			switch {
+			case dir == ".":
+				rl.Target = abs
+			case strings.HasPrefix(abs, dir+"/"):
+				rl.Target = strings.TrimPrefix(abs, dir+"/")
+			default:
+				rl.Target = "/" + abs
+			}
+		}
+		out[i] = rl
+	}
+	return out
 }
 
 // hfRefsXML is section sec's header and footer references.
@@ -315,8 +350,8 @@ func (w *writer) addHFParts(replace map[string][]byte, ct *contentTypes) bool {
 // w:evenAndOddHeaders.
 var settingsOrder = order("writeProtection view zoom removePersonalInformation removeDateAndTime doNotDisplayPageBoundaries displayBackgroundShape printPostScriptOverText printFractionalCharacterWidth printFormsData embedTrueTypeFonts embedSystemFonts saveSubsetFonts saveFormsData mirrorMargins alignBordersAndEdges bordersDoNotSurroundHeader bordersDoNotSurroundFooter gutterAtTop hideSpellingErrors hideGrammaticalErrors activeWritingStyle proofState formsDesign attachedTemplate linkStyles stylePaneFormatFilter stylePaneSortMethod documentType mailMerge revisionView trackRevisions doNotTrackMoves doNotTrackFormatting documentProtection autoFormatOverride styleLockTheme styleLockQFSet defaultTabStop autoHyphenation consecutiveHyphenLimit hyphenationZone doNotHyphenateCaps showEnvelope summaryLength clickAndTypeStyle defaultTableStyle evenAndOddHeaders bookFoldRevPrinting bookFoldPrinting bookFoldPrintingSheets drawingGridHorizontalSpacing drawingGridVerticalSpacing displayHorizontalDrawingGridEvery displayVerticalDrawingGridEvery doNotUseMarginsForDrawingGridOrigin drawingGridHorizontalOrigin drawingGridVerticalOrigin doNotShadeFormData noPunctuationKerning characterSpacingControl printTwoOnOne strictFirstAndLastChars noLineBreaksAfter noLineBreaksBefore savePreviewPicture doNotValidateAgainstSchema saveInvalidXml ignoreMixedContent alwaysShowPlaceholderText doNotDemarcateInvalidXml saveXmlDataOnly useXSLTWhenSaving saveThroughXslt showXMLTags alwaysMergeEmptyNamespace updateFields hdrShapeDefaults footnotePr endnotePr compat docVars rsids mathPr attachedSchema themeFontLang clrSchemeMapping doNotIncludeSubdocsInStats doNotAutoCompressPictures forceUpgrade captions readModeInkLockDown smartTagType schemaLibrary shapeDefaults doNotEmbedSmartTags decimalSymbol listSeparator")
 
-// setEvenOdd returns settings.xml with w:evenAndOddHeaders set to on, or
-// false when it already is.
+// setEvenOdd returns settings.xml with w:evenAndOddHeaders added or
+// removed to match on, or false when it already does.
 func setEvenOdd(data []byte, on bool) ([]byte, bool) {
 	root, err := parseXML(data)
 	if err != nil {

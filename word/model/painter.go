@@ -1,3 +1,6 @@
+// The Format Painter: picking up formatting from the selection and
+// applying it elsewhere.
+
 package model
 
 // FormatCopy is formatting picked up by the Format Painter: the character

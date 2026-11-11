@@ -1,3 +1,6 @@
+// Function registry: Spec describes a worksheet function (arity, argument
+// passing, volatility) and Registry maps upper-case names to Specs.
+
 package formula
 
 import (
@@ -41,10 +44,11 @@ type Spec struct {
 	Format   string // number format for the result in a General cell (dates)
 }
 
-// All, From and Only build Spec.Arrays / Spec.Refs predicates.
+// All, From and Only build Spec.Arrays / Spec.Refs predicates; All matches
+// every argument.
 func All(int) bool { return true }
 
-// From matches arguments k, k+1, ...
+// From matches arguments k, k+1, …
 func From(k int) func(int) bool { return func(i int) bool { return i >= k } }
 
 // Only matches the listed argument positions.
@@ -64,6 +68,7 @@ type Registry struct {
 	funcs map[string]*Spec
 }
 
+// NewRegistry returns an empty registry.
 func NewRegistry() *Registry { return &Registry{funcs: map[string]*Spec{}} }
 
 // Add registers functions, replacing any with the same name.

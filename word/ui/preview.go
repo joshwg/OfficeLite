@@ -1,3 +1,6 @@
+// Preview: one frame of a document window for the wordshot tool, with a
+// File page, menu, dialog or interaction shown.
+
 package ui
 
 import (
@@ -14,10 +17,11 @@ import (
 
 // Preview lays out one frame of a document window without a native
 // window, for the wordshot tool. page names a File page ("home", "info",
-// "save as", ...) or is empty for the document; menu >= 0 opens that
+// "save as", …) or is empty for the document; menu >= 0 opens that
 // menu's drop-down; dialog "style" or "close" shows Modify Style or the
-// save prompt; "marks" turns on Show/Hide ¶; "context", "colresize" and "dragtext" show the right-click
-// menu, a table border being dragged and selected text being dragged;
+// save prompt; "marks" turns on Show/Hide ¶; "context", "colresize" and
+// "dragtext" show the right-click menu, a table border being dragged and
+// selected text being dragged;
 // "undo" and "redo" make a few changes and open the Undo (or Redo) list;
 // "autosave" and "autosave-saved" turn the title bar's AutoSave switch on
 // (and show it just saved). marks turns on Show/Hide ¶ whatever else is
@@ -55,7 +59,7 @@ func Preview(gtx layout.Context, fonts *gui.FontLibrary, list *recent.List, doc 
 		d.startAutoSave()
 		d.setAutoSave(true)
 		if dialog == "autosave-saved" {
-			d.as.savedAt = time.Now()
+			d.as.SavedAt = time.Now()
 		}
 	case "context", "colresize", "dragtext":
 		// These need the page view laid out once to place themselves.

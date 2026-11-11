@@ -1,3 +1,6 @@
+// Style management: creating a style from the selection, updating one to
+// match it, and deleting custom styles.
+
 package model
 
 import (
@@ -133,6 +136,7 @@ func (e *Editor) NewStyle(spec StyleSpec) (string, error) {
 	return st.ID, nil
 }
 
+// normalizeSelected merges like runs in every selected paragraph.
 func (e *Editor) normalizeSelected() {
 	for _, i := range e.SelectedParas() {
 		normalize(e.locs[i].P)

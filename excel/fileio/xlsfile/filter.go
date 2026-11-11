@@ -19,6 +19,8 @@ import (
 	"officelite/excel/model"
 )
 
+// AutoFilter record ids, the _FilterDatabase built-in name code, and the
+// AUTOFILTER and DOPER field values.
 const (
 	recFilterMode     = 0x009B
 	recAutoFilterInfo = 0x009D

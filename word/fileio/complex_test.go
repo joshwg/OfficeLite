@@ -1,3 +1,6 @@
+// Tests for the complex-layout sample: sections, headers, nested tables,
+// notes, floating objects and fields survive .docx and .doc round trips.
+
 package fileio
 
 import (
@@ -74,12 +77,15 @@ func structure(d *model.Document) string {
 	return b.String()
 }
 
+// text is the paragraphs' text in bs, joined with "|".
 func text(bs []model.Block) string {
 	var out []string
 	model.WalkBlocks(bs, func(p *model.Paragraph) bool { out = append(out, p.Text()); return true })
 	return strings.Join(out, "|")
 }
 
+// reopen saves d in format f and reads the result back, failing the test
+// on either error.
 func reopen(t *testing.T, d *model.Document, f Format) *model.Document {
 	t.Helper()
 	var buf bytes.Buffer
@@ -93,9 +99,10 @@ func reopen(t *testing.T, d *model.Document, f Format) *model.Document {
 	return back
 }
 
-// The complex layout sample (sections in portrait and landscape, a
-// footer, a nested table, an endnote, a text box and a table of
-// contents) keeps its structure through .docx and .doc saves.
+// TestComplexLayoutRoundTrips checks that the complex layout sample
+// (sections in portrait and landscape, a footer, a nested table, an
+// endnote, a text box and a table of contents) keeps its structure
+// through .docx and .doc saves.
 func TestComplexLayoutRoundTrips(t *testing.T) {
 	data, err := os.ReadFile("docfile/testdata/complex.doc")
 	if err != nil {
@@ -121,8 +128,14 @@ func TestComplexLayoutRoundTrips(t *testing.T) {
 	if got := structure(reopen(t, x, DOCX)); got != want {
 		t.Errorf("second .docx save:\n%s", diff(want, got))
 	}
-	// .docx → .doc: everything but the text box (which .doc saving
-	// drops).
+	// .docx → .doc: everything but the text box and the comment (which
+	// .doc saving drops).
+	plain := reopen(t, x, DOCX)
+	ed := model.NewEditor(plain)
+	for _, a := range ed.Comments() {
+		ed.DeleteComment(a.Comment)
+	}
+	wantDoc := structure(plain)
 	noFloat := func(s string) string {
 		var keep []string
 		for _, l := range strings.Split(s, "\n") {
@@ -132,11 +145,13 @@ func TestComplexLayoutRoundTrips(t *testing.T) {
 		}
 		return strings.Join(keep, "\n")
 	}
-	if got := structure(reopen(t, x, DOC)); noFloat(got) != noFloat(want) {
-		t.Errorf(".doc save of the .docx:\n%s", diff(noFloat(want), noFloat(got)))
+	if got := structure(reopen(t, x, DOC)); noFloat(got) != noFloat(wantDoc) {
+		t.Errorf(".doc save of the .docx:\n%s", diff(noFloat(wantDoc), noFloat(got)))
 	}
 }
 
+// diff reports the first line on which want and got differ, or "" when
+// they're the same.
 func diff(want, got string) string {
 	w, g := strings.Split(want, "\n"), strings.Split(got, "\n")
 	for i := range max(len(w), len(g)) {

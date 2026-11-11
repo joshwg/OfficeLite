@@ -1,3 +1,6 @@
+// Spans: inline and block-level wrappers (hyperlinks, content controls…)
+// kept around runs and blocks so a save can wrap the content again.
+
 package model
 
 // SpanKind says what a Span is.

@@ -1,3 +1,7 @@
+// Table editing: Insert > Table and the table commands (insert and
+// delete rows and columns, Tab between cells). Every change is one undo
+// step.
+
 package model
 
 import (
@@ -7,10 +11,6 @@ import (
 
 	"officelite/word"
 )
-
-// Table editing: Insert > Table and the table commands (insert and
-// delete rows and columns, Tab between cells). Every change is one undo
-// step.
 
 // cellPad is Word's default left and right cell margin, points; a cell's
 // text is its grid width less twice this.
@@ -44,6 +44,8 @@ func (e *Editor) InTable() bool {
 	return ok
 }
 
+// findCell searches blocks (and nested tables) for cell c and returns its
+// location.
 func findCell(blocks *[]Block, c *TableCell) (TableLoc, bool) {
 	for i, b := range *blocks {
 		t, ok := b.(*Table)
@@ -573,8 +575,8 @@ func (e *Editor) NextCell(dir int) bool {
 	return true
 }
 
-// SelectCell, SelectRow and SelectTable select the caret's cell, its row
-// or its whole table (Word's Layout > Select).
+// SelectCell selects the caret's cell (Word's Layout > Select > Cell);
+// outside a table nothing happens, as for SelectRow and SelectTable.
 func (e *Editor) SelectCell() {
 	if tl, ok := e.CellAt(e.Sel.Caret); ok {
 		a, b, _ := e.CellBounds(tl.Table.Rows[tl.Row].Cells[tl.Cell])
@@ -582,6 +584,7 @@ func (e *Editor) SelectCell() {
 	}
 }
 
+// SelectRow selects the caret's row, from its first cell to its last.
 func (e *Editor) SelectRow() {
 	if tl, ok := e.CellAt(e.Sel.Caret); ok {
 		row := tl.Table.Rows[tl.Row]
@@ -591,6 +594,7 @@ func (e *Editor) SelectRow() {
 	}
 }
 
+// SelectTable selects the caret's whole table.
 func (e *Editor) SelectTable() {
 	if tl, ok := e.CellAt(e.Sel.Caret); ok {
 		t := tl.Table

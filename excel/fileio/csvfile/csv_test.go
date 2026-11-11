@@ -1,3 +1,6 @@
+// Tests for reading CSV: delimiter detection, encodings, cell typing and
+// the column limit.
+
 package csvfile
 
 import (
@@ -7,6 +10,9 @@ import (
 	"officelite/excel/model"
 )
 
+// TestRead checks that Read finds the delimiter (sniffed, from the
+// extension or from a sep= line), decodes a BOM and the ANSI code page, and
+// keeps quoted fields with embedded delimiters and newlines whole.
 func TestRead(t *testing.T) {
 	cases := []struct {
 		name, data string
@@ -37,6 +43,9 @@ func TestRead(t *testing.T) {
 	}
 }
 
+// TestCellTyping checks that csvCell types fields as Excel does: plain and
+// decorated numbers, dates and times become numbers, TRUE/FALSE booleans,
+// and the rest (NaN, Inf, a lone "=") stays text.
 func TestCellTyping(t *testing.T) {
 	for _, c := range []struct {
 		in   string
@@ -69,6 +78,8 @@ func TestCellTyping(t *testing.T) {
 	}
 }
 
+// TestFormulaCell checks that a field starting with "=" becomes a dynamic
+// formula cell with no value yet.
 func TestFormulaCell(t *testing.T) {
 	c := csvCell("=SUM(A1:A3)")
 	if c.Formula != "SUM(A1:A3)" || !c.Dynamic || c.Kind != model.KindEmpty {
@@ -76,6 +87,8 @@ func TestFormulaCell(t *testing.T) {
 	}
 }
 
+// TestLimits checks that a row wider than the sheet limit is cut at MaxCols
+// with one dropped-cells warning.
 func TestLimits(t *testing.T) {
 	wide := make([]byte, 0, 3*(excel.MaxCols+5))
 	for i := 0; i < excel.MaxCols+5; i++ {

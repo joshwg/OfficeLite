@@ -1,8 +1,8 @@
-package model
-
 // Edits made with the mouse in the page view: dragging selected text to
 // move or copy it, and dragging table borders to resize columns and rows.
 // Each is one undo step.
+
+package model
 
 // MinColumnWidth is the narrowest a column gets by dragging its border,
 // points.

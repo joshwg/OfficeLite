@@ -1,0 +1,66 @@
+/* style.css: the server pages' look (login, home, account, users). */
+:root {
+  --bg: #f6f7f9; --fg: #1d2330; --muted: #5b6475; --card: #fff; --line: #d9dde5;
+  --accent: #2b579a; --excel: #217346; --ok-bg: #e6f4ea; --ok: #1e6b35;
+  --err-bg: #fdecea; --err: #a52a1a;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #15181e; --fg: #e4e7ec; --muted: #9aa3b2; --card: #1e232b; --line: #343b47;
+    --accent: #7aa7e8; --excel: #5cbf86; --ok-bg: #173323; --ok: #8fd6a6;
+    --err-bg: #3a1c18; --err: #f2a093;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 "Segoe UI", system-ui, sans-serif; }
+a { color: var(--accent); }
+.bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 10px 16px; background: var(--card); border-bottom: 1px solid var(--line); }
+.brand { font-weight: 600; text-decoration: none; color: var(--fg); }
+nav { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
+nav form { margin: 0; }
+main { max-width: 960px; margin: 0 auto; padding: 24px 16px; }
+h1 { font-size: 1.5rem; margin: 0 0 16px; }
+h2 { font-size: 1.15rem; margin: 0 0 12px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 16px 20px; margin-bottom: 20px; }
+.narrow { max-width: 420px; }
+label { display: block; margin-bottom: 12px; }
+label input { display: block; width: 100%; margin-top: 4px; }
+label.inline, label.inline input { display: inline; width: auto; }
+input { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--fg); }
+button { font: inherit; padding: 6px 14px; border: 1px solid var(--accent); border-radius: 4px;
+  background: var(--accent); color: #fff; cursor: pointer; }
+button.link { background: none; border: none; color: var(--accent); padding: 0; text-decoration: underline; }
+button.danger { background: var(--err); border-color: var(--err); }
+.msg { background: var(--ok-bg); color: var(--ok); padding: 8px 12px; border-radius: 4px; }
+.err { background: var(--err-bg); color: var(--err); padding: 8px 12px; border-radius: 4px; }
+.hint { color: var(--muted); font-size: 0.9rem; }
+.apps { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 16px; }
+.app { display: block; padding: 20px; border-radius: 8px; background: var(--card); border: 1px solid var(--line);
+  border-left: 6px solid var(--accent); text-decoration: none; color: var(--fg); }
+.app.excel { border-left-color: var(--excel); }
+.app strong { display: block; font-size: 1.2rem; }
+.app span { color: var(--muted); }
+.scroll { overflow-x: auto; margin-bottom: 20px; }
+table { width: 100%; border-collapse: collapse; background: var(--card); }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.actions form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 0 6px; }
+.actions input[type=password] { width: 12em; }
+/* Login cooldown countdown (login.js). */
+.cooldown { margin-top: 14px; text-align: center; }
+.cooldown .timer { font-size: 1.3rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Password fields with an eye button (added by password.js). */
+.pw { position: relative; display: block; margin-top: 4px; }
+.pw input { display: block; width: 100%; margin: 0; padding-right: 36px; }
+.actions .pw { display: inline-block; margin: 0; }
+.actions .pw input { width: 12em; }
+button.eye { position: absolute; top: 50%; right: 4px; transform: translateY(-50%); display: flex;
+  padding: 4px; border: none; background: none; color: var(--muted); cursor: pointer; }
+button.eye:hover, button.eye:focus-visible { color: var(--fg); }
+button.eye svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round; }
+.app-page { overflow: hidden; }
+.status { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; }
+.status.err { inset: auto 16px 16px; }

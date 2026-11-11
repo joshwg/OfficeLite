@@ -1,3 +1,9 @@
+// Find and Replace (Ctrl+F, Ctrl+H) and Go To (Ctrl+G): a bar over the
+// page view, as Word's navigation search. Every match is highlighted in
+// the pages; Enter / Shift+Enter (or F3 / Shift+F3) select the next or
+// previous one and the bar counts them ("3 of 12"). Replace replaces the
+// selected match and moves on; Replace All is one undoable step.
+
 package ui
 
 import (
@@ -19,12 +25,7 @@ import (
 	"officelite/word/model"
 )
 
-// Find and Replace (Ctrl+F, Ctrl+H) and Go To (Ctrl+G): a bar over the
-// page view, as Word's navigation search. Every match is highlighted in
-// the pages; Enter / Shift+Enter (or F3 / Shift+F3) select the next or
-// previous one and the bar counts them ("3 of 12"). Replace replaces the
-// selected match and moves on; Replace All is one undoable step.
-
+// findMode is what the bar is for: find, find and replace, or go to page.
 type findMode int8
 
 const (
@@ -33,6 +34,8 @@ const (
 	findGoTo
 )
 
+// findBar is the state of the bar: its boxes, options, buttons and the
+// cached matches.
 type findBar struct {
 	open  bool
 	mode  findMode
@@ -49,6 +52,8 @@ type findBar struct {
 	msg     string
 }
 
+// findKey identifies a search: the matches stay valid while the text,
+// options, editor and document version are the same.
 type findKey struct {
 	q       string
 	opts    model.FindOptions
@@ -83,6 +88,7 @@ func (d *window) closeFind() {
 	d.v.focusPending = true
 }
 
+// options returns the Match case / Whole words settings as search options.
 func (f *findBar) options() model.FindOptions {
 	return model.FindOptions{MatchCase: f.matchCase, WholeWords: f.whole}
 }
@@ -107,7 +113,7 @@ func (d *window) findMatches() []model.Match {
 	return f.matches
 }
 
-// current returns the index of the match the selection is on, or -1.
+// currentMatch returns the index of the match the selection is on, or -1.
 func (d *window) currentMatch() int {
 	a, b := d.ed.Sel.Ordered()
 	for i, m := range d.findMatches() {
@@ -151,6 +157,8 @@ func (d *window) replaceOne() {
 	d.findNext(false)
 }
 
+// replaceAll replaces every match in one undoable step and reports the
+// count in the bar.
 func (d *window) replaceAll() {
 	f := &d.find
 	n := d.ed.ReplaceAll(f.what.Text(), f.with.Text(), f.options())
@@ -184,8 +192,8 @@ func (d *window) goToPage() {
 	d.v.ensureCaret = false
 }
 
-// findKeys handles Enter and Shift+Enter in the bar's boxes and the
-// SubmitEvent of the page box.
+// findEvents handles Enter and Shift+Enter in the bar's boxes (next /
+// previous match, replace, go to page) and drains the boxes' own events.
 func (d *window) findEvents(gtx layout.Context) {
 	f := &d.find
 	for _, ed := range []*widget.Editor{&f.what, &f.with, &f.page} {

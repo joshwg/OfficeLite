@@ -110,7 +110,7 @@ func Preview(gtx layout.Context, fonts *gui.FontLibrary, list *recent.List, wb *
 		a.startAutoSave()
 		a.setAutoSave(true)
 		if o.AutoSave == "saved" {
-			a.as.savedAt = time.Now()
+			a.as.SavedAt = time.Now()
 		}
 	}
 	if o.Ask {

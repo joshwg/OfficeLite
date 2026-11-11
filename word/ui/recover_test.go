@@ -1,3 +1,6 @@
+// Tests for AutoRecover in the document window: recovery copies and
+// opening a recovered document.
+
 package ui
 
 import (
@@ -49,6 +52,8 @@ func (h *harness) waitRecover(dir string, n int) {
 	h.t.Fatalf("recovery files %v, want %d", recoverFiles(dir), n)
 }
 
+// sidecar reads the recovery entry from the .json sidecar in dir, with
+// Copy pointing at its .docx.
 func (h *harness) sidecar(dir string) autorecover.Entry {
 	var e autorecover.Entry
 	for _, n := range recoverFiles(dir) {
@@ -154,7 +159,7 @@ func TestOpenRecovered(t *testing.T) {
 	if got := d.saveAsName(fileio.DOC); got != e.Path {
 		t.Errorf("Save As suggests %q, want %q", got, e.Path)
 	}
-	d.savedAs(fileio.DOC, e.Path, false, d.bodyEd().Version, nil)
+	d.savedAs(saveSnap{f: fileio.DOC, export: false, version: d.bodyEd().Version}, gui.SaveAsResult{Path: e.Path})
 	d.ar.saver.Wait()
 	if d.docName() != "Letter.doc" || d.modified() {
 		t.Errorf("after Save As: %q, modified %v", d.docName(), d.modified())

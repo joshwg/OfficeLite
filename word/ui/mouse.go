@@ -1,3 +1,7 @@
+// Mouse features of the page view, as in Word: the right-click menu,
+// selecting lines from the left margin, dragging selected text to move
+// or copy it, and dragging table borders to resize columns and rows.
+
 package ui
 
 import (
@@ -15,10 +19,7 @@ import (
 	"officelite/word/model"
 )
 
-// Mouse features of the page view, as in Word: the right-click menu,
-// selecting lines from the left margin, dragging selected text to move
-// or copy it, and dragging table borders to resize columns and rows.
-
+// dropCaretColor is the color of the drop caret and the border drag guide.
 var dropCaretColor = colors.RGB(0x404040)
 
 // mouseState is the page view's mouse interaction in progress.
@@ -93,6 +94,7 @@ func (d *window) docCursor(gtx layout.Context) {
 	c.Add(gtx.Ops)
 }
 
+// resizeCursor is the column or row resize cursor for a table border.
 func resizeCursor(b wl.TableBorder) pointer.Cursor {
 	if b.Vertical {
 		return pointer.CursorColResize
@@ -100,6 +102,7 @@ func resizeCursor(b wl.TableBorder) pointer.Cursor {
 	return pointer.CursorRowResize
 }
 
+// overLink reports whether a view position is on the text of a link.
 func (d *window) overLink(p f32.Point) bool {
 	_, ok := d.ed.LinkAt(d.viewPos(p))
 	return ok && d.overText(p)
@@ -468,6 +471,17 @@ func (d *window) openContextMenu(pos image.Point) {
 	} else {
 		add(gui.MenuItem{Label: "Link…", Shortcut: "Ctrl+K", Tip: "Make the selection a link to a web page or e-mail address."},
 			func() { d.insertChosen(insLink) })
+	}
+	if !d.hf.on {
+		sep()
+		add(gui.MenuItem{Label: "New Comment", Shortcut: "Ctrl+Alt+M", Tip: "Add a note about the selection in the Comments pane."},
+			d.newComment)
+		if c, ok := ed.CommentAt(ed.Sel.Caret); ok {
+			add(gui.MenuItem{Label: "Reply to Comment", Tip: "Answer the comment on this text."},
+				func() { d.replyTo(c) })
+			add(gui.MenuItem{Label: "Delete Comment", Tip: "Delete the comment on this text and its replies."},
+				func() { ed.DeleteComment(c); d.edited() })
+		}
 	}
 	if ed.InTable() && !d.hf.on {
 		sep()

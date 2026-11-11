@@ -1,3 +1,5 @@
+// Tests for resizing, hiding and unhiding rows and columns under undo.
+
 package edit
 
 import (
@@ -7,6 +9,9 @@ import (
 	"officelite/excel/model"
 )
 
+// TestResizeUndo checks that ResizeCols and ResizeRows set sizes, that
+// undo restores the old ones (removing sizes that were defaults) and
+// selects the resized columns, and that redo sets them again.
 func TestResizeUndo(t *testing.T) {
 	sh := model.NewSheet("Sheet1")
 	sh.ColWidth[2] = 20
@@ -39,8 +44,9 @@ func TestResizeUndo(t *testing.T) {
 	}
 }
 
-// Hide keeps rows' and columns' sizes, Unhide gives them back, also far
-// past the used area, and both undo.
+// TestHideUnhideKeepsSizes checks that Hide keeps rows' and columns'
+// sizes, that Unhide gives them back, also far past the used area, and
+// that both undo.
 func TestHideUnhideKeepsSizes(t *testing.T) {
 	sh := model.NewSheet("Sheet1")
 	sh.RowHeight[2] = 40

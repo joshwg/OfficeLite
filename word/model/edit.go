@@ -1,3 +1,6 @@
+// The Editor: caret positions and selection, text editing, undo/redo steps,
+// clipboard fragments, and the character and paragraph formatting commands.
+
 package model
 
 import (
@@ -238,6 +241,8 @@ func CopyBlocks(bs []Block) []Block {
 	return out
 }
 
+// copyPara deep-copies a paragraph: runs, properties, editable opaque
+// payloads and its section break.
 func copyPara(p *Paragraph) *Paragraph {
 	q := *p
 	q.Runs = slices.Clone(p.Runs)
@@ -272,6 +277,7 @@ func copyOpaque(o *Opaque) *Opaque {
 	return &c
 }
 
+// copyParaProps returns pp with its tabs and list reference copied.
 func copyParaProps(pp ParaProps) ParaProps {
 	pp.Tabs = slices.Clone(pp.Tabs)
 	if pp.List != nil {
@@ -294,6 +300,7 @@ func CopyStyles(s StyleSheet) StyleSheet {
 	return out
 }
 
+// copyLists deep-copies the list definitions.
 func copyLists(m map[int]*List) map[int]*List {
 	out := make(map[int]*List, len(m))
 	for k, l := range m {
@@ -351,6 +358,7 @@ func NewEditor(doc *Document) *Editor {
 	return e
 }
 
+// reindex rebuilds the paragraph locations after a structural change.
 func (e *Editor) reindex() { e.locs = e.Doc.Locate() }
 
 // Locs returns the paragraph locations (index = Pos.Para). The slice is
@@ -375,8 +383,10 @@ func (e *Editor) TakeDirty() (paras []*Paragraph, all bool) {
 	return paras, all
 }
 
-// CanUndo and CanRedo report whether there is something to undo/redo.
+// CanUndo reports whether there is something to undo.
 func (e *Editor) CanUndo() bool { return len(e.undo) > 0 }
+
+// CanRedo reports whether there is something to redo.
 func (e *Editor) CanRedo() bool { return len(e.redo) > 0 }
 
 // clamp keeps p inside the document and out of hidden paragraphs (see
@@ -435,9 +445,27 @@ func (e *Editor) edit(kind string, from, to int, docLevel bool, f func()) {
 	if kind == "typing" {
 		e.typed = s
 	}
+	e.trimUndo()
 	e.finish(from, s.afterLen)
 }
 
+// trimUndo drops the oldest undo steps past word.UndoHistory, clearing
+// e.typed if it pointed at one of them.
+func (e *Editor) trimUndo() {
+	n := len(e.undo) - word.UndoHistory
+	if n <= 0 {
+		return
+	}
+	for _, s := range e.undo[:n] {
+		if s == e.typed {
+			e.typed = nil
+		}
+	}
+	e.undo = slices.Delete(e.undo, 0, n) // also clears the freed tail, so the dropped steps can be collected
+}
+
+// finish ends a step: it reindexes, marks the body blocks [from, from+n)
+// dirty, clamps the selection and bumps Version.
 func (e *Editor) finish(from, n int) {
 	if len(e.Doc.Body) == 0 {
 		e.Doc.Body = []Block{&Paragraph{}}
@@ -458,11 +486,16 @@ func (e *Editor) Undo() bool { return e.swap(&e.undo, &e.redo) }
 func (e *Editor) Redo() bool { return e.swap(&e.redo, &e.undo) }
 
 // UndoN reverts the last n steps (fewer if there aren't as many), as
-// choosing an entry of Word's Undo list does; RedoN repeats n undone
-// steps. They report whether anything changed.
+// choosing an entry of Word's Undo list does, and reports whether anything
+// changed.
 func (e *Editor) UndoN(n int) bool { return e.swapN(&e.undo, &e.redo, n) }
+
+// RedoN repeats the last n undone steps (fewer if there aren't as many) and
+// reports whether anything changed.
 func (e *Editor) RedoN(n int) bool { return e.swapN(&e.redo, &e.undo, n) }
 
+// swapN swaps up to n steps from one stack to the other and reports
+// whether any moved.
 func (e *Editor) swapN(from, to *[]*step, n int) bool {
 	did := false
 	for ; n > 0 && e.swap(from, to); n-- {
@@ -471,11 +504,15 @@ func (e *Editor) swapN(from, to *[]*step, n int) bool {
 	return did
 }
 
-// UndoLabels and RedoLabels name the steps Undo and Redo would revert or
-// repeat, the next one first, for the Undo and Redo lists.
+// UndoLabels names the steps Undo would revert, the next one first, for
+// the Undo list.
 func (e *Editor) UndoLabels() []string { return stepLabels(e.undo) }
+
+// RedoLabels names the steps Redo would repeat, the next one first, for
+// the Redo list.
 func (e *Editor) RedoLabels() []string { return stepLabels(e.redo) }
 
+// stepLabels returns the steps' labels, the last step first.
 func stepLabels(steps []*step) []string {
 	out := make([]string, len(steps))
 	for i, s := range steps {
@@ -530,6 +567,9 @@ func (s *step) Label() string {
 	return "Edit"
 }
 
+// swap applies the top step of from (body blocks, styles, headers, section
+// and selection change places with what the step saved) and moves it to
+// to. It reports false when from is empty.
 func (e *Editor) swap(from, to *[]*step) bool {
 	if len(*from) == 0 {
 		return false
@@ -903,6 +943,8 @@ func (e *Editor) Enter() {
 	})
 }
 
+// inList reports whether p's resolved formatting puts it in a list that
+// the document defines.
 func (e *Editor) inList(p *Paragraph) bool {
 	l := e.Doc.ResolvePara(p).List
 	return l != nil && l.NumID != 0 && e.Doc.Lists[l.NumID] != nil
@@ -952,6 +994,8 @@ func (e *Editor) splitPara(p Pos) Pos {
 	return Pos{p.Para + 1, 0}
 }
 
+// styleOrDefault returns id, or the default paragraph style's ID when id
+// is "".
 func styleOrDefault(d *Document, id string) string {
 	if id != "" {
 		return id
@@ -959,6 +1003,8 @@ func styleOrDefault(d *Document, id string) string {
 	return normalID(d)
 }
 
+// normalID is the ID of the default paragraph style ("Normal" when the
+// sheet has none).
 func normalID(d *Document) string {
 	if st := d.Styles.Default(ParagraphStyle); st != nil {
 		return st.ID
@@ -1356,20 +1402,25 @@ func (e *Editor) FormatRuns(f func(r *Run)) {
 	})
 }
 
-// ToggleBold, ToggleItalic, ToggleUnderline and ToggleStrike switch the
-// property off when the whole selection has it, otherwise on (Ctrl+B/I/U).
+// ToggleBold switches bold off when the whole selection has it, otherwise
+// on (Ctrl+B). ToggleItalic, ToggleUnderline and ToggleStrike do the same
+// for their properties.
 func (e *Editor) ToggleBold() {
 	defer e.Op("Bold")()
 	on := !e.AllSelected(func(p RunProps) bool { return p.Bold.Bool(false) })
 	e.FormatRuns(func(r *Run) { r.Props.Bold = TriOf(on) })
 }
 
+// ToggleItalic switches italic off when the whole selection has it,
+// otherwise on (Ctrl+I).
 func (e *Editor) ToggleItalic() {
 	defer e.Op("Italic")()
 	on := !e.AllSelected(func(p RunProps) bool { return p.Italic.Bool(false) })
 	e.FormatRuns(func(r *Run) { r.Props.Italic = TriOf(on) })
 }
 
+// ToggleUnderline removes the underline when the whole selection has one,
+// otherwise applies a single underline (Ctrl+U).
 func (e *Editor) ToggleUnderline() {
 	defer e.Op("Underline")()
 	on := !e.AllSelected(func(p RunProps) bool { return hasUnderline(p.Underline) })
@@ -1381,25 +1432,31 @@ func (e *Editor) ToggleUnderline() {
 	})
 }
 
+// hasUnderline reports whether u is an underline style (set and not none).
 func hasUnderline(u Underline) bool { return u != UnderlineUnset && u != UnderlineNone }
 
+// ToggleStrike switches strikethrough off when the whole selection has it,
+// otherwise on.
 func (e *Editor) ToggleStrike() {
 	defer e.Op("Strikethrough")()
 	on := !e.AllSelected(func(p RunProps) bool { return p.Strike.Bool(false) })
 	e.FormatRuns(func(r *Run) { r.Props.Strike = TriOf(on) })
 }
 
-// SetFont, SetSize and SetColor set character properties of the selection.
+// SetFont sets the selection's font (see FormatRuns for what "selection"
+// means with nothing selected).
 func (e *Editor) SetFont(name string) {
 	defer e.Op("Font")()
 	e.FormatRuns(func(r *Run) { r.Props.Font = name })
 }
 
+// SetSize sets the selection's font size in points.
 func (e *Editor) SetSize(pt float64) {
 	defer e.Op("Font Size")()
 	e.FormatRuns(func(r *Run) { r.Props.Size = pt })
 }
 
+// SetColor sets the selection's text color ("RRGGBB").
 func (e *Editor) SetColor(hex string) {
 	defer e.Op("Font Color")()
 	e.FormatRuns(func(r *Run) { r.Props.Color = hex })
@@ -1424,6 +1481,8 @@ func (e *Editor) FormatParas(f func(p *Paragraph)) {
 	e.formatParas(false, f)
 }
 
+// formatParas applies f to every selected paragraph as one "format" step;
+// docLevel steps also save the styles and lists for undo.
 func (e *Editor) formatParas(docLevel bool, f func(p *Paragraph)) {
 	from, to := e.span()
 	e.edit("format", from, to, docLevel, func() {

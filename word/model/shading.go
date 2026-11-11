@@ -1,10 +1,10 @@
-package model
-
-import "slices"
-
 // Home > Paragraph > Shading: one button that colors the background of
 // the selected text, the selected paragraphs or the selected table cells,
 // whichever the selection is.
+
+package model
+
+import "slices"
 
 // ShadeTarget is what SetShading colors.
 type ShadeTarget int8

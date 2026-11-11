@@ -1,3 +1,5 @@
+// Tests for the Pages import against the sample documents in Samples/.
+
 package pagesfile
 
 import (
@@ -10,6 +12,8 @@ import (
 	"officelite/word/model"
 )
 
+// readSample imports Samples/name, skipping the test when the sample is
+// missing and failing it when the import fails.
 func readSample(t *testing.T, name string) *model.Document {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join("..", "..", "..", "Samples", name))
@@ -23,6 +27,8 @@ func readSample(t *testing.T, name string) *model.Document {
 	return doc
 }
 
+// dumpBlocks writes a one-line-per-block summary of blocks (style, list,
+// resolved font and text; table rows as cell text) to b.
 func dumpBlocks(b *strings.Builder, doc *model.Document, blocks []model.Block, indent string) {
 	for _, bl := range blocks {
 		switch bl := bl.(type) {
@@ -52,6 +58,8 @@ func dumpBlocks(b *strings.Builder, doc *model.Document, blocks []model.Block, i
 	}
 }
 
+// TestDumpSamples logs the imported structure of each sample for
+// inspection; it runs only with PAGES_DUMP set and checks nothing.
 func TestDumpSamples(t *testing.T) {
 	if os.Getenv("PAGES_DUMP") == "" {
 		t.Skip("set PAGES_DUMP")
@@ -76,6 +84,8 @@ func paragraphs(doc *model.Document) []*model.Paragraph {
 	return out
 }
 
+// find returns the first body paragraph whose text is exactly text, or
+// nil.
 func find(doc *model.Document, text string) *model.Paragraph {
 	for _, p := range paragraphs(doc) {
 		if p.Text() == text {
@@ -85,6 +95,8 @@ func find(doc *model.Document, text string) *model.Paragraph {
 	return nil
 }
 
+// TestPagesSample1 checks that PagesSample1.pages keeps its page setup,
+// title formatting, hanging indents, text-box text and hyperlinks.
 func TestPagesSample1(t *testing.T) {
 	doc := readSample(t, "PagesSample1.pages")
 	if doc.Page.Width != 612 || doc.Page.Height != 792 || doc.Page.MarginLeft != 108 {
@@ -117,6 +129,8 @@ func TestPagesSample1(t *testing.T) {
 	}
 }
 
+// TestPagesInvoice checks that the invoice sample's caps, heading style
+// and table (shape, header row, cell text and fill) come through.
 func TestPagesInvoice(t *testing.T) {
 	doc := readSample(t, "PagesInvoice.pages")
 	if p := paragraphs(doc)[0]; p.Text() != "Company Name" || doc.ResolveRun(p, &p.Runs[0]).Caps != model.On {
@@ -156,6 +170,9 @@ func TestPagesInvoice(t *testing.T) {
 	}
 }
 
+// TestPagesLayoutDocuments checks that page layout documents (all
+// content floating) import their text boxes and pictures: a landscape
+// brochure and a sheet of business cards.
 func TestPagesLayoutDocuments(t *testing.T) {
 	doc := readSample(t, "PagesBrochure.pages")
 	if !doc.Page.Landscape || doc.Page.Width != 792 {
@@ -188,6 +205,8 @@ func TestPagesLayoutDocuments(t *testing.T) {
 	}
 }
 
+// TestNotPages checks that a Numbers document is refused with an error
+// naming the app it belongs to.
 func TestNotPages(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "..", "Samples", "Sample2.numbers"))
 	if err != nil {
@@ -198,6 +217,8 @@ func TestNotPages(t *testing.T) {
 	}
 }
 
+// TestPagesFooter checks that the invoice's footer is imported with its
+// page number field.
 func TestPagesFooter(t *testing.T) {
 	doc := readSample(t, "PagesInvoice.pages")
 	f := doc.HF.Footers[model.HFDefault]

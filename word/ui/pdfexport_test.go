@@ -1,3 +1,5 @@
+// Tests for PDF export.
+
 package ui
 
 import (
@@ -7,6 +9,8 @@ import (
 	"officelite/common/gui"
 )
 
+// TestPDFExportBuild checks that buildPDF makes a one-page PDF 1.7 naming
+// its producer, and that the Export and Print pages lay out.
 func TestPDFExportBuild(t *testing.T) {
 	h := newHarness(t)
 	h.typeText("Hello PDF")

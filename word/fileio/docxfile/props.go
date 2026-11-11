@@ -1,3 +1,7 @@
+// Run and paragraph properties: w:rPr and w:pPr in both directions, the
+// theme, units, and mergeProps, which writes model changes over the
+// original XML in schema order.
+
 package docxfile
 
 import (
@@ -18,6 +22,8 @@ type theme struct {
 	colors       map[string]string // "accent1" → "4472C4"; keys are the w:themeColor names
 }
 
+// font resolves a theme font name ("majorHAnsi", "minorAscii"…) to the
+// theme's Latin font; "" for a nil theme or an unknown name.
 func (t *theme) font(name string) string {
 	if t == nil {
 		return ""
@@ -31,6 +37,8 @@ func (t *theme) font(name string) string {
 	return ""
 }
 
+// color resolves a theme color with its tint and shade (hex bytes, "" for
+// none) to RRGGBB; "" for a nil theme or an unknown name.
 func (t *theme) color(name, tint, shade string) string {
 	if t == nil {
 		return ""
@@ -54,6 +62,8 @@ func (t *theme) color(name, tint, shade string) string {
 
 // ---- units ----
 
+// twipsPt converts a twips attribute value to points; false if it isn't a
+// number.
 func twipsPt(s string) (float64, bool) {
 	v, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
 	if err != nil {
@@ -62,13 +72,17 @@ func twipsPt(s string) (float64, bool) {
 	return v / 20, true
 }
 
+// ptTwips formats points as a whole number of twips.
 func ptTwips(v float64) string { return strconv.Itoa(int(math.Round(v * 20))) }
 
+// atoi parses an integer attribute value, 0 when it isn't one.
 func atoi(s string) int {
 	v, _ := strconv.Atoi(strings.TrimSpace(s))
 	return v
 }
 
+// onOff reads a toggle element: Unset when absent, Off for w:val 0, false
+// or off, otherwise On (a bare <w:b/> is on).
 func onOff(n *node) model.Tri {
 	if n == nil {
 		return model.Unset
@@ -84,6 +98,8 @@ func onOff(n *node) model.Tri {
 	return model.On
 }
 
+// hexColor normalizes a color attribute to upper-case RRGGBB; "" for
+// "auto" or anything that isn't a hex color.
 func hexColor(v string) string {
 	if strings.EqualFold(strings.TrimSpace(v), "auto") {
 		return ""
@@ -117,6 +133,8 @@ func shdColor(n *node, th *theme) string {
 
 // ---- run properties ----
 
+// w:u values and the model's underline kinds, each way (the heavy and
+// compound patterns fold into the nearest plain one).
 var underlineByVal = map[string]model.Underline{
 	"none": model.UnderlineNone, "single": model.UnderlineSingle, "words": model.UnderlineWords,
 	"double": model.UnderlineDouble, "thick": model.UnderlineThick,
@@ -208,6 +226,8 @@ func highlightShading(p model.RunProps) (string, string) {
 	return p.Highlight, p.Shading
 }
 
+// rFont is the font a <w:rFonts> names for Latin text: a theme font if it
+// refers to one, else w:ascii or w:hAnsi.
 func rFont(k *node, th *theme) string {
 	for _, a := range []string{"w:asciiTheme", "w:hAnsiTheme"} {
 		if v := k.attr(a); v != "" {
@@ -227,8 +247,11 @@ func rFont(k *node, th *theme) string {
 // rPrOrder is CT_ParaRPr/CT_RPr's element sequence.
 var rPrOrder = order("ins del moveFrom moveTo rStyle rFonts b bCs i iCs caps smallCaps strike dstrike outline shadow emboss imprint noProof snapToGrid vanish webHidden color spacing w kern position sz szCs highlight u effect bdr shd fitText vertAlign rtl cs em lang eastAsianLayout specVanish oMath rPrChange")
 
+// pPrOrder is CT_PPr's element sequence.
 var pPrOrder = order("pStyle keepNext keepLines pageBreakBefore framePr widowControl numPr suppressLineNumbers pBdr shd tabs suppressAutoHyphens kinsoku wordWrap overflowPunct topLinePunct autoSpaceDE autoSpaceDN bidi adjustRightInd snapToGrid spacing ind contextualSpacing mirrorIndents suppressOverlap jc textDirection textAlignment textboxTightWrap outlineLvl divId cnfStyle rPr sectPr pPrChange")
 
+// order turns a space-separated list of local names into their schema
+// positions, keyed by "w:name", for mergeProps.
 func order(s string) map[string]float64 {
 	m := map[string]float64{}
 	for i, f := range strings.Fields(s) {
@@ -299,6 +322,8 @@ func genName(x string) string {
 	return x
 }
 
+// triXML is the toggle element for t: <w:name/>, <w:name w:val="0"/>, or
+// "" when unset.
 func triXML(name string, t model.Tri) string {
 	switch t {
 	case model.On:
@@ -309,6 +334,7 @@ func triXML(name string, t model.Tri) string {
 	return ""
 }
 
+// valXML is <w:name w:val="v"/>, or "" when v is empty.
 func valXML(name, v string) string {
 	if v == "" {
 		return ""
@@ -488,6 +514,7 @@ func parsePPr(kids []*node, th *theme) (model.ParaProps, string) {
 	return p, style
 }
 
+// eqF compares two optional values: both nil, or both set and equal.
 func eqF(a, b *float64) bool {
 	if a == nil || b == nil {
 		return a == b
@@ -495,6 +522,7 @@ func eqF(a, b *float64) bool {
 	return *a == *b
 }
 
+// eqTabs reports whether two tab stop lists are the same, in order.
 func eqTabs(a, b []model.TabStop) bool {
 	if len(a) != len(b) {
 		return false
@@ -507,6 +535,7 @@ func eqTabs(a, b []model.TabStop) bool {
 	return true
 }
 
+// eqList compares two optional list references.
 func eqList(a, b *model.ListRef) bool {
 	if a == nil || b == nil {
 		return a == b

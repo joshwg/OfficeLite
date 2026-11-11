@@ -1,7 +1,12 @@
+// Tests for RoundDigits and Round15.
+
 package formula
 
 import "testing"
 
+// TestRoundDigits checks that RoundDigits rounds on the decimal
+// representation (1.005 → 1.01, 0.1+0.2 → 0.3) in each mode, and that
+// Round15 repairs 1.3/0.2.
 func TestRoundDigits(t *testing.T) {
 	for _, c := range []struct {
 		x    float64

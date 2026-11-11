@@ -134,7 +134,7 @@ func (a *App) cellMenu() []ctxItem {
 	if m, ok := v.Sheet.MergeAt(p.Row, p.Col); ok {
 		p = render.Pos{Row: m.R1, Col: m.C1}
 	}
-	_, hasNote := v.Sheet.NoteAt(p.Row, p.Col)
+	note, hasNote := v.Sheet.NoteAt(p.Row, p.Col)
 	_, hasLink := v.Sheet.LinkAt(p.Row, p.Col)
 	items := a.clipboardItems(multi)
 	items = append(items, ctxSep,
@@ -147,12 +147,24 @@ func (a *App) cellMenu() []ctxItem {
 		ctxItem{"Custom Sort…", "", "Sort by several columns or with other options.", multi, a.customSortDialog},
 		ctxSep,
 	)
-	if hasNote {
+	switch {
+	case hasNote && note.Threaded:
+		resolve := ctxItem{"Resolve Thread", "", "Mark this cell's discussion as done.", false, a.toggleResolved}
+		if note.Resolved {
+			resolve = ctxItem{"Reopen Thread", "", "Open this cell's resolved discussion again.", false, a.toggleResolved}
+		}
+		items = append(items,
+			ctxItem{"Reply to Comment", "", "Read this cell's comments and add a reply.", false, a.newComment},
+			resolve,
+			ctxItem{"Delete Comment", "", "Delete the comments and notes in the selection.", false, a.clearNotes})
+	case hasNote:
 		items = append(items,
 			ctxItem{"Edit Note", "Shift+F2", "Change the note of this cell.", false, a.newNote},
 			ctxItem{"Delete Note", "", "Delete the notes in the selection.", false, a.clearNotes})
-	} else {
-		items = append(items, ctxItem{"New Note", "Shift+F2", "Add a note to this cell.", false, a.newNote})
+	default:
+		items = append(items,
+			ctxItem{"New Comment", "", "Start a discussion on this cell that others can reply to.", false, a.newComment},
+			ctxItem{"New Note", "Shift+F2", "Add a note to this cell.", false, a.newNote})
 	}
 	items = append(items, ctxItem{"Format Cells…", "Ctrl+1", "Set the number format, alignment, font, borders and fill.", false, func() { a.openFormatCells(tabNumber) }})
 	if hasLink {

@@ -58,6 +58,7 @@ type reader struct {
 	sections []*model.Section        // every section, in order
 	sectEnd  map[int]*model.Section  // section by the CP after its section mark
 	noteAt   map[int]*model.Note     // notes by reference CP
+	atn      commentMarks            // comment anchors by CP (comments.go)
 	inNote   bool                    // building a note's blocks
 	shapes   map[uint32]*shape       // OfficeArt shapes by spid (shapes.go)
 	floats   map[int]*model.Floating // floating objects by anchor CP
@@ -97,6 +98,9 @@ func Read(data []byte) (doc *model.Document, err error) {
 	_, r.data, _ = ole.ReadStream(data, "Data")
 
 	r.doc = &model.Document{Lists: map[int]*model.List{}, Section: model.Section{Page: model.LetterPage()}}
+	if ole.HasMacros(names) {
+		r.doc.MarkMacros()
+	}
 	for _, n := range names {
 		switch strings.ToLower(n) {
 		case "macros", "_vba_project_cur", "vba":
@@ -120,6 +124,7 @@ func Read(data []byte) (doc *model.Document, err error) {
 	}
 	r.readFields()
 	r.readNotes()
+	r.readComments()
 	r.readHeaders()
 	r.readShapes()
 	r.subdocWarnings()

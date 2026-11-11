@@ -1,7 +1,12 @@
+// Tests for style management and headers/footers.
+
 package model
 
 import "testing"
 
+// TestNewStyleFromSelection checks that a new paragraph style takes the
+// paragraph's and first character's direct formatting, applies cleanly,
+// rejects duplicate and empty names, and undoes.
 func TestNewStyleFromSelection(t *testing.T) {
 	d, e := newDoc("Fancy paragraph", "other")
 	p := d.Body[0].(*Paragraph)
@@ -36,6 +41,9 @@ func TestNewStyleFromSelection(t *testing.T) {
 	}
 }
 
+// TestCharStyleUpdateDelete checks a character style's life: created from
+// the selection, updated to match it (direct formatting moves in), deleted
+// (runs merge, built-ins refuse) and restored by undo.
 func TestCharStyleUpdateDelete(t *testing.T) {
 	d, e := newDoc("one two three")
 	e.Select(Pos{0, 4}, Pos{0, 7})
@@ -62,7 +70,7 @@ func TestCharStyleUpdateDelete(t *testing.T) {
 	if err := e.DeleteStyle(id); err != nil {
 		t.Fatal(err)
 	}
-	// The run that lost the style looks like its neighbours, so they merge.
+	// The run that lost the style looks like its neighbors, so they merge.
 	if d.Styles.Find(id) != nil || len(p.Runs) != 1 || p.Runs[0].Style != "" {
 		t.Errorf("delete: %+v", p.Runs)
 	}
@@ -75,6 +83,9 @@ func TestCharStyleUpdateDelete(t *testing.T) {
 	}
 }
 
+// TestDeleteParaStyleFallsBack checks that deleting a paragraph style
+// moves its paragraphs (headers included) and dependent styles to the
+// style it was based on.
 func TestDeleteParaStyleFallsBack(t *testing.T) {
 	d, e := newDoc("a", "b")
 	d.Styles.Styles = append(d.Styles.Styles,
@@ -94,6 +105,9 @@ func TestDeleteParaStyleFallsBack(t *testing.T) {
 	}
 }
 
+// TestHeadersFooters checks header creation with its style, which kind
+// each page shows under TitlePage and EvenOdd, that a clone shares no
+// headers, and editing a header through a sub-document with a PAGE field.
 func TestHeadersFooters(t *testing.T) {
 	d := New("t")
 	hf := d.NewHeaderFooter(HFDefault, false)
@@ -131,7 +145,8 @@ func TestHeadersFooters(t *testing.T) {
 	}
 }
 
-// Undoing Delete Style gives header and footer paragraphs their style back.
+// TestDeleteStyleUndoHeaders checks that undoing Delete Style gives header
+// and footer paragraphs their style back, and redo takes it away again.
 func TestDeleteStyleUndoHeaders(t *testing.T) {
 	d, e := newDoc("body")
 	id := "Mine"

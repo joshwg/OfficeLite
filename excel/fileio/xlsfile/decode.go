@@ -89,6 +89,7 @@ var binOps = map[byte]struct {
 	ptgIsect: {" ", 9}, ptgUnion: {",", 8}, ptgRange: {":", 10},
 }
 
+// Precedences of the non-binary items on the decoder's stack.
 const (
 	precUnary = 6
 	precAtom  = 100
@@ -102,8 +103,12 @@ type errShared struct{ row, col int }
 // Error implements error.
 func (e errShared) Error() string { return "shared formula" }
 
+// errTable is returned for a tTbl formula: a data table's cell, which keeps
+// its saved value.
 var errTable = errors.New("data table formula (TABLE)")
 
+// errFormulaTooLong is returned when the decoded text would exceed
+// excel.XlsMaxFormulaText.
 var errFormulaTooLong = errors.New("formula too long")
 
 // supbook is a SUPBOOK record: this workbook, an add-in, or another file.
@@ -115,6 +120,7 @@ type supbook struct {
 	ext    int      // 1-based number among external books, as Excel shows [n]
 }
 
+// Kinds of supbook.
 const (
 	supSelf = iota
 	supAddin
@@ -134,6 +140,7 @@ type definedName struct {
 	extra   []byte
 }
 
+// NAME record flags.
 const (
 	nameHidden  = 0x0001
 	nameFunc    = 0x0002
@@ -142,12 +149,16 @@ const (
 	nameBuiltin = 0x0020
 )
 
+// builtinNames are the texts of built-in names, indexed by the one-byte
+// code a built-in NAME record holds instead of a name.
 var builtinNames = []string{
 	"Consolidate_Area", "Auto_Open", "Auto_Close", "Extract", "Database", "Criteria",
 	"Print_Area", "Print_Titles", "Recorder", "Data_Form", "Auto_Activate",
 	"Auto_Deactivate", "Sheet_Title", "_FilterDatabase",
 }
 
+// item is one operand on the decoder's stack: its text and the precedence
+// of its outermost operator, to decide where parentheses are needed.
 type item struct {
 	s    string
 	prec int
@@ -159,6 +170,9 @@ type decoder struct {
 	row, col int  // the cell the formula belongs to (base of tRefN/tAreaN)
 	rel      bool // relative parts of 3-D refs are offsets (names, shared formulas)
 	warn     func(format string, args ...any)
+	// holes, when set, makes the decoder write each reference that
+	// depends on row, col as a placeholder and list it here (fmlaTemplate).
+	holes *[]refHole
 }
 
 // decodeFormula returns the text (without '=') of rgce, whose trailing
@@ -592,6 +606,9 @@ func (d *decoder) sheetPrefix(ixti int) (string, error) {
 // 14 and 15). In tRefN tokens (rel), relative parts are offsets from the
 // formula's cell.
 func (d *decoder) cellRef(rw, col int, rel bool) string {
+	if d.holes != nil && rel && col&0xC000 != 0 {
+		return d.hole(refHole{rw1: rw, col1: col})
+	}
 	r, c, rr, cr := d.coords(rw, col, rel)
 	return colText(c, cr) + rowText(r, rr)
 }
@@ -599,6 +616,9 @@ func (d *decoder) cellRef(rw, col int, rel bool) string {
 // areaRef formats an area as cellRef does its corners, as a whole-column
 // (A:B) or whole-row (1:2) range when it spans the sheet.
 func (d *decoder) areaRef(rw1, rw2, col1, col2 int, rel bool) string {
+	if d.holes != nil && rel && (col1|col2)&0xC000 != 0 {
+		return d.hole(refHole{area: true, rw1: rw1, rw2: rw2, col1: col1, col2: col2})
+	}
 	r1, c1, rr1, cr1 := d.coords(rw1, col1, rel)
 	r2, c2, rr2, cr2 := d.coords(rw2, col2, rel)
 	switch {

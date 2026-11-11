@@ -1,3 +1,6 @@
+// Editor tests: typing, splitting and joining paragraphs, deleting across
+// cells, formatting, lists, undo, clipboard and caret movement.
+
 package model
 
 import (
@@ -15,6 +18,8 @@ func texts(d *Document) string {
 	return strings.Join(out, "|")
 }
 
+// newDoc returns a document of plain paragraphs with the given texts and
+// an editor on it.
 func newDoc(paras ...string) (*Document, *Editor) {
 	d := New("t")
 	d.Body = nil
@@ -28,6 +33,9 @@ func newDoc(paras ...string) (*Document, *Editor) {
 	return d, NewEditor(d)
 }
 
+// TestInsertSplitMerge checks that typing groups into one undo step, Enter
+// and Backspace split and join paragraphs, undo/redo restore each state,
+// and Delete at a paragraph end joins the next one.
 func TestInsertSplitMerge(t *testing.T) {
 	d, e := newDoc("Hello world")
 	e.SetCaret(Pos{0, 5}, false)
@@ -74,6 +82,9 @@ func TestInsertSplitMerge(t *testing.T) {
 	}
 }
 
+// TestDeleteAcrossParagraphs checks that deleting or typing over a
+// selection spanning paragraphs joins the ends, and that undo restores
+// them.
 func TestDeleteAcrossParagraphs(t *testing.T) {
 	d, e := newDoc("one two", "three", "four five")
 	e.Select(Pos{0, 4}, Pos{2, 5})
@@ -93,6 +104,8 @@ func TestDeleteAcrossParagraphs(t *testing.T) {
 	}
 }
 
+// tableDoc returns a document with a 2×2 table between two paragraphs
+// ("before", a1 b1 / a2 b2, "after") and an editor on it.
 func tableDoc() (*Document, *Editor) {
 	d := New("t")
 	cell := func(s string) *TableCell {
@@ -106,6 +119,9 @@ func tableDoc() (*Document, *Editor) {
 	return d, NewEditor(d)
 }
 
+// TestDeleteAcrossCells checks that a deletion into a table clears cell
+// text but keeps the table, one spanning the whole table removes it, Enter
+// adds a paragraph to a cell, and Backspace at a cell start does nothing.
 func TestDeleteAcrossCells(t *testing.T) {
 	d, e := tableDoc()
 	if e.NumParas() != 6 {
@@ -146,6 +162,8 @@ func TestDeleteAcrossCells(t *testing.T) {
 	}
 }
 
+// TestOpaqueAtomic checks that an opaque run is one caret step and one
+// Backspace deletes it whole.
 func TestOpaqueAtomic(t *testing.T) {
 	d := New("t")
 	p := &Paragraph{Runs: []Run{{Text: "ab"}, {Kind: RunOpaque, Text: "[picture]", Opaque: &Opaque{Format: "docx"}}, {Text: "cd"}}}
@@ -162,6 +180,9 @@ func TestOpaqueAtomic(t *testing.T) {
 	}
 }
 
+// TestEnterNextStyle checks that Enter at the end of a heading starts a
+// Normal paragraph, Enter in the middle keeps the style, and Normal is
+// stored as "".
 func TestEnterNextStyle(t *testing.T) {
 	d, e := newDoc("Title text")
 	e.SetParaStyle("Heading1")
@@ -187,6 +208,9 @@ func TestEnterNextStyle(t *testing.T) {
 	}
 }
 
+// TestFormatting checks character formatting: toggling bold splits runs
+// and undoes, a caret inside a word formats the word, formatting at the
+// end is pending for typed text, and character styles clear.
 func TestFormatting(t *testing.T) {
 	d, e := newDoc("one two three")
 	e.Select(Pos{0, 4}, Pos{0, 7})
@@ -234,6 +258,9 @@ func TestFormatting(t *testing.T) {
 	}
 }
 
+// TestParagraphFormatting checks alignment, line spacing, indent steps and
+// list toggling (on, continued, level change, numbering, off, and Enter in
+// an empty list paragraph ending the list).
 func TestParagraphFormatting(t *testing.T) {
 	d, e := newDoc("a", "b", "c")
 	e.Select(Pos{0, 0}, Pos{1, 1})
@@ -290,6 +317,8 @@ func TestParagraphFormatting(t *testing.T) {
 	}
 }
 
+// TestModifyStyleUndo checks that changing a style re-resolves text, marks
+// everything dirty and is undone.
 func TestModifyStyleUndo(t *testing.T) {
 	d, e := newDoc("x")
 	e.ModifyStyle("Normal", func(st *Style) { st.Run.Size = 14 })
@@ -307,6 +336,8 @@ func TestModifyStyleUndo(t *testing.T) {
 	}
 }
 
+// TestClipboard checks that Copy yields CRLF-separated text, Paste keeps
+// formatting and PasteText splits lines into paragraphs.
 func TestClipboard(t *testing.T) {
 	d, e := newDoc("alpha beta", "gamma")
 	e.Select(Pos{0, 6}, Pos{0, 10})
@@ -331,6 +362,8 @@ func TestClipboard(t *testing.T) {
 	}
 }
 
+// TestWordMovement checks the Ctrl+Right/Left stops and double-click word
+// selection.
 func TestWordMovement(t *testing.T) {
 	_, e := newDoc("Hello, big world")
 	p := Pos{0, 0}
@@ -351,6 +384,9 @@ func TestWordMovement(t *testing.T) {
 	}
 }
 
+// TestMarkersAndSpans checks that the caret steps over invisible markers,
+// Backspace after one deletes the visible character before it, and typing
+// inside a link joins the link while typing at its end does not.
 func TestMarkersAndSpans(t *testing.T) {
 	d := New("t")
 	link := &Span{Kind: SpanLink, URL: "https://example.com"}
@@ -390,8 +426,9 @@ func TestMarkersAndSpans(t *testing.T) {
 	}
 }
 
-// Backspace in an empty paragraph after a nested table, in a cell of the
-// document's first block, used to panic (a body range starting at -1).
+// TestBackspaceAfterNestedTable checks Backspace in an empty paragraph
+// after a nested table, in a cell of the document's first block: it used
+// to panic (a body range starting at -1).
 func TestBackspaceAfterNestedTable(t *testing.T) {
 	d := New("t")
 	inner := &Table{Columns: []float64{50}, Rows: []*TableRow{{Cells: []*TableCell{
@@ -420,9 +457,9 @@ func TestBackspaceAfterNestedTable(t *testing.T) {
 	}
 }
 
-// The document's last paragraph after a table is never deleted: Backspace
-// in it moves into the table, Delete at the end of the last cell does
-// nothing.
+// TestLastParagraphAfterTable checks that the document's last paragraph
+// after a table is never deleted: Backspace in it moves into the table,
+// Delete at the end of the last cell does nothing.
 func TestLastParagraphAfterTable(t *testing.T) {
 	d, e := tableDoc()
 	d.Body[2] = &Paragraph{}
@@ -452,8 +489,9 @@ func TestLastParagraphAfterTable(t *testing.T) {
 	}
 }
 
-// The caret never goes into a cell that continues a vertical merge (its
-// text isn't shown).
+// TestCaretSkipsMergedCells checks that the caret never goes into a cell
+// that continues a vertical merge (its text isn't shown), and Find skips
+// it too.
 func TestCaretSkipsMergedCells(t *testing.T) {
 	d, e := tableDoc()
 	tb := d.Body[1].(*Table)

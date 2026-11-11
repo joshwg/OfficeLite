@@ -1,3 +1,7 @@
+// The AutoFilter drop-down that opens from a header cell's button, as
+// Excel's: sorting by the column, Clear Filter, the Text / Number / Date
+// Filters submenu, a search box and the checklist of the column's values.
+
 package ui
 
 import (
@@ -21,10 +25,6 @@ import (
 	"officelite/excel/model"
 	"officelite/excel/render"
 )
-
-// The AutoFilter drop-down that opens from a header cell's button, as
-// Excel's: sorting by the column, Clear Filter, the Text / Number / Date
-// Filters submenu, a search box and the checklist of the column's values.
 
 // filterMenu is an open AutoFilter drop-down.
 type filterMenu struct {

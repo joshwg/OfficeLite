@@ -1,3 +1,7 @@
+// Data validation: setting rules (Data > Data Validation), checking typed
+// entries against them, the List rule's drop-down items and Circle
+// Invalid Data. The rules themselves live in model/validation.go.
+
 package edit
 
 import (
@@ -11,10 +15,6 @@ import (
 	"officelite/excel/formula/functions"
 	"officelite/excel/model"
 )
-
-// Data validation: setting rules (Data > Data Validation), checking typed
-// entries against them, the List rule's drop-down items and Circle
-// Invalid Data. The rules themselves live in model/validation.go.
 
 // DefaultValidationError is Excel's error alert for a rule without a
 // message of its own.
@@ -379,6 +379,7 @@ func ValidationBoundText(f string, t model.ValidationType, date1904 bool) string
 	return f
 }
 
+// pad2 is n (0–99) as two digits.
 func pad2(n int) string {
 	if n < 10 {
 		return "0" + strconv.Itoa(n)

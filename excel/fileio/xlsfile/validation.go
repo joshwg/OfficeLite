@@ -1,3 +1,6 @@
+// Data validation, read and written: the DVAL record and a DV record per
+// rule, after the sheet's hyperlinks.
+
 package xlsfile
 
 import (
@@ -7,9 +10,7 @@ import (
 	"officelite/excel/model"
 )
 
-// Data validation: the DVAL record and a DV record per rule, after the
-// sheet's hyperlinks.
-
+// Data validation record ids.
 const (
 	recDVal = 0x01B2
 	recDV   = 0x01BE
@@ -37,6 +38,7 @@ type validationReader struct {
 	rules []rawDV
 }
 
+// record takes a DVAL or DV record, reporting whether r was one.
 func (v *validationReader) record(r record) bool {
 	switch r.id {
 	case recDVal:
@@ -63,6 +65,9 @@ func dvString(b []byte, off int) (string, int) {
 	return s, end
 }
 
+// parseDV decodes a DV record body: flags, the four texts, the two formula
+// byte strings (left undecoded) and the ranges. It reports false for a
+// damaged record or one with no valid range.
 func parseDV(b []byte) (rawDV, bool) {
 	if len(b) < 4 {
 		return rawDV{}, false
@@ -170,6 +175,9 @@ func (x *writer) validations(b []byte, si int, sh *model.Sheet) []byte {
 	return b
 }
 
+// dvRecord encodes one rule as a DV record body. It reports false, after
+// noting the issue, when the rule lies wholly beyond the .xls sheet or a
+// formula cannot be compiled.
 func (x *writer) dvRecord(si int, sh *model.Sheet, v model.Validation) ([]byte, bool) {
 	var ranges []model.Range
 	for _, r := range v.Ranges {

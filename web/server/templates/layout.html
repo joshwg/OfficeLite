@@ -1,0 +1,29 @@
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} · OfficeLite</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/password.js" defer></script>
+</head>
+<body>
+<header class="bar">
+  <a class="brand" href="/">OfficeLite</a>
+  {{with .User}}
+  <nav>
+    <a href="/word">Word</a>
+    <a href="/excel">Excel</a>
+    <a href="/account">{{.Username}}</a>
+    {{if .IsAdmin}}<a href="/admin/users">Users</a>{{end}}
+    <form method="post" action="/logout"><button class="link">Log out</button></form>
+  </nav>
+  {{end}}
+</header>
+<main>
+  {{with .Msg}}<p class="msg">{{.}}</p>{{end}}
+  {{with .Err}}<p class="err" role="alert">{{.}}</p>{{end}}
+  {{template "content" .}}
+</main>
+</body>
+</html>{{end}}

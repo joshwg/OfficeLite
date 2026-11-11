@@ -3,11 +3,63 @@
 
 package model
 
+import (
+	"strings"
+	"time"
+)
+
 // Note is a cell note (what Excel 365 calls a Note and older versions a
 // Comment): plain text with its author, shown when the cell is pointed at.
+// With Threaded set it is instead an Excel 365 comment: a discussion
+// whose first post is Author, Text and Time, followed by Replies.
+//
+// Notes are stored by value and Replies is shared between copies: change
+// it only by building a new slice (see WithReply).
 type Note struct {
 	Author string
 	Text   string
+
+	Threaded bool
+	Time     time.Time // when the first post was made (threaded only); zero if unknown
+	Replies  []Post
+	Resolved bool // the thread is marked done
+}
+
+// Post is a reply in a comment thread.
+type Post struct {
+	Author string
+	Text   string
+	Time   time.Time
+}
+
+// Posts returns a thread's posts in order, the first post included.
+func (n Note) Posts() []Post {
+	return append([]Post{{Author: n.Author, Text: n.Text, Time: n.Time}}, n.Replies...)
+}
+
+// WithReply returns the thread with p added as its last reply.
+func (n Note) WithReply(p Post) Note {
+	n.Replies = append(n.Replies[:len(n.Replies):len(n.Replies)], p)
+	return n
+}
+
+// PlainText is the note's text, or a thread's posts written out one after
+// another ("Author: text"), for formats that only hold notes.
+func (n Note) PlainText() string {
+	if !n.Threaded {
+		return n.Text
+	}
+	var b strings.Builder
+	for i, p := range n.Posts() {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		if p.Author != "" {
+			b.WriteString(p.Author + ": ")
+		}
+		b.WriteString(p.Text)
+	}
+	return b.String()
 }
 
 // Hyperlink is a cell's link. The cell's own text is what Excel calls the

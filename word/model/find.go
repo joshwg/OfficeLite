@@ -1,3 +1,6 @@
+// Find and Replace: matching over a paragraph's visible text, match
+// navigation, and replacing one or every occurrence as an undo step.
+
 package model
 
 import (

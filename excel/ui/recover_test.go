@@ -193,7 +193,7 @@ func TestSaveAsRecoveredWithLaterEdits(t *testing.T) {
 	saved := filepath.Join(t.TempDir(), "Budget.xlsx")
 	// The snapshot written was taken at revision 0; an edit came after.
 	a.revision = 1
-	a.savedSnapshot(a.wb, a.wb, 0, a.active, fileio.XLSX, saved, false, nil)
+	a.savedSnapshot(saveSnap{owner: a.wb, wb: a.wb, sheet: a.active, f: fileio.XLSX}, gui.SaveAsResult{Path: saved})
 	if a.ar.recovered != nil || a.docName() != "Budget.xlsx" {
 		t.Errorf("after Save As: recovered %v, name %q", a.ar.recovered, a.docName())
 	}

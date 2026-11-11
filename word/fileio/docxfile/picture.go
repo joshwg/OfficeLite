@@ -1,3 +1,7 @@
+// Pictures inserted in WordLite (or whose original XML can't be kept) are
+// written as inline DrawingML pictures with their image in a new media
+// part.
+
 package docxfile
 
 import (
@@ -8,10 +12,7 @@ import (
 	"officelite/word/model"
 )
 
-// Pictures inserted in WordLite (or whose original XML can't be kept) are
-// written as inline DrawingML pictures with their image in a new media
-// part.
-
+// relImage is the relationship type suffix of an image part.
 const relImage = "/image"
 
 // media is an image part added to the package.
@@ -22,6 +23,7 @@ type media struct {
 	ctype string
 }
 
+// reDocPrID matches the id of a wp:docPr, to find the ids in use.
 var reDocPrID = regexp.MustCompile(`<wp:docPr\b[^>]*\bid="(\d+)"`)
 
 // pictureRel returns the relationship id of the media part holding pic,
@@ -60,6 +62,7 @@ func (w *writer) pictureRel(pic *model.Picture) string {
 	return id
 }
 
+// hasMedia reports whether a media part of that name was already added.
 func (w *writer) hasMedia(part string) bool {
 	for _, m := range w.media {
 		if m.part == part {
@@ -69,6 +72,8 @@ func (w *writer) hasMedia(part string) bool {
 	return false
 }
 
+// dirOf is the folder of a part name without a trailing slash ("word"),
+// or "" for a part at the root.
 func dirOf(part string) string {
 	if i := strings.LastIndexByte(part, '/'); i >= 0 {
 		return part[:i]

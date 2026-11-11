@@ -1,3 +1,7 @@
+// Tests for chart layout on the sample workbook: every chart type, pie
+// slice order, live cell data, blanks, General labels, PDF output and
+// dashed lines.
+
 package render
 
 import (
@@ -11,6 +15,8 @@ import (
 	"officelite/excel/numfmt"
 )
 
+// layoutSample lays out c from wb's Data sheet at 480 × 288 px with real
+// number formatting.
 func layoutSample(t *testing.T, wb *model.Workbook, c *model.Chart) []prim {
 	t.Helper()
 	nf := numfmt.New(false)
@@ -18,6 +24,7 @@ func layoutSample(t *testing.T, wb *model.Workbook, c *model.Chart) []prim {
 	return layoutChart(c, &chartEnv{wb: wb, home: "Data", format: nf.Format}, 480, 288)
 }
 
+// texts lists the text primitives' strings, in drawing order.
 func texts(prims []prim) []string {
 	var out []string
 	for _, p := range prims {
@@ -28,6 +35,7 @@ func texts(prims []prim) []string {
 	return out
 }
 
+// hasText reports whether some text primitive is exactly s.
 func hasText(prims []prim, s string) bool {
 	for _, t := range texts(prims) {
 		if t == s {
@@ -37,8 +45,9 @@ func hasText(prims []prim, s string) bool {
 	return false
 }
 
-// Every sample chart lays out: finite coordinates, its title, and
-// something drawn in its series' colours.
+// TestLayoutChartTypes checks that every sample chart lays out (finite
+// coordinates, its title, something drawn in its series' colors), and the
+// axis labels of the column, percent-stacked, combo and negative charts.
 func TestLayoutChartTypes(t *testing.T) {
 	wb := chartsample.Workbook()
 	th := model.DefaultTheme()
@@ -93,7 +102,9 @@ func TestLayoutChartTypes(t *testing.T) {
 	}
 }
 
-// Pie slices start at 12 o'clock and go clockwise, in the data's order.
+// TestPieSliceOrder checks that pie slices start at 12 o'clock and go
+// clockwise in the data's order, and that the first slice's label shows
+// its category and percentage.
 func TestPieSliceOrder(t *testing.T) {
 	wb := chartsample.Workbook()
 	pie := wb.Sheets[0].Charts[5]
@@ -109,7 +120,7 @@ func TestPieSliceOrder(t *testing.T) {
 	if first == nil {
 		t.Fatal("no first slice")
 	}
-	// The slice's points run from 12 o'clock clockwise, the centre last.
+	// The slice's points run from 12 o'clock clockwise, the center last.
 	c := first.pts[len(first.pts)-1]
 	p0, p1 := first.pts[0], first.pts[1]
 	if math.Abs(float64(p0.X-c.X)) > 1 || p0.Y >= c.Y {
@@ -128,7 +139,9 @@ func TestPieSliceOrder(t *testing.T) {
 	}
 }
 
-// Charts draw from the cells as they are now.
+// TestChartFollowsCells checks that charts draw from the cells as they
+// are now (axis and category labels follow edits), and fall back to the
+// cache for a broken reference.
 func TestChartFollowsCells(t *testing.T) {
 	wb := chartsample.Workbook()
 	c := wb.Sheets[0].Charts[0]
@@ -150,7 +163,8 @@ func TestChartFollowsCells(t *testing.T) {
 	}
 }
 
-// Blanks: a gap splits the line; zero plots them at 0; span joins over.
+// TestChartBlanks checks how a line series treats blanks: a gap splits
+// the line, and span joins over it.
 func TestChartBlanks(t *testing.T) {
 	wb := chartsample.Workbook()
 	c := wb.Sheets[0].Charts[9] // the scatter with a blank in Trend
@@ -173,14 +187,16 @@ func TestChartBlanks(t *testing.T) {
 	}
 }
 
+// TestGeneralAxisLabels checks generalNum's rounding, negative zero and
+// exponent form.
 func TestGeneralAxisLabels(t *testing.T) {
 	if s := strings.Join([]string{generalNum(0.30000000000000004), generalNum(math.Copysign(0, -1)), generalNum(1e12)}, " "); s != "0.3 0 1E+12" {
 		t.Errorf("general: %s", s)
 	}
 }
 
-// Charts print as vector paths: the sheet's pages take them in, and a
-// chart sheet is a page of its own.
+// TestChartsPDF checks that charts print as vector paths, that the sheet's
+// pages take them in, and that a chart sheet is a page of its own.
 func TestChartsPDF(t *testing.T) {
 	wb := chartsample.Workbook()
 	n, out := exportPages(t, wb, PDFOptions{Sheets: []int{0}})

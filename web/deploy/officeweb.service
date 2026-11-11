@@ -1,0 +1,26 @@
+# systemd unit for OfficeLite's web server.
+# Install: copy the package to /opt/officeweb, then
+#   sudo useradd --system --home /var/lib/officeweb --shell /usr/sbin/nologin officeweb
+#   sudo install -d -o officeweb -g officeweb -m 0700 /var/lib/officeweb
+#   sudo -u officeweb /opt/officeweb/officeweb -data /var/lib/officeweb -create-admin NAME
+#   sudo cp officeweb.service /etc/systemd/system/ && sudo systemctl enable --now officeweb
+
+[Unit]
+Description=OfficeLite web server
+After=network.target
+
+[Service]
+User=officeweb
+Group=officeweb
+ExecStart=/opt/officeweb/officeweb -data /var/lib/officeweb -client /opt/officeweb/client -addr 127.0.0.1:7100
+Restart=on-failure
+# Hardening: the server only needs its data directory.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/officeweb
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

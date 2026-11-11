@@ -1,3 +1,5 @@
+// Tests for plain-text saving.
+
 package fileio
 
 import (
@@ -8,9 +10,9 @@ import (
 	"officelite/word/model"
 )
 
-// Hyperlinks and fields read from a .doc are opaque runs; saving as .txt
-// writes the text they show (it used to drop it), but not the
-// placeholders of pictures and shapes.
+// TestSaveTextKeepsFieldText checks that saving as .txt writes the text
+// shown by hyperlinks and fields read from a .doc (opaque runs; it used
+// to drop it), but not the placeholders of pictures and shapes.
 func TestSaveTextKeepsFieldText(t *testing.T) {
 	doc, err := Open("../../Samples/word-tests/Tables-Pictures-Links.doc")
 	if err != nil {

@@ -2,7 +2,8 @@
 
 ExcelLite opens and edits `.xlsx`, `.xlsm`, `.xls`, `.csv` and `.tsv` files,
 with formatting, multiple sheets, formulas, charts, PivotTables and PDF
-export. See [Excel Functions](./EXCEL-FUNCTIONS.md) for formula behavior and
+export. Macros in a workbook never run, and a save leaves them out (see
+[Macros](./README.md#macros)). See [Excel Functions](./EXCEL-FUNCTIONS.md) for formula behavior and
 the implemented function catalog.
 
 ## Ribbons and menus
@@ -255,6 +256,10 @@ collapsed), a budget with rows and columns grouped two levels deep (one
 of each collapsed) and a sheet with summaries above and left.
 
 ### Keyboard shortcuts
+
+The full list, by context, is in the keyboard reference for
+[Windows and Linux](./KEYBOARD-WINDOWS.md#excellite) or
+[macOS](./KEYBOARD-MAC.md#excellite).
 
 Arrows / Shift+arrows / Ctrl+arrows, PageUp/PageDown, Home, Ctrl+Home,
 Ctrl+End, Tab/Enter, Ctrl+A, Ctrl+C (copies the selection as tab-separated

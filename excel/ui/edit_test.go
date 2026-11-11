@@ -177,28 +177,90 @@ func TestTypeAndUndo(t *testing.T) {
 	h.press(key.NameEscape, 0)
 }
 
-func TestGridEditUsesInputRange(t *testing.T) {
+// TestGridEditAppends checks that characters still routed to the grid
+// after editing started go to the end of the entry, whether the stale
+// value is the editor's caret (Windows) or the event's range (the
+// browser, where it was 0 and "Abc" came out "cbA").
+func TestGridEditAppends(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		staleCaret bool // editor caret reset to 0 before each event
+		zeroRange  bool // event range 0 instead of the text's end
+	}{
+		{"stale caret", true, false},
+		{"zero range", false, true},
+		{"both", true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t)
+			a := h.a
+			a.beginEdit("A", true, false)
+			h.frame()
+
+			requestFocus(a.gtx, &a.grid)
+			h.frame()
+			if !h.r.Source().Focused(&a.grid) {
+				t.Fatal("grid did not receive focus")
+			}
+			for i, r := range "bc" {
+				if tc.staleCaret {
+					a.ed.cell.SetCaret(0, 0)
+				}
+				pos := i + 1
+				if tc.zeroRange {
+					pos = 0
+				}
+				h.r.Queue(key.EditEvent{Range: key.Range{Start: pos, End: pos}, Text: string(r)})
+				h.frame()
+			}
+			if got := a.ed.cell.Text(); got != "Abc" {
+				t.Errorf("typed text = %q, want %q", got, "Abc")
+			}
+		})
+	}
+}
+
+// TestFastTypingOrder types "12345" as the window does when keys come
+// faster than frames: each character goes in at the window's own copy of
+// the input selection, which is only updated from the focused handler
+// when a frame ends. Gio clears it when the focus moves to the cell
+// editor (deferred to the frame's end once the grid has handled a key),
+// and the editor only reported its caret a frame later, so characters
+// typed in between went in front ("12345" came out "23451").
+func TestFastTypingOrder(t *testing.T) {
 	h := newHarness(t)
 	a := h.a
-	a.beginEdit("A", true, false)
-	h.frame()
-
-	// Input can briefly still be routed to the grid after editing starts.
-	// Its range is authoritative even if the editor's caret is stale.
 	requestFocus(a.gtx, &a.grid)
 	h.frame()
-	if !h.r.Source().Focused(&a.grid) {
-		t.Fatal("grid did not receive focus")
-	}
-	for i, r := range "bc" {
-		a.ed.cell.SetCaret(0, 0)
-		pos := i + 1
-		h.r.Queue(key.EditEvent{Range: key.Range{Start: pos, End: pos}, Text: string(r)})
+	sel := 0 // the window's selection (app.callbacks.EditorInsert)
+	for i, c := range "12345" {
+		h.r.Queue(key.EditEvent{Range: key.Range{Start: sel, End: sel}, Text: string(c)})
+		sel++
+		h.r.Queue(key.SelectionEvent{Start: sel, End: sel})
+		if i%2 == 1 {
+			continue // two keys before the next frame
+		}
 		h.frame()
+		sel = h.r.EditorState().Selection.Range.End
 	}
+	h.frame()
+	if got := a.ed.cell.Text(); got != "12345" {
+		t.Errorf("typed text = %q, want %q", got, "12345")
+	}
+}
 
-	if got := a.ed.cell.Text(); got != "Abc" {
-		t.Errorf("typed text = %q, want %q", got, "Abc")
+// TestShortcutEnterStays checks that Ctrl+Enter (Cmd+Enter on macOS:
+// key.ModShortcut) commits the entry and keeps the active cell.
+func TestShortcutEnterStays(t *testing.T) {
+	h := newHarness(t)
+	h.typeText("7")
+	h.press(key.NameReturn, key.ModShortcut)
+	h.expect("Ctrl+Enter", map[string]string{"A1": "7"})
+	if h.a.ed.active {
+		t.Error("still editing after Ctrl+Enter")
+	}
+	if got := h.active(); got != "A1" {
+		t.Errorf("active cell = %s, want A1", got)
 	}
 }
 

@@ -1,3 +1,11 @@
+// Cell formatting (the Home ribbon's Font, Alignment, Number and Styles
+// groups): each command changes the styles of the selected cells as one
+// undoable change. Cells without content get a styled empty cell. A
+// selection of whole columns or rows only formats their used part, as
+// row and column default styles are not modeled. Also sheetChange, the
+// undo record of sheet properties (merges, visibility, widths, rules,
+// reports, charts).
+
 package edit
 
 import (
@@ -11,12 +19,6 @@ import (
 	"officelite/excel/numfmt"
 )
 
-// Cell formatting (the Home ribbon's Font, Alignment, Number and Styles
-// groups): each command changes the styles of the selected cells as one
-// undoable change. Cells without content get a styled empty cell. A
-// selection of whole columns or rows only formats their used part, as
-// row and column default styles are not modeled.
-
 // sheetChange is a change of sheet properties that has no cells of its
 // own: merged areas, visibility, the standard column width.
 type sheetChange struct {
@@ -26,6 +28,7 @@ type sheetChange struct {
 	cols          *dimChange // column widths that grew with a PivotTable update
 }
 
+// sheetProps is a snapshot of the sheet properties a sheetChange records.
 type sheetProps struct {
 	merges    []model.Range
 	hidden    bool
@@ -37,12 +40,16 @@ type sheetProps struct {
 	chart     *model.Chart        // a chart sheet's chart
 }
 
+// propsOf snapshots the sheet's properties, cloned so later edits don't
+// touch them.
 func propsOf(sh *model.Sheet) sheetProps {
 	return sheetProps{merges: slices.Clone(sh.Merges), hidden: sh.Hidden, baseWidth: sh.BaseColWidth, defWidth: sh.DefaultColWidth,
 		valids: model.CloneValidations(sh.Validations), pivots: model.ClonePivots(sh.Pivots), charts: model.CloneCharts(sh.Charts),
 		chart: sh.ChartSheet.Clone()}
 }
 
+// set puts the sheet's properties (and any row heights or column widths
+// that grew with the change) back to the after or before snapshot.
 func (c *sheetChange) set(wb *model.Workbook, after bool) {
 	p := c.before
 	if after {
@@ -154,7 +161,7 @@ func (b *Book) withStyle(c model.Cell, idx uint32) model.Cell {
 	return c
 }
 
-// Border presets of the Borders button.
+// BorderKind is a border preset of the Borders button.
 type BorderKind int
 
 const (
@@ -328,6 +335,7 @@ func (b *Book) Merge(sheet int, r model.Range, kind MergeKind) (res calc.Result,
 	return b.applySheet(Where{sheet, r}, ch, cells), lost
 }
 
+// overlaps reports whether two ranges share a cell.
 func overlaps(a, b model.Range) bool {
 	return a.R1 <= b.R2 && b.R1 <= a.R2 && a.C1 <= b.C2 && b.C1 <= a.C2
 }
@@ -342,7 +350,7 @@ func (b *Book) applySheet(where Where, ch *sheetChange, cells []cellChange) calc
 }
 
 // ClearFormats gives the cells of r the default format and unmerges
-// them; ClearAll empties them too (Clear All).
+// them; with all it empties them too (Clear All).
 func (b *Book) ClearFormats(sheet int, r model.Range, all bool) calc.Result {
 	defer b.Op(either(all, "Clear All", "Clear Formats"))()
 	sh := b.WB.Sheets[sheet]
@@ -394,8 +402,8 @@ func (b *Book) SetStandardWidth(sheet int, chars float32) {
 	b.applySheet(Where{sheet, model.Range{R2: excel.MaxRows - 1, C2: excel.MaxCols - 1}}, ch, nil)
 }
 
-// Built-in number formats as codes (en-US), for the Number group's
-// increase/decrease decimal buttons.
+// builtinCodes are the built-in number formats as codes (en-US), for the
+// Number group's increase/decrease decimal buttons.
 var builtinCodes = map[int]string{
 	1: "0", 2: "0.00", 3: "#,##0", 4: "#,##0.00",
 	5: `"$"#,##0_);\("$"#,##0\)`, 6: `"$"#,##0_);[Red]\("$"#,##0\)`,
@@ -504,7 +512,8 @@ func stepSection(s string, delta int) (string, bool) {
 	return s[:last] + s[last+1:], true
 }
 
-// Number format choices of the Number group's list, in the order shown.
+// NumberFormats are the choices of the Number group's list, in the order
+// shown.
 var NumberFormats = []struct {
 	Name string
 	ID   int
@@ -618,6 +627,7 @@ var CellStyles = func() []CellStyle {
 	}
 }()
 
+// hex is the opaque color of a 0xRRGGBB value.
 func hex(v uint32) color.NRGBA {
 	return color.NRGBA{R: uint8(v >> 16), G: uint8(v >> 8), B: uint8(v), A: 255}
 }

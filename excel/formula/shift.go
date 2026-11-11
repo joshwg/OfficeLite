@@ -1,5 +1,10 @@
-// Package formula handles formula text. Evaluation (the function library)
-// will live alongside it; for now it only rewrites references.
+// Package formula is the formula engine: lexer, parser and evaluator for
+// Excel formula text, the Value types, the function Registry (filled by
+// excel/formula/functions), dependency extraction, and the text rewrites
+// (Shift, Adjust, file-format conversion) that keep references current.
+//
+// This file holds Shift, the reference rewrite for copied and shared
+// formulas.
 package formula
 
 import (
@@ -19,32 +24,35 @@ func Shift(f string, dRow, dCol int) string {
 	if dRow == 0 && dCol == 0 {
 		return f
 	}
-	return rewriteRefs(f, func(t *refTok) string {
-		if t.name != "" {
-			return t.text
+	return rewriteRefs(f, func(t *refTok) string { return shiftTok(t, dRow, dCol) })
+}
+
+// shiftTok is Shift's rewrite of one reference.
+func shiftTok(t *refTok, dRow, dCol int) string {
+	if t.name != "" {
+		return t.text
+	}
+	r := t.r
+	if r.kind != refRows {
+		if !r.ac1 {
+			r.c1 += dCol
 		}
-		r := t.r
-		if r.kind != refRows {
-			if !r.ac1 {
-				r.c1 += dCol
-			}
-			if !r.ac2 {
-				r.c2 += dCol
-			}
+		if !r.ac2 {
+			r.c2 += dCol
 		}
-		if r.kind != refCols {
-			if !r.ar1 {
-				r.r1 += dRow
-			}
-			if !r.ar2 {
-				r.r2 += dRow
-			}
+	}
+	if r.kind != refCols {
+		if !r.ar1 {
+			r.r1 += dRow
 		}
-		if min(r.r1, r.r2, r.c1, r.c2) < 0 || max(r.r1, r.r2) >= excel.ExcelMaxRows || max(r.c1, r.c2) >= excel.ExcelMaxCols {
-			return string(ErrRef)
+		if !r.ar2 {
+			r.r2 += dRow
 		}
-		return t.result(r, true)
-	})
+	}
+	if min(r.r1, r.r2, r.c1, r.c2) < 0 || max(r.r1, r.r2) >= excel.ExcelMaxRows || max(r.c1, r.c2) >= excel.ExcelMaxCols {
+		return string(ErrRef)
+	}
+	return t.result(r, true)
 }
 
 // skipQuoted returns the index just past the quoted run starting at i; a
@@ -63,6 +71,7 @@ func skipQuoted(s string, i int) int {
 	return len(s)
 }
 
+// cellRef is one parsed A1 cell reference with its $ anchors.
 type cellRef struct {
 	colAbs, rowAbs bool
 	col, row       int // zero-based
@@ -70,7 +79,7 @@ type cellRef struct {
 
 // parseShiftRef parses [$]COL[$]ROW at the start of s and returns how many bytes
 // it used. It rejects names that merely look like references, such as
-// function calls (LOG10() or longer identifiers (ABC12X).
+// function calls (LOG10( ) or longer identifiers (ABC12X).
 func parseShiftRef(s string) (cellRef, int, bool) {
 	var r cellRef
 	i := 0
@@ -108,6 +117,8 @@ func parseShiftRef(s string) (cellRef, int, bool) {
 	return r, i, true
 }
 
+// isLetter reports an ASCII letter; isNameChar reports a byte that may
+// continue a defined name (letters, digits, '_', '.', '\').
 func isLetter(c byte) bool { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') }
 func isNameChar(c byte) bool {
 	return isLetter(c) || (c >= '0' && c <= '9') || c == '_' || c == '.' || c == '\\'

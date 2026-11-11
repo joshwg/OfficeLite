@@ -983,14 +983,21 @@ func (e *Engine) placeRows(t *model.Table, rows []*rowBox, r0, r1 int, x0 float6
 			}
 		}
 		cut := math.Inf(1)
+		next := cut // where the next band starts
 		if e.y+h-s > bottom+0.01 {
 			cut = cutBefore(lines, s, s+bottom-e.y)
+			next = cut
 			if cut <= s+0.01 {
 				if !e.empty {
 					e.nextColumn() // nothing fits here: start in the next column or page
 					continue
 				}
-				cut = s + bottom - e.y // a line taller than a page
+				// A line taller than a page: as Word does, place it here
+				// clipped at the page bottom, and go on with the first
+				// line that starts after it, rather than continue the
+				// line (and the row) over as many pages as it is tall.
+				cut = s + bottom - e.y
+				next = nextAfterTall(lines, s, cut)
 			}
 		}
 		// Place what lies in [s, cut), moved to e.y.
@@ -1030,6 +1037,10 @@ func (e *Engine) placeRows(t *model.Table, rows []*rowBox, r0, r1 int, x0 float6
 			e.y += h - s
 			return
 		}
+		if next >= h-0.01 { // nothing but the tall line's clipped tail is left
+			e.y += cut - s
+			return
+		}
 		if t.Borders {
 			// The split row is closed at the page bottom and reopened at the
 			// top of the next page.
@@ -1040,8 +1051,28 @@ func (e *Engine) placeRows(t *model.Table, rows []*rowBox, r0, r1 int, x0 float6
 		} else {
 			e.nextColumn()
 		}
-		s = cut
+		s = next
 	}
+}
+
+// nextAfterTall returns where the band after a page clipped at cut (the
+// band from s holding a line taller than a page) starts: the end of the
+// lines cut there, or the first line that starts after cut, if earlier.
+// It is always past cut, so lines that started before cut aren't placed
+// again.
+func nextAfterTall(lines []Placed, s, cut float64) float64 {
+	end := cut
+	for _, pl := range lines {
+		if pl.Y >= s-0.01 && pl.Y < cut-0.01 {
+			end = max(end, pl.Y+pl.Line.Height)
+		}
+	}
+	for _, pl := range lines {
+		if pl.Y >= cut-0.01 {
+			end = min(end, pl.Y)
+		}
+	}
+	return max(end, cut)
 }
 
 // cutBefore returns the highest y at most limit, and above s, where no

@@ -1,3 +1,8 @@
+// Structural changes: inserting and deleting rows, columns and sheets,
+// renaming sheets, and the shared machinery (saving the sheet, rewriting
+// formulas, defined names, rules, reports and charts) that shifting,
+// sorting and subtotal row sets use too.
+
 package edit
 
 import (
@@ -12,6 +17,7 @@ import (
 	"officelite/excel/model"
 )
 
+// opKind is the kind of a structural operation.
 type opKind int
 
 const (
@@ -152,6 +158,8 @@ func ValidSheetName(name string) error {
 	return nil
 }
 
+// sheetIndex is the index of the sheet called name (case-insensitively),
+// or -1.
 func (b *Book) sheetIndex(name string) int {
 	for i, sh := range b.WB.Sheets {
 		if strings.EqualFold(sh.Name, name) {
@@ -161,6 +169,8 @@ func (b *Book) sheetIndex(name string) int {
 	return -1
 }
 
+// structural applies op and records it as one change selecting where;
+// a failed operation records nothing.
 func (b *Book) structural(op *structural, where Where) (calc.Result, error) {
 	res, err := b.applyStructural(op)
 	if err != nil {
@@ -265,6 +275,10 @@ func adjustValidations(sh *model.Sheet, fn func(f, home string) string) bool {
 	return changed
 }
 
+// applyStructural carries out op (on apply and again on redo), filling in
+// what revertStructural needs: the sheet before, the formulas rewritten
+// elsewhere and the defined names. Row and column changes fail when they
+// would push data off the sheet or cut through a PivotTable.
 func (b *Book) applyStructural(op *structural) (calc.Result, error) {
 	wb := b.WB
 	op.names = slices.Clone(wb.Names)
@@ -340,6 +354,9 @@ func (b *Book) applyStructural(op *structural) (calc.Result, error) {
 	return b.recalculateAll(), nil
 }
 
+// revertStructural undoes op: the saved sheet (or sheet list, or name)
+// comes back, rewritten formulas, rules, reports and charts elsewhere
+// get their old text, and the defined names are restored.
 func (b *Book) revertStructural(op *structural) calc.Result {
 	wb := b.WB
 	switch op.kind {

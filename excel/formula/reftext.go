@@ -1,3 +1,6 @@
+// Reference text → Ref, as INDIRECT reads it: A1 and R1C1 forms, sheet
+// qualifiers and defined names.
+
 package formula
 
 import (

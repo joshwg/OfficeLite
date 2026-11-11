@@ -1,3 +1,6 @@
+// Tests for the page view's mouse features: the context menu, margin
+// selection, dragging text and dragging table borders.
+
 package ui
 
 import (
@@ -19,6 +22,7 @@ func (h *harness) click(pt f32.Point, mods key.Modifiers) {
 	h.mouse(pointer.Release, pt, mods)
 }
 
+// rightClick presses and releases the secondary button at pt.
 func (h *harness) rightClick(pt f32.Point) {
 	h.r.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, Buttons: pointer.ButtonSecondary, Position: pt})
 	h.frame()
@@ -35,6 +39,7 @@ func (h *harness) at(p model.Pos) f32.Point {
 	return h.viewPoint(c.Page, c.X, c.Y+c.H/2)
 }
 
+// menuLabels maps the open context menu's labels to their item indexes.
 func menuLabels(d *window) map[string]int {
 	out := map[string]int{}
 	for i, it := range d.v.m.items {
@@ -43,6 +48,9 @@ func menuLabels(d *window) map[string]int {
 	return out
 }
 
+// TestContextMenu checks that a right-click outside the selection moves
+// the caret (inside it keeps it), and the menu offers the table and link
+// commands only where they apply and runs them.
 func TestContextMenu(t *testing.T) {
 	h := newHarness(t)
 	d := h.d
@@ -107,6 +115,9 @@ func TestContextMenu(t *testing.T) {
 	}
 }
 
+// TestMarginSelect checks that in the left margin a click selects the
+// line, a drag extends line by line, a double-click selects the paragraph,
+// Ctrl+click everything and Shift+click extends from the caret.
 func TestMarginSelect(t *testing.T) {
 	h := newHarness(t)
 	d := h.d
@@ -165,6 +176,9 @@ func TestMarginSelect(t *testing.T) {
 	}
 }
 
+// TestDragMovesText checks that dragging the selection moves it (Ctrl
+// copies), a click in it without a drag places the caret, and Esc cancels
+// the drag.
 func TestDragMovesText(t *testing.T) {
 	h := newHarness(t)
 	d := h.d
@@ -214,6 +228,9 @@ func TestDragMovesText(t *testing.T) {
 	}
 }
 
+// TestTableBorderDrag checks that dragging a column border moves the
+// width between the two columns, dragging a row's bottom border sets its
+// height, and both undo.
 func TestTableBorderDrag(t *testing.T) {
 	h := newHarness(t)
 	d := h.d

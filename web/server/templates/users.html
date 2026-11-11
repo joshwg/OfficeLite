@@ -1,0 +1,46 @@
+{{define "content"}}
+<h1>Users</h1>
+<div class="scroll">
+<table>
+  <thead><tr><th>Username</th><th>Role</th><th>Storage</th><th>Created</th><th>Actions</th></tr></thead>
+  <tbody>
+  {{$me := .User.ID}}
+  {{range .Data.Users}}
+  <tr>
+    <td>{{.Username}}</td>
+    <td>{{if .IsAdmin}}Administrator{{else}}User{{end}}</td>
+    <td>{{bytes .QuotaBytes}}</td>
+    <td>{{.CreatedAt.Format "2006-01-02"}}</td>
+    <td class="actions">
+      {{if eq .ID $me}}
+        <span class="hint">You (use Account)</span>
+      {{else}}
+        <form method="post" action="/admin/users/{{.ID}}/password">
+          <input name="password" type="password" placeholder="New password" autocomplete="new-password" required>
+          <button>Set password</button>
+        </form>
+        <form method="post" action="/admin/users/{{.ID}}/admin">
+          {{if .IsAdmin}}<input type="hidden" name="admin" value="0"><button>Make user</button>
+          {{else}}<input type="hidden" name="admin" value="1"><button>Make admin</button>{{end}}
+        </form>
+        <form method="post" action="/admin/users/{{.ID}}/delete">
+          <label class="inline"><input type="checkbox" name="confirm" value="1" required> confirm</label>
+          <button class="danger">Delete</button>
+        </form>
+      {{end}}
+    </td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+<section class="card narrow">
+  <h2>Add a user</h2>
+  <form method="post" action="/admin/users">
+    <label>Username <input name="username" value="{{.Data.NewUsername}}" autocomplete="off" required></label>
+    <label>Password <input name="password" type="password" autocomplete="new-password" required></label>
+    <label class="inline"><input type="checkbox" name="admin" value="1"{{if .Data.NewAdmin}} checked{{end}}> Administrator</label>
+    <button>Add user</button>
+  </form>
+</section>
+{{end}}

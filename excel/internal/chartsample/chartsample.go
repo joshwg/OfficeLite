@@ -202,4 +202,5 @@ func Workbook() *model.Workbook {
 	return wb
 }
 
+// itoa formats an integer as a cell would show it.
 func itoa(n int) string { return numfmt.General(float64(n)) }

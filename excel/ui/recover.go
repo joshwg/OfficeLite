@@ -4,11 +4,9 @@ package ui
 
 import (
 	"io"
-	"path/filepath"
-	"slices"
-	"strings"
 
 	"officelite/common/autorecover"
+	"officelite/common/gui"
 	"officelite/excel/fileio"
 	"officelite/excel/model"
 )
@@ -39,10 +37,7 @@ func (a *App) recoverySnapshot() *autorecover.Snapshot {
 		return nil
 	}
 	wb := a.wb.Clone()
-	path, format := a.path, strings.ToLower(filepath.Ext(a.path))
-	if r := a.ar.recovered; r != nil {
-		path, format = r.Path, r.Format
-	}
+	path, format := gui.RecoveryOrigin(a.path, a.ar.recovered)
 	return &autorecover.Snapshot{Rev: a.ar.rev, Path: path, Name: a.wb.Name, Format: format,
 		Write: func(w io.Writer) error { return fileio.Write(wb, w, fileio.XLSX, 0) }}
 }
@@ -57,7 +52,10 @@ func (a *App) dropRecovery() {
 // openRecovered loads a recovery copy (from Document Recovery) into the
 // window.
 func (a *App) openRecovered(e autorecover.Entry) {
-	a.loading.Store(true)
+	if !a.startLoad() {
+		a.errMsg = busyLoading
+		return
+	}
 	a.setWorkbook(&model.Workbook{
 		Name:   e.Name,
 		Sheets: []*model.Sheet{model.NewSheet("Sheet1")},
@@ -78,11 +76,7 @@ func (a *App) adoptRecovered(e autorecover.Entry) {
 	a.modified = true
 	a.ar.saver.Adopt(e, a.ar.rev)
 	f, ok := fileio.FormatFor(e.Path)
-	if i := slices.Index(saveFormats, f); ok && i >= 0 {
-		a.bs.saveFmt = i
-	} else {
-		a.bs.saveFmt = 0 // .xlsx (for .numbers, .xlsm, new workbooks)
-	}
+	a.bs.saveFmt = gui.FormatIndex(saveFormats, f, ok) // else .xlsx (for .numbers, .xlsm, new workbooks)
 	if a.win != nil {
 		a.win.Option(windowTitle(a.docName()))
 	}
@@ -91,9 +85,5 @@ func (a *App) adoptRecovered(e autorecover.Entry) {
 // saveAsName is the name Save As suggests for format f: the workbook's,
 // in the original file's folder for a recovered workbook.
 func (a *App) saveAsName(f fileio.Format) string {
-	name := a.baseName() + f.Ext()
-	if r := a.ar.recovered; r != nil && r.Path != "" {
-		name = filepath.Join(filepath.Dir(r.Path), name)
-	}
-	return name
+	return gui.SaveAsName(a.baseName(), f.Ext(), a.ar.recovered)
 }

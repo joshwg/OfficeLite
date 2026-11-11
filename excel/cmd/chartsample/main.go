@@ -16,6 +16,7 @@ import (
 	"officelite/excel/internal/chartsample"
 )
 
+// main builds the chosen sample workbook and saves it as .xlsx.
 func main() {
 	out := flag.String("o", "", "output file (Samples/excel-charts/Charts.xlsx, or Samples/excel-charts/Charts-Created.xlsx with -created)")
 	created := flag.Bool("created", false, "write the charts made through the editing commands")

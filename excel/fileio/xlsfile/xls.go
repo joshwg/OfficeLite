@@ -1,3 +1,7 @@
+// Reading a .xls workbook: the OLE2 stream, the workbook globals (fonts,
+// formats, XFs, palette, sheet directory, shared strings, external books
+// and names) and the sheet loop.
+
 package xlsfile
 
 import (
@@ -10,6 +14,7 @@ import (
 	"officelite/excel/numfmt"
 )
 
+// font is a FONT record.
 type font struct {
 	name      string
 	heightTw  int // twips (1/20 pt)
@@ -20,23 +25,29 @@ type font struct {
 	color     int // palette index
 }
 
+// xf is an XF (cell format) record: indexes into the font and format
+// tables plus alignment, borders and fill, all still as BIFF values.
 type xf struct {
 	font, format         int
 	hAlign, vAlign, wrap int
 	rotation, indent     int
 	border               [4]int // styles, model.Left.. order
-	borderColor          [4]int
+	borderColor          [4]int // palette indexes, same order
 	pattern              int
-	fore, back           int
+	fore, back           int // fill colors (palette indexes)
 }
 
+// boundSheet is a BOUNDSHEET record: a sheet's name, where its substream
+// starts and what kind it is.
 type boundSheet struct {
 	name   string
-	pos    int
+	pos    int // offset of the sheet's BOF in the stream
 	hidden bool
-	kind   int // 0 = worksheet
+	kind   int // 0 = worksheet, 1 = Excel 4 macro sheet, 2 = chart, 6 = VB module
 }
 
+// parser holds the state of one Read: the stream, the globals it has
+// decoded and the workbook being built.
 type parser struct {
 	stream   []byte
 	wb       *model.Workbook
@@ -47,7 +58,7 @@ type parser struct {
 	palette  map[int]uint32 // overrides from the PALETTE record
 	sheets   []boundSheet
 	sst      []string
-	xfStyle  []uint32 // xf index -> model style index
+	xfStyle  []uint32 // xf index → model style index
 	nf       *numfmt.Formatter
 
 	// Formula context: supporting books, EXTERNSHEET and NAME records.
@@ -96,7 +107,13 @@ func Read(data []byte) (*model.Workbook, error) {
 	p.wb.Date1904 = p.date1904
 	p.nf = numfmt.New(p.date1904)
 	defer p.nf.Close()
+	if names, _ := ole.Streams(data); ole.HasMacros(names) {
+		p.wb.MarkMacros()
+	}
 	for i, bs := range p.sheets {
+		if bs.kind == 1 || bs.kind == 6 {
+			p.wb.MarkMacros()
+		}
 		if bs.kind == 2 {
 			p.warnf("%s: chart sheets can't be read from .xls files; the sheet isn't shown and is dropped when saved", bs.name)
 		}
@@ -115,6 +132,7 @@ func Read(data []byte) (*model.Workbook, error) {
 	return p.wb, nil
 }
 
+// containsFold reports whether list holds s, ignoring case.
 func containsFold(list []string, s string) bool {
 	for _, v := range list {
 		if strings.EqualFold(v, s) {
@@ -225,6 +243,7 @@ func (p *parser) globals() error {
 	return nil
 }
 
+// parseFont decodes a FONT record body.
 func parseFont(b []byte) font {
 	grbit := u16(b, 2)
 	f := font{
@@ -239,6 +258,7 @@ func parseFont(b []byte) font {
 	return f
 }
 
+// parseXF decodes an XF record body; a short body gives the zero xf.
 func parseXF(b []byte) xf {
 	if len(b) < 20 {
 		return xf{}
@@ -272,6 +292,8 @@ func parseXF(b []byte) xf {
 	}
 }
 
+// parseSupBook decodes a SUPBOOK record: the workbook itself, the add-in
+// book, or an external book with its path and sheet names.
 func parseSupBook(b []byte) supbook {
 	ctab, cch := u16(b, 0), u16(b, 2)
 	switch cch {
@@ -294,6 +316,8 @@ func parseSupBook(b []byte) supbook {
 	return sb
 }
 
+// parseName decodes a NAME record: flags, scope sheet, the name (built-in
+// names mapped to their text) and its formula bytes.
 func parseName(b []byte) definedName {
 	if len(b) < 15 {
 		return definedName{}
@@ -315,10 +339,10 @@ func parseName(b []byte) definedName {
 }
 
 // definedNames decodes the user-visible NAME records into wb.Names.
-// Built-in names (Print_Area ...), hidden names and function names are
+// Built-in names (Print_Area …), hidden names and function names are
 // skipped, as the .xlsx reader skips them.
 func (p *parser) definedNames() {
-	sheetIndex := map[int]int{} // BOUNDSHEET position (1-based) -> model sheet
+	sheetIndex := map[int]int{} // BOUNDSHEET position (1-based) → model sheet
 	for i, bs := range p.sheets {
 		if bs.kind == 0 {
 			sheetIndex[i+1] = len(sheetIndex)

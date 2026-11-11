@@ -1,3 +1,6 @@
+// Tests for header and footer structure: the Different First Page switch,
+// Link to Previous, Page X of Y and Format Page Numbers.
+
 package ui
 
 import (

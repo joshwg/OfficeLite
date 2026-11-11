@@ -1,3 +1,5 @@
+// Tests for the ribbon's Shading split button.
+
 package ui
 
 import (
@@ -32,6 +34,9 @@ func (h *harness) pickColor(cp *gui.ColorPicker, i int) {
 	}
 }
 
+// TestShadingButton checks that the menu shades selected text, the
+// button part repeats the last color on the paragraph, whole cells take
+// cell shading that No Color removes, and each step is labeled Shading.
 func TestShadingButton(t *testing.T) {
 	h := newHarness(t)
 	d := h.d

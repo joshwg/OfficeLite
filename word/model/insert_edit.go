@@ -1,11 +1,11 @@
+// Insert menu commands other than tables: pictures and hyperlinks.
+
 package model
 
 import (
 	"strings"
 	"unicode/utf8"
 )
-
-// Insert menu commands other than tables: pictures and hyperlinks.
 
 // InsertPicture inserts pic inline at the caret, replacing the selection,
 // at its natural size w × h points scaled down to fit the text column
@@ -198,9 +198,9 @@ func LinkTarget(addr string) string {
 	return "http://" + addr
 }
 
-// hyperlinkStyle returns the ID of the Hyperlink character style, adding
-// Word's definition to the style sheet if the document lacks it (the
-// caller must be in a docLevel edit then; added reports it).
+// hyperlinkStyle returns the ID of the Hyperlink character style; missing
+// reports that the document lacks it. With add set, Word's definition is
+// added to the style sheet (the caller must be in a docLevel edit then).
 func (e *Editor) hyperlinkStyle(add bool) (id string, missing bool) {
 	for _, st := range e.Doc.Styles.Styles {
 		if st.Type == CharacterStyle && strings.EqualFold(st.Name, "Hyperlink") {

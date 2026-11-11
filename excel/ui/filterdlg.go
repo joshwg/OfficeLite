@@ -1,3 +1,6 @@
+// The Custom AutoFilter dialog (two conditions joined by And or Or, with
+// * and ? wildcards) and the Top 10 AutoFilter dialog.
+
 package ui
 
 import (
@@ -16,11 +19,8 @@ import (
 	"officelite/excel/model"
 )
 
-// The Custom AutoFilter dialog (two conditions joined by And or Or, with
-// * and ? wildcards) and the Top 10 AutoFilter dialog.
-
 // Custom AutoFilter's comparisons, as Excel lists them; begins with,
-// contains, ... are equals with wildcards.
+// contains, … are equals with wildcards.
 const (
 	opNone = iota
 	opEquals
@@ -37,12 +37,16 @@ const (
 	opNotContains
 )
 
+// customOps are the comparisons' labels in the dialog's drop-downs, indexed
+// by the constants above.
 var customOps = []string{
 	"", "equals", "does not equal", "is greater than", "is greater than or equal to", "is less than",
 	"is less than or equal to", "begins with", "does not begin with", "ends with", "does not end with",
 	"contains", "does not contain",
 }
 
+// customFilterDialog is Custom AutoFilter: two comparisons and their
+// values, joined by And or Or.
 type customFilterDialog struct {
 	col int
 	ops [2]gui.DropDown
@@ -51,6 +55,7 @@ type customFilterDialog struct {
 	and widget.Enum
 }
 
+// top10Dialog is Top 10 AutoFilter: Top or Bottom, n, Items or Percent.
 type top10Dialog struct {
 	col           int
 	topDD, unitDD gui.DropDown
@@ -107,6 +112,7 @@ func (a *App) condToDialog(cd model.FilterCond) (int, string) {
 	return pick(eq, opEquals, opNotEquals), a.dialogValue(v)
 }
 
+// pick returns a when c is true, else b.
 func pick(c bool, a, b int) int {
 	if c {
 		return a
@@ -153,6 +159,8 @@ func (a *App) dialogCond(op int, text string) (model.FilterCond, bool) {
 	return model.FilterCond{}, false
 }
 
+// layoutCustomFilterDialog draws Custom AutoFilter and on OK (k 1) applies
+// the conditions typed (none clears the column's criteria).
 func (a *App) layoutCustomFilterDialog(gtx layout.Context, k int) {
 	d := &a.ins.cf
 	for a.ins.ok.Clicked(gtx) {
@@ -238,6 +246,8 @@ func (a *App) top10Dialog(col int) {
 	a.showDialog(dlgTop10)
 }
 
+// layoutTop10Dialog draws Top 10 AutoFilter and on OK (k 1) applies it,
+// after checking n is a whole number within the items or percent limit.
 func (a *App) layoutTop10Dialog(gtx layout.Context, k int) {
 	d := &a.ins.top
 	for a.ins.ok.Clicked(gtx) {

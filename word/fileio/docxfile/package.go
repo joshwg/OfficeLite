@@ -1,3 +1,6 @@
+// The OPC package layer: opening the zip, reading parts within the size
+// cap, relationships and [Content_Types].xml.
+
 package docxfile
 
 import (
@@ -35,8 +38,13 @@ const (
 type pkg struct {
 	zr    *zip.Reader
 	files map[string]*zip.File // by part name without leading "/"
+	// tooLarge is the first "part is too large" error any read hit; Read
+	// reports it as an open failure even when the caller treated the part
+	// as optional and ignored the error.
+	tooLarge error
 }
 
+// openPkg opens the zip in data and indexes its entries by part name.
 func openPkg(data []byte) (*pkg, error) {
 	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
@@ -49,6 +57,8 @@ func openPkg(data []byte) (*pkg, error) {
 	return p, nil
 }
 
+// find returns the entry for part name, matched case-insensitively, or
+// nil.
 func (p *pkg) find(name string) *zip.File {
 	if f, ok := p.files[name]; ok {
 		return f
@@ -61,8 +71,15 @@ func (p *pkg) find(name string) *zip.File {
 	return nil
 }
 
-// read returns the contents of part name, at most word.DocxMaxPartSize bytes.
+// maxPartSize is the largest part read accepts: word.DocxMaxPartSize, a
+// variable only so tests can lower it.
+var maxPartSize int64 = word.DocxMaxPartSize
+
+// read returns the contents of part name. A part larger than maxPartSize is
+// an error (remembered in p.tooLarge); at most maxPartSize+1 bytes are read
+// to tell.
 func (p *pkg) read(name string) (b []byte, err error) {
+	limit := maxPartSize
 	f := p.find(name)
 	if f == nil {
 		return nil, fmt.Errorf("missing part %s", name)
@@ -76,15 +93,40 @@ func (p *pkg) read(name string) (b []byte, err error) {
 			err = closeErr
 		}
 	}()
-	return io.ReadAll(io.LimitReader(rc, word.DocxMaxPartSize))
+	b, err = io.ReadAll(io.LimitReader(rc, limit+1))
+	if err == nil && int64(len(b)) > limit {
+		err = fmt.Errorf("the file is damaged or too large: part %s is larger than %s", name, sizeText(limit))
+		if p.tooLarge == nil {
+			p.tooLarge = err
+		}
+		return nil, err
+	}
+	return b, err
 }
 
+// sizeText formats a byte count for an error message ("1 GB", "512 bytes").
+func sizeText(n int64) string {
+	switch {
+	case n >= 1<<30 && n%(1<<30) == 0:
+		return fmt.Sprintf("%d GB", n>>30)
+	case n >= 1<<20 && n%(1<<20) == 0:
+		return fmt.Sprintf("%d MB", n>>20)
+	}
+	return fmt.Sprintf("%d bytes", n)
+}
+
+// rel is one <Relationship>; Mode is "External" for targets outside the
+// package.
 type rel struct {
 	ID, Type, Target, Mode string
 }
 
+// is reports whether the relationship's type ends in suffix (one of the
+// rel* constants).
 func (r rel) is(suffix string) bool { return strings.HasSuffix(r.Type, suffix) }
 
+// rels returns part's relationships ("" for the package's own), or nil
+// when it has no readable .rels part.
 func (p *pkg) rels(part string) []rel {
 	data, err := p.read(opc.RelsPath(part))
 	if err != nil {
@@ -113,6 +155,7 @@ func (p *pkg) mainPart() string {
 	return "word/document.xml"
 }
 
+// relsXML encodes a .rels part.
 func relsXML(rels []rel) []byte {
 	var b strings.Builder
 	b.WriteString(xmlHeader + `<Relationships xmlns="` + nsRel + `">`)
@@ -127,6 +170,7 @@ func relsXML(rels []rel) []byte {
 	return []byte(b.String())
 }
 
+// xmlHeader starts every part the writer generates.
 const xmlHeader = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` + "\r\n"
 
 // contentTypes is [Content_Types].xml.
@@ -135,6 +179,8 @@ type contentTypes struct {
 	overrides [][2]string // part name ("/word/document.xml"), type
 }
 
+// parseContentTypes reads [Content_Types].xml; unparsable data gives an
+// empty table.
 func parseContentTypes(data []byte) *contentTypes {
 	ct := &contentTypes{}
 	root, err := parseXML(data)
@@ -152,6 +198,7 @@ func parseContentTypes(data []byte) *contentTypes {
 	return ct
 }
 
+// xml encodes the table as [Content_Types].xml.
 func (ct *contentTypes) xml() []byte {
 	var b strings.Builder
 	b.WriteString(xmlHeader + `<Types xmlns="` + nsCT + `">`)
@@ -165,6 +212,8 @@ func (ct *contentTypes) xml() []byte {
 	return []byte(b.String())
 }
 
+// setOverride gives part the content type typ, replacing its Override or
+// adding one.
 func (ct *contentTypes) setOverride(part, typ string) {
 	name := "/" + part
 	for i, o := range ct.overrides {
@@ -194,6 +243,7 @@ func (ct *contentTypes) typeOf(part string) string {
 	return ""
 }
 
+// removeOverride drops part's Override, if any.
 func (ct *contentTypes) removeOverride(part string) {
 	name := "/" + part
 	out := ct.overrides[:0]
@@ -205,6 +255,7 @@ func (ct *contentTypes) removeOverride(part string) {
 	ct.overrides = out
 }
 
+// Content types of the parts the writer creates.
 const (
 	ctMain      = "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"
 	ctTemplate  = "application/vnd.openxmlformats-officedocument.wordprocessingml.template.main+xml"

@@ -1,3 +1,6 @@
+// Find and Replace (wildcards as in Excel, in values or formulas, on one
+// sheet or the workbook) and Go To's reference parsing.
+
 package edit
 
 import (
@@ -27,6 +30,8 @@ type FindOptions struct {
 // Found is a cell that matched.
 type Found struct{ Sheet, Row, Col int }
 
+// before reports whether f comes before g in search order: sheet, then
+// row, then column.
 func (f Found) before(g Found) bool {
 	if f.Sheet != g.Sheet {
 		return f.Sheet < g.Sheet
@@ -87,6 +92,8 @@ func ContentText(sh *model.Sheet, r, c int) string {
 	return cell.Text
 }
 
+// plainNumber reports whether displayed text is just a number (with its
+// separators, currency sign, percent or parentheses), not a date or text.
 func plainNumber(s string) bool {
 	s = strings.NewReplacer(",", "", "$", "", "%", "", "(", "", ")", "", " ", "").Replace(s)
 	_, err := strconv.ParseFloat(s, 64)
@@ -241,6 +248,8 @@ func (b *Book) ResolveRef(text string, sheet int) (int, model.Range, error) {
 	return b.resolveRef(strings.TrimSpace(text), sheet, 0)
 }
 
+// resolveRef does ResolveRef's work; depth counts the defined names
+// followed, so a name that refers to itself gives ErrBadReference.
 func (b *Book) resolveRef(s string, sheet, depth int) (int, model.Range, error) {
 	s = strings.TrimPrefix(s, "=")
 	if s == "" || depth > excel.MaxNameDepth {

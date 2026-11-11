@@ -1,3 +1,6 @@
+// Tests for calculation semantics: whole-column references, legacy
+// (implicit-intersection) formulas and the reference functions.
+
 package calc
 
 import (
@@ -7,6 +10,7 @@ import (
 	"officelite/excel/model"
 )
 
+// checkTexts fails the test for each cell of want whose text differs.
 func checkTexts(t *testing.T, wb *model.Workbook, want map[string]string) {
 	t.Helper()
 	for ref, w := range want {
@@ -16,8 +20,9 @@ func checkTexts(t *testing.T, wb *model.Workbook, want map[string]string) {
 	}
 }
 
-// Whole columns and rows include what dynamic arrays spill into them, even
-// when those are calculated after the formula reading them.
+// TestWholeColumnSeesLaterSpills checks that whole columns and rows include
+// what dynamic arrays spill into them, even when those are calculated after
+// the formula reading them, in both Recalculate and the Calculator.
 func TestWholeColumnSeesLaterSpills(t *testing.T) {
 	cells := map[string]model.Cell{
 		"A1":  fx("SUM(B:B)"),
@@ -39,7 +44,8 @@ func TestWholeColumnSeesLaterSpills(t *testing.T) {
 	checkTexts(t, wb, want)
 }
 
-// Whole columns on different sheets combine element by element.
+// TestWholeColumnsOnTwoSheets checks that whole columns on different sheets
+// combine element by element.
 func TestWholeColumnsOnTwoSheets(t *testing.T) {
 	wb := book(map[string]model.Cell{
 		"B1": num(10), "B2": num(20), "B3": num(30), "B4": num(40), "B5": num(50),
@@ -56,8 +62,9 @@ func TestWholeColumnsOnTwoSheets(t *testing.T) {
 	checkTexts(t, wb, map[string]string{"C1": "140", "C2": "550", "D1": "40", "D2": "50", "E1": "50"})
 }
 
-// Ordinary (pre-dynamic-array) formulas intersect a range given where one
-// value is expected; functions that take arrays still get arrays.
+// TestLegacyFormulas checks that ordinary (pre-dynamic-array) formulas
+// intersect a range given where one value is expected, while functions
+// that take arrays still get arrays.
 func TestLegacyFormulas(t *testing.T) {
 	wb := book(map[string]model.Cell{
 		"B1": num(-1), "B2": num(-2), "B3": num(3),
@@ -85,6 +92,8 @@ func TestLegacyFormulas(t *testing.T) {
 	})
 }
 
+// TestReferenceFunctions checks FORMULATEXT, AREAS and HYPERLINK, which
+// take references rather than values.
 func TestReferenceFunctions(t *testing.T) {
 	wb := book(map[string]model.Cell{
 		"A1": num(2),

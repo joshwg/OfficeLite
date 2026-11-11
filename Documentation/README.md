@@ -23,9 +23,26 @@ run VBA macros, open encrypted/password-protected documents, save to Apple's
 file formats, or read legacy Excel 95/Word 95 and older binary formats.
 Keynote files are unsupported. Printing is done by exporting to PDF and
 opening the PDF in the system viewer; PDF output currently uses Letter paper.
-See the
+See [Macros](#macros), the
 [ExcelLite limitations](./EXCEL.md#limitations-compared-with-excel) and
 [WordLite limitations](./WORD.md#limitations-compared-with-word) for details.
+
+## Macros
+
+OfficeLite never runs macros: VBA projects in `.xlsm`, `.xls`, `.docm`,
+`.doc`, `.dotm` and other files, and Excel 4 macro sheets. When a file
+with macros opens, a message says that they won't run, so buttons, forms
+and anything else that depends on them won't work. The file's other
+content opens as usual.
+
+OfficeLite can't save macros either. Saving a workbook or document that
+has them (Save, or Save As to any format) first asks **Save without
+macros?**: Save writes the file without them, and Cancel leaves the file
+as it is. To keep the original with its macros, use Save As to save a
+copy under a new name. Exports (PDF, CSV, text) leave the file alone and
+don't ask. AutoSave stays off until the file has been saved once without
+its macros. A new document made from a template with macros gets the
+notice but no save warning, since the template keeps its macros.
 
 ## Running and building
 
@@ -64,5 +81,6 @@ GOOS=darwin GOARCH=amd64 go build -o bin/OfficeLite-Intel ./cmd/officelite      
 ```
 
 See [EXCEL.md](./EXCEL.md), [WORD.md](./WORD.md), and
-[EXCEL-FUNCTIONS.md](./EXCEL-FUNCTIONS.md) for feature details. The
+[EXCEL-FUNCTIONS.md](./EXCEL-FUNCTIONS.md) for feature details, and
+[KEYBOARD.md](./KEYBOARD.md) for every key binding (Windows and Linux, macOS). The
 [`Samples/`](../Samples/) directory groups workbooks and documents by topic.

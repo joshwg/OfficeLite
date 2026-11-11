@@ -38,6 +38,7 @@ const (
 	insHyperlink
 	insRemoveLink
 	_
+	insComment
 	insNote
 	insDeleteNote
 	_
@@ -55,15 +56,18 @@ func (a *App) insertMenuDef() gui.Menu {
 			break
 		}
 	}
-	_, noteHere := v.Sheet.NoteAt(v.Sel.Active.Row, v.Sel.Active.Col)
+	here, noteHere := v.Sheet.NoteAt(activeCell(v).Row, activeCell(v).Col)
 	for k := range v.Sheet.Notes {
 		if sel.Contains(k[0], k[1]) {
 			hasNote = true
 			break
 		}
 	}
-	noteLabel := "New Note"
-	if noteHere {
+	noteLabel, commentLabel := "New Note", "New Comment"
+	switch {
+	case noteHere && here.Threaded:
+		commentLabel = "Reply to Comment"
+	case noteHere:
 		noteLabel = "Edit Note"
 	}
 	return gui.Menu{Label: "Insert", Items: append([]gui.MenuItem{
@@ -80,9 +84,10 @@ func (a *App) insertMenuDef() gui.Menu {
 		insHyperlink:   {Label: "Hyperlink…", Shortcut: "Ctrl+K", Disabled: editing, Tip: "Link to a web page, a file or a place in this workbook."},
 		insRemoveLink:  {Label: "Remove Hyperlinks", Disabled: editing || !hasLink, Tip: "Remove the links in the selection, keeping the text."},
 		12:             {Separator: true},
-		insNote:        {Label: noteLabel, Shortcut: "Shift+F2", Disabled: editing, Tip: "Add a note to the active cell, or change its note."},
-		insDeleteNote:  {Label: "Delete Notes", Disabled: editing || !hasNote, Tip: "Delete the notes in the selection."},
-		15:             {Separator: true},
+		insComment:     {Label: commentLabel, Disabled: editing || noteHere && !here.Threaded, Tip: "Start a discussion on the active cell that others can reply to, or reply to its comments."},
+		insNote:        {Label: noteLabel, Shortcut: "Shift+F2", Disabled: editing || noteHere && here.Threaded, Tip: "Add a note to the active cell, or change its note."},
+		insDeleteNote:  {Label: "Delete Notes and Comments", Disabled: editing || !hasNote, Tip: "Delete the notes and comments in the selection."},
+		16:             {Separator: true},
 		insPivot:       {Label: "PivotTable…", Disabled: editing, Tip: "Summarize the data around the selection in a PivotTable: arrange and summarize complicated data and drill down on details."},
 	}, a.chartInsertItems()...)} // chartribbon.go
 }
@@ -108,6 +113,8 @@ func (a *App) insertChosen(item int) {
 		a.insertHyperlinkDialog()
 	case insRemoveLink:
 		a.clearHyperlinks()
+	case insComment:
+		a.newComment()
 	case insNote:
 		a.newNote()
 	case insPivot:

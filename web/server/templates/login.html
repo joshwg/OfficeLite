@@ -1,0 +1,19 @@
+{{define "content"}}
+<section class="card narrow">
+  <h1>Log in</h1>
+  <form method="post" action="/login" id="login-form">
+    <input type="hidden" name="next" value="{{.Data.Next}}">
+    <label>Username <input name="username" value="{{.Data.Username}}" autocomplete="username" required autofocus></label>
+    <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+    <button id="sign-in">Log in</button>
+    {{with .Data.Wait}}
+    <div class="cooldown err" id="cooldown" data-seconds="{{.}}" role="status">
+      <div id="cooldown-text">Too many failed attempts. Please wait:</div>
+      <div class="timer" id="cooldown-timer">{{.}} s</div>
+    </div>
+    {{end}}
+  </form>
+  <p class="hint">Accounts are created by an administrator.</p>
+</section>
+<script src="/static/login.js" defer></script>
+{{end}}

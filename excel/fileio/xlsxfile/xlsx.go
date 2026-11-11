@@ -10,6 +10,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -41,15 +42,33 @@ type reader struct {
 	// numFmtCodes are the custom number formats by id.
 	numFmtCodes map[int]string
 	types       map[string]string // [Content_Types].xml: part or ".ext" -> type (chart.go)
+	// partCap caps each part's uncompressed size (excel.XlsxMaxPartSize).
+	partCap int64
+	// oversize lists the parts found over partCap, in order; warned
+	// marks those already reported by a more specific warning.
+	oversize []*partTooLargeError
+	warned   map[string]bool
+	// oversizeHits counts every time a read went over partCap (a part
+	// read twice counts twice), for readChart to tell its parts failed.
+	oversizeHits int
+	// persons are the threaded comments' authors by upper-case person ID
+	// (threaded.go).
+	persons map[string]string
 }
 
 // Read parses an .xlsx package.
 func Read(data []byte) (*model.Workbook, error) {
+	return read(data, excel.XlsxMaxPartSize)
+}
+
+// read is Read with each part capped at partCap bytes: a required part
+// over it fails the open, an optional one is left out with a warning.
+func read(data []byte, partCap int64) (*model.Workbook, error) {
 	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		return nil, err
 	}
-	r := &reader{files: map[string]*zip.File{}, wb: &model.Workbook{}}
+	r := &reader{files: map[string]*zip.File{}, wb: &model.Workbook{}, partCap: partCap, warned: map[string]bool{}}
 	for _, f := range zr.File {
 		r.files[normPath(f.Name)] = f
 	}
@@ -61,6 +80,8 @@ func Read(data []byte) (*model.Workbook, error) {
 				wbPath = rel.Target
 			}
 		}
+	} else if tooBig := (*partTooLargeError)(nil); errors.As(err, &tooBig) {
+		return nil, err
 	}
 	var book xWorkbook
 	if err := r.unmarshal(wbPath, &book); err != nil {
@@ -79,6 +100,14 @@ func Read(data []byte) (*model.Workbook, error) {
 		}
 		if strings.HasSuffix(rel.Type, "/theme") {
 			r.wb.Theme = r.readTheme(rel.Target)
+		}
+		if strings.HasSuffix(rel.Type, "/person") {
+			r.readPersons(rel.Target)
+		}
+		// A VBA project, or an Excel 4 macro sheet (which isn't loaded).
+		if strings.HasSuffix(rel.Type, "/vbaProject") || strings.HasSuffix(rel.Type, "/xlMacrosheet") ||
+			strings.HasSuffix(rel.Type, "/xlIntlMacrosheet") {
+			r.wb.MarkMacros()
 		}
 		if strings.HasSuffix(rel.Type, "/sharedStrings") {
 			if r.sst, err = r.readSST(rel.Target); err != nil {
@@ -137,23 +166,44 @@ func Read(data []byte) (*model.Workbook, error) {
 		}
 		r.wb.Names = append(r.wb.Names, n)
 	}
+	for _, e := range r.oversize {
+		if !r.warned[e.part] {
+			r.wb.Warnings = append(r.wb.Warnings, e.Error()+"; it was left out")
+		}
+	}
 	return r.wb, nil
+}
+
+// noteOversize records a part found over the cap, for the warnings.
+func (r *reader) noteOversize(e *partTooLargeError) {
+	r.oversizeHits++
+	for _, o := range r.oversize {
+		if o.part == e.part {
+			return
+		}
+	}
+	r.oversize = append(r.oversize, e)
 }
 
 // --- package plumbing ---
 
+// normPath turns a part name into the key of reader.files: forward
+// slashes, no leading slash, lower case.
 func normPath(p string) string {
 	return strings.ToLower(strings.TrimPrefix(strings.ReplaceAll(p, `\`, "/"), "/"))
 }
 
+// open opens a part, capped at r.partCap bytes: reading past the cap
+// fails with a *partTooLargeError (and records it for the warnings).
 func (r *reader) open(name string) (io.ReadCloser, error) {
 	f, ok := r.files[normPath(name)]
 	if !ok {
 		return nil, fmt.Errorf("missing part %s", name)
 	}
-	return f.Open()
+	return openPart(f, r.partCap, r.noteOversize)
 }
 
+// unmarshal decodes a part's XML into v.
 func (r *reader) unmarshal(name string, v any) (err error) {
 	rc, err := r.open(name)
 	if err != nil {
@@ -433,9 +483,12 @@ func convertStyle(x *excelize.File, st *excelize.Style, def model.Style) model.S
 
 // --- worksheets ---
 
+// sharedFormula is the master of a shared formula (<f t="shared" si>):
+// its cell and its references scanned once, shifted for every cell that
+// shares it.
 type sharedFormula struct {
 	row, col int
-	text     string
+	tmpl     *formula.ShiftTemplate
 }
 
 func (r *reader) readSheet(name string, sh *model.Sheet) (err error) {
@@ -461,7 +514,7 @@ func (r *reader) readSheet(name string, sh *model.Sheet) (err error) {
 		fShared    string // si of the current cell's shared formula
 		hasFormula bool
 		fArray     string // ref of an array / dynamic-array formula
-		shared     = map[string]sharedFormula{}
+		shared     = map[string]*sharedFormula{}
 		dropped    int
 		hiddenHt   = map[int]float32{} // stored heights of hidden rows
 		af         autoFilterReader
@@ -594,9 +647,9 @@ func (r *reader) readSheet(name string, sh *model.Sheet) (err error) {
 				f := form.String()
 				if hasFormula && fShared != "" {
 					if f != "" {
-						shared[fShared] = sharedFormula{row, col, f}
+						shared[fShared] = &sharedFormula{row, col, formula.NewShiftTemplate(f)}
 					} else if m, ok := shared[fShared]; ok {
-						f = formula.Shift(m.text, row-m.row, col-m.col)
+						f = m.tmpl.Shift(row-m.row, col-m.col)
 					}
 				}
 				c := r.makeCell(cellT, cellS, val.String(), f)

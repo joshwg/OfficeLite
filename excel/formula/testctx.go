@@ -1,3 +1,6 @@
+// TestContext: an in-memory Context (sheets of values and formulas, a fixed
+// clock, a seeded RAND) for the formula and function tests.
+
 package formula
 
 import (
@@ -14,7 +17,7 @@ type TestContext struct {
 	Sheets  []string
 	NowTime time.Time
 	Use1904 bool
-	Names   map[string]string // defined names (upper-case) -> formula
+	Names   map[string]string // defined names (upper-case) → formula
 
 	cells    map[[3]int]Value
 	formulas map[[3]int]string
@@ -39,6 +42,8 @@ func NewTestContext(funcs *Registry) *TestContext {
 	}
 }
 
+// key turns "A1" or "Sheet2!B3" into the (sheet, row, col) map key; it
+// panics on anything that is not a single cell.
 func (t *TestContext) key(ref string) [3]int {
 	sheet := 0
 	if s, cell, ok := strings.Cut(ref, "!"); ok {
@@ -91,6 +96,7 @@ func (t *TestContext) SetRange(ref string, rows [][]any) {
 	}
 }
 
+// cellName is the A1 name of a zero-based (row, col).
 func cellName(row, col int) string {
 	var b []byte
 	for c := col + 1; c > 0; c = (c - 1) / 26 {
@@ -108,6 +114,9 @@ func (t *TestContext) EvalAt(ref, src string) Value {
 	return EvalString(src, t, t.Funcs, k[0], k[1], k[2])
 }
 
+// CellValue implements Context: a formula cell is evaluated once and
+// cached (a cell found mid-evaluation reads as 0), a spilled array yields
+// its top-left value, an empty cell Blank.
 func (t *TestContext) CellValue(sheet, row, col int) Value {
 	k := [3]int{sheet, row, col}
 	if f, ok := t.formulas[k]; ok {
@@ -132,10 +141,13 @@ func (t *TestContext) CellValue(sheet, row, col int) Value {
 	return Blank{}
 }
 
+// CellFormula implements Context: the cell's formula without its "=", or "".
 func (t *TestContext) CellFormula(sheet, row, col int) string {
 	return strings.TrimPrefix(t.formulas[[3]int{sheet, row, col}], "=")
 }
 
+// SheetIndex implements Context: the index of the sheet named name
+// (case-insensitive), or -1.
 func (t *TestContext) SheetIndex(name string) int {
 	for i, s := range t.Sheets {
 		if strings.EqualFold(s, name) {
@@ -145,9 +157,12 @@ func (t *TestContext) SheetIndex(name string) int {
 	return -1
 }
 
+// SheetName and SheetCount implement Context over the Sheets slice.
 func (t *TestContext) SheetName(i int) string { return t.Sheets[i] }
 func (t *TestContext) SheetCount() int        { return len(t.Sheets) }
 
+// UsedSize implements Context: the extent of the set cells and formulas
+// on sheet, at least 1×1.
 func (t *TestContext) UsedSize(sheet int) (rows, cols int) {
 	for k := range t.cells {
 		if k[0] == sheet {
@@ -162,11 +177,15 @@ func (t *TestContext) UsedSize(sheet int) (rows, cols int) {
 	return max(rows, 1), max(cols, 1)
 }
 
+// Name implements Context: the formula of a defined name from Names (all
+// names are workbook-wide here; sheet is ignored).
 func (t *TestContext) Name(name string, sheet int) (string, bool) {
 	f, ok := t.Names[strings.ToUpper(name)]
 	return f, ok
 }
 
+// Spill, Now, Date1904 and Rand implement Context: no formula ever spills
+// here, the clock is NowTime, the date system Use1904 and RAND is seeded.
 func (t *TestContext) Spill(sheet, row, col int) (Ref, bool) { return Ref{}, false }
 func (t *TestContext) Now() time.Time                        { return t.NowTime }
 func (t *TestContext) Date1904() bool                        { return t.Use1904 }

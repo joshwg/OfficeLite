@@ -1,3 +1,7 @@
+// Reading one worksheet substream: cells, rows and columns, merges, panes,
+// outlines, and the FORMULA / SHRFMLA / ARRAY / TABLE records that give
+// cells their formulas.
+
 package xlsfile
 
 import (
@@ -7,10 +11,12 @@ import (
 	"officelite/excel/model"
 )
 
-// readSheet reads one worksheet substream starting at its BOF record.
 // recSxView starts a PivotTable's records (SXVIEW).
 const recSxView = 0x00B0
 
+// readSheet reads one worksheet substream starting at its BOF record into
+// sh. Notes, hyperlinks, the AutoFilter and data validations are handed to
+// their own readers; charts and PivotTables are dropped with a warning.
 func (p *parser) readSheet(pos int, sh *model.Sheet) {
 	var (
 		depth      int
@@ -26,8 +32,8 @@ func (p *parser) readSheet(pos int, sh *model.Sheet) {
 		strSegs    [][]byte // STRING record and its CONTINUE records
 		lastRow    = -1     // the last FORMULA cell, owner of a following SHRFMLA/ARRAY
 		lastCol    int
-		exps       []expCell                 // cells whose formula is a tExp
-		shared     = map[[2]int]sharedFmla{} // SHRFMLA / ARRAY / TABLE by anchor
+		exps       []expCell                  // cells whose formula is a tExp
+		shared     = map[[2]int]*sharedFmla{} // SHRFMLA / ARRAY / TABLE by anchor
 		badFormula int
 		annots     = annotReader{lastObj: -1}
 	)
@@ -201,7 +207,7 @@ func (p *parser) readSheet(pos int, sh *model.Sheet) {
 				end := min(start+2+cce, len(b))
 				sf.rgce, sf.extra = b[start+2:end], b[end:]
 			}
-			shared[[2]int{lastRow, lastCol}] = sf
+			shared[[2]int{lastRow, lastCol}] = &sf
 		case recBlank:
 			blank(row, col, ixfe)
 		case recMulBlank:
@@ -348,7 +354,11 @@ func (p *parser) readSheet(pos int, sh *model.Sheet) {
 				sh.Spills[[2]int{e.row, e.col}] = sf.rng
 			}
 		default:
-			f, err := p.decodeFormula(sf.rgce, sf.extra, e.row, e.col, true)
+			// Decoded once (at its first cell), then put together per cell.
+			if sf.tmpl == nil {
+				sf.tmpl = p.formulaTemplate(sf.rgce, sf.extra, e.row, e.col)
+			}
+			f, err := sf.tmpl.at(p, e.row, e.col)
 			if err != nil {
 				badFormula++
 				break
@@ -368,11 +378,14 @@ type expCell struct {
 	row, col, anchorRow, anchorCol int
 }
 
+// sharedFmla is a SHRFMLA, ARRAY or TABLE record: the formula of a range
+// of cells.
 type sharedFmla struct {
 	kind  int // recShrFmla, recArray or recTable
 	rng   model.Range
 	rgce  []byte
 	extra []byte
+	tmpl  *fmlaTemplate // a SHRFMLA's decode, made at its first cell
 }
 
 // setFormula sets the formula of a loaded cell; cells beyond the sheet

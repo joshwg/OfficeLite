@@ -31,6 +31,7 @@ type xnode struct {
 	rows [][]*xnode
 }
 
+// xnode kinds.
 const (
 	nNum = iota
 	nStr
@@ -118,6 +119,8 @@ func (p *xparser) isOp(op string) bool {
 	return t.Kind == formula.TokOp && t.Text == op
 }
 
+// xbinPrec is the precedence of each binary operator (higher binds
+// tighter).
 var xbinPrec = map[string]int{
 	"=": 1, "<>": 1, "<": 1, "<=": 1, ">": 1, ">=": 1,
 	"&": 2, "+": 3, "-": 3, "*": 4, "/": 4, "^": 5,
@@ -519,10 +522,13 @@ func tok(base, ctx byte) byte {
 	return base&0x1F | 0x20
 }
 
-// u8, u16 and f64 append a byte, a little-endian uint16 and an IEEE
-// double to the token stream.
+// u8 appends a byte to the token stream.
 func (e *encoder) u8(b byte) { e.out = append(e.out, b) }
+
+// u16 appends a little-endian uint16 to the token stream.
 func (e *encoder) u16(v int) { e.out = binary.LittleEndian.AppendUint16(e.out, uint16(v)) }
+
+// f64 appends a little-endian IEEE double to the token stream.
 func (e *encoder) f64(v float64) {
 	e.out = binary.LittleEndian.AppendUint64(e.out, math.Float64bits(v))
 }
@@ -540,11 +546,14 @@ func (e *encoder) space(ws string, typ byte) {
 	}
 }
 
+// errorCodes maps error literals to BIFF error codes (the inverse of
+// errorTexts).
 var errorCodes = map[string]byte{
 	"#NULL!": 0x00, "#DIV/0!": 0x07, "#VALUE!": 0x0F, "#REF!": 0x17,
 	"#NAME?": 0x1D, "#NUM!": 0x24, "#N/A": 0x2A,
 }
 
+// binPtgs is the ptg of each binary operator.
 var binPtgs = map[string]byte{
 	"+": ptgAdd, "-": ptgSub, "*": ptgMul, "/": ptgDiv, "^": ptgPower, "&": ptgConcat,
 	"<": ptgLT, "<=": ptgLE, "=": ptgEQ, ">=": ptgGE, ">": ptgGT, "<>": ptgNE,

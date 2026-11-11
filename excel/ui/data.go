@@ -1,3 +1,8 @@
+// The Data tab: its menu and ribbon, and the AutoFilter commands (the
+// drop-downs in the header cells are in filter.go). The Data Tools
+// group's dialogs are in datatools.go and validation.go, the Outline
+// group's commands in outline.go.
+
 package ui
 
 import (
@@ -12,11 +17,6 @@ import (
 	"officelite/excel/edit"
 	"officelite/excel/model"
 )
-
-// The Data tab: its menu and ribbon, and the AutoFilter commands (the
-// drop-downs in the header cells are in filter.go). The Data Tools
-// group's dialogs are in datatools.go and validation.go, the Outline
-// group's commands in outline.go.
 
 // Ribbons the Home and Data tabs show.
 const (
@@ -57,6 +57,7 @@ type dataRibbon struct {
 	tipsSet                 bool
 }
 
+// setTips gives the ribbon's buttons their tooltips, once.
 func (d *dataRibbon) setTips() {
 	tip := gui.SetTip
 	tip(&d.sortAsc, "Sort A to Z", "", "Sort the selection so the lowest values are at the top of the column.")
@@ -82,6 +83,8 @@ func (a *App) filterState() (on, filtered bool) {
 	return f != nil, f.Active()
 }
 
+// dataMenuDef is the Data menu for this frame, its items enabled by the
+// filter's state and whether a cell is being edited.
 func (a *App) dataMenuDef() gui.Menu {
 	editing := a.ed.active
 	on, filtered := a.filterState()
@@ -102,6 +105,7 @@ func (a *App) dataMenuDef() gui.Menu {
 	}}
 }
 
+// dataChosen runs the chosen Data menu item.
 func (a *App) dataChosen(item int) {
 	switch item {
 	case dataSortAsc:

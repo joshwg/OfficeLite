@@ -1,3 +1,6 @@
+// The page view: drawing the pages and caret, scrolling, the mouse and
+// keyboard in the view, the clipboard, and applying styles.
+
 package ui
 
 import (
@@ -68,6 +71,7 @@ type docView struct {
 	zoomInBtn, zoomOutBtn, zoomBtn widget.Clickable
 }
 
+// resetBlink restarts the caret blink so the caret shows at once.
 func (v *docView) resetBlink() { v.blinkStart = time.Now() }
 
 // pageX is the left edge of the widest page in view pixels (narrower
@@ -81,6 +85,9 @@ func (d *window) pageX() int {
 	return 8 - v.scrollX
 }
 
+// layoutDoc draws the page view: it handles its input, brings the layout
+// up to date, draws the visible pages with their extras, the caret and
+// drag overlays, and the context menu.
 func (d *window) layoutDoc(gtx layout.Context) layout.Dimensions {
 	v := &d.v
 	v.size = gtx.Constraints.Max
@@ -90,9 +97,13 @@ func (d *window) layoutDoc(gtx layout.Context) layout.Dimensions {
 		v.focusPending = false
 		gtx.Execute(key.FocusCmd{Tag: tag})
 	}
-	d.docPointer(gtx)
-	d.docKeys(gtx)
-	d.insertKeys(gtx)
+	if d.opening() {
+		d.docScroll(gtx) // a placeholder document only scrolls (ui.go)
+	} else {
+		d.docPointer(gtx)
+		d.docKeys(gtx)
+		d.insertKeys(gtx)
+	}
 	d.relayout()
 	if v.ensureCaret {
 		v.ensureCaret = false
@@ -145,6 +156,8 @@ func (d *window) layoutDoc(gtx layout.Context) layout.Dimensions {
 	return layout.Dimensions{Size: size}
 }
 
+// drawCaret draws the blinking caret when the view has focus and the
+// selection is empty, scheduling the next blink.
 func (d *window) drawCaret(gtx layout.Context, px int) {
 	v := &d.v
 	if !v.focused || !d.ed.Sel.Empty() || d.back.Visible {
@@ -203,6 +216,27 @@ func (d *window) viewPos(p f32.Point) model.Pos {
 	return d.ceng().HitView(x, y)
 }
 
+// docScroll takes only the page view's wheel events, while a file loads
+// into the window (opening): clicks, keys and typing are dropped.
+func (d *window) docScroll(gtx layout.Context) {
+	for {
+		ev, ok := gtx.Event(pointer.Filter{
+			Target:  &d.v,
+			Kinds:   pointer.Scroll,
+			ScrollX: pointer.ScrollRange{Min: -word.UIMaxScroll, Max: word.UIMaxScroll},
+			ScrollY: pointer.ScrollRange{Min: -word.UIMaxScroll, Max: word.UIMaxScroll},
+		})
+		if !ok {
+			break
+		}
+		if e, ok := ev.(pointer.Event); ok && e.Kind == pointer.Scroll {
+			d.wheel(gtx, e)
+		}
+	}
+}
+
+// docPointer handles the page view's mouse: clicks and drags that place
+// the caret, select or move text, the context menu and the wheel.
 func (d *window) docPointer(gtx layout.Context) {
 	v := &d.v
 	for {
@@ -310,7 +344,7 @@ func (d *window) docPointer(gtx layout.Context) {
 			moved := d.releaseMove(e) || d.releaseBorder() || d.ins.resizing
 			d.releaseMargin()
 			if e.Kind == pointer.Cancel {
-				d.ins.resizing = false // a cancelled picture resize changes nothing
+				d.ins.resizing = false // a canceled picture resize changes nothing
 			}
 			if v.dragging && e.Kind == pointer.Release && !moved {
 				d.painterRelease()
@@ -323,6 +357,8 @@ func (d *window) docPointer(gtx layout.Context) {
 	}
 }
 
+// wheel scrolls the view; with Ctrl it zooms in steps, with Shift it
+// scrolls sideways.
 func (d *window) wheel(gtx layout.Context, e pointer.Event) {
 	v := &d.v
 	if e.Modifiers.Contain(key.ModShortcut) {
@@ -346,6 +382,8 @@ func (d *window) wheel(gtx layout.Context, e pointer.Event) {
 	v.scrollX = max(v.scrollX+int(dx), 0)
 }
 
+// vScrollbar draws the vertical scrollbar beside the pages and applies
+// its scrolling.
 func (d *window) vScrollbar(gtx layout.Context) layout.Dimensions {
 	v := &d.v
 	w := gtx.Dp(14)
@@ -359,6 +397,8 @@ func (d *window) vScrollbar(gtx layout.Context) layout.Dimensions {
 	return layout.Dimensions{Size: gtx.Constraints.Max}
 }
 
+// navKeys are the caret movement and editing keys, taken with or without
+// Shift and Ctrl.
 var navKeys = []key.Name{
 	key.NameUpArrow, key.NameDownArrow, key.NameLeftArrow, key.NameRightArrow,
 	key.NamePageUp, key.NamePageDown, key.NameHome, key.NameEnd,
@@ -368,6 +408,8 @@ var navKeys = []key.Name{
 // ctrlKeys are the editing shortcuts (with Ctrl).
 var ctrlKeys = []key.Name{"A", "B", "I", "U", "C", "X", "V", "Z", "Y", "L", "E", "R", "J", key.NameSpace}
 
+// docKeys handles the page view's keyboard: focus changes, typed text,
+// pasted clipboard data and the key commands (key).
 func (d *window) docKeys(gtx layout.Context) {
 	tag := &d.v
 	filters := []event.Filter{
@@ -632,6 +674,8 @@ func (d *window) pageMove(down bool, extend bool) {
 
 // Clipboard.
 
+// copy puts the selection's text on the clipboard, keeping the formatted
+// fragment to paste back (pasteData); cut deletes the selection too.
 func (d *window) copy(gtx layout.Context, cut bool) {
 	if d.ed.Sel.Empty() {
 		return
@@ -644,6 +688,8 @@ func (d *window) copy(gtx layout.Context, cut bool) {
 	}
 }
 
+// paste asks for the clipboard; the text arrives in docKeys and is pasted
+// by pasteData.
 func (d *window) paste(gtx layout.Context) {
 	gtx.Execute(clipboard.ReadCmd{Tag: &d.v})
 }
@@ -665,6 +711,8 @@ func (d *window) pasteData(s string) {
 
 // Styles.
 
+// normalID is the ID of the default paragraph style ("Normal" when the
+// document has none).
 func (d *window) normalID() string {
 	if st := d.doc.Styles.Default(model.ParagraphStyle); st != nil {
 		return st.ID
@@ -703,6 +751,7 @@ func headingID(doc *model.Document, n int) string {
 	return "Heading" + strconv.Itoa(n)
 }
 
+// applyStyle applies paragraph (or character) style id to the selection.
 func (d *window) applyStyle(id string) {
 	d.ed.ApplyStyle(id)
 	d.edited()

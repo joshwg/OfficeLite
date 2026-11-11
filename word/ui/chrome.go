@@ -1,3 +1,6 @@
+// Window chrome: the menu bar and its commands, the frame layout, the
+// title bar, and the status bar with its word count and zoom control.
+
 package ui
 
 import (
@@ -48,6 +51,8 @@ const (
 	homeModify
 )
 
+// menus builds the menu bar for this frame, with Undo/Redo labels and
+// enabled states taken from the editor.
 func (d *window) menus() []gui.Menu {
 	sel := !d.ed.Sel.Empty()
 	return []gui.Menu{
@@ -83,7 +88,11 @@ func (d *window) menus() []gui.Menu {
 	}
 }
 
+// menuChosen runs the menu item ev names.
 func (d *window) menuChosen(ev gui.MenuEvent) {
+	if d.opening() && (ev.Menu == menuHome || ev.Menu == menuInsert) {
+		return // editing commands wait for the document (ui.go)
+	}
 	switch ev.Menu {
 	case menuFile:
 		d.back.Show(gui.PageHome)
@@ -136,11 +145,27 @@ func (d *window) menuChosen(ev gui.MenuEvent) {
 	d.edited()
 }
 
+// layout draws one frame: title bar, menu, toolbar, bars, the page view
+// with its scrollbar and styles pane, the status bar, then any open
+// dialogs on top. While a document is still opening the editing chrome
+// is disabled.
 func (d *window) layout(gtx layout.Context) {
 	d.gtx = gtx
 	d.takeDrops() // drop.go
 	d.globalKeys(gtx)
-	d.extraKeys(gtx)
+	opening := d.opening() // a placeholder document: no editing (ui.go)
+	if !opening {
+		d.extraKeys(gtx)
+	}
+	// edit is gtx for the editing chrome, disabled while opening.
+	edit := func(w layout.Widget) layout.Widget {
+		return func(gtx layout.Context) layout.Dimensions {
+			if opening {
+				gtx = gtx.Disabled()
+			}
+			return w(gtx)
+		}
+	}
 	defer d.autoSaveFrame() // after this frame's edits (autosave.go)
 	gui.FillRect(gtx.Ops, image.Rectangle{Max: gtx.Constraints.Max}, gui.ChromeBG)
 	d.relayout()
@@ -157,14 +182,15 @@ func (d *window) layout(gtx layout.Context) {
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return d.menu.Layout(gtx, d.th, d.menus(), d.menuChosen)
 			}),
-			layout.Rigid(d.toolbar),
-			layout.Rigid(d.hfBar),
-			layout.Rigid(d.findBarLayout),
+			layout.Rigid(edit(d.toolbar)),
+			layout.Rigid(edit(d.hfBar)),
+			layout.Rigid(edit(d.findBarLayout)),
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{}.Layout(gtx,
 					layout.Flexed(1, d.layoutDoc),
 					layout.Rigid(d.vScrollbar),
-					layout.Rigid(d.stylesPaneLayout),
+					layout.Rigid(edit(d.stylesPaneLayout)),
+					layout.Rigid(edit(d.commentsPaneLayout)),
 				)
 			}),
 			layout.Rigid(d.statusBar),
@@ -291,17 +317,22 @@ func (d *window) globalKeys(gtx layout.Context) {
 	}
 }
 
+// close asks the window to close; the close handler (ui.go) may still
+// ask about unsaved changes.
 func (d *window) close() {
 	if d.win != nil {
 		d.win.Perform(system.ActionClose)
 	}
 }
 
+// setZoom sets the page zoom, clamped to 10%–500%, keeping the caret in view.
 func (d *window) setZoom(z float64) {
 	d.v.zoom = min(max(z, 0.1), 5)
 	d.v.ensureCaret = true
 }
 
+// titleBar draws the accent bar: app name, AutoSave switch, and the
+// document name with its modified dot and save status.
 func (d *window) titleBar(gtx layout.Context) layout.Dimensions {
 	h := gtx.Dp(36)
 	gui.FillRect(gtx.Ops, image.Rect(0, 0, gtx.Constraints.Max.X, h), accent)
@@ -333,6 +364,8 @@ type statsCache struct {
 	paras, words, chars int
 }
 
+// docStats returns the document's counts, recomputed only when the
+// document version has changed.
 func (d *window) docStats() *statsCache {
 	if !d.stats.valid || d.stats.version != d.ed.Version {
 		d.stats.paras, d.stats.words, d.stats.chars = d.doc.Stats()
@@ -341,6 +374,9 @@ func (d *window) docStats() *statsCache {
 	return &d.stats
 }
 
+// statusBar draws the bottom bar: page and word counts (of the selection
+// when there is one), the current message — loading, saving, error,
+// notice or the first load warning — and the zoom control.
 func (d *window) statusBar(gtx layout.Context) layout.Dimensions {
 	h := gtx.Dp(24)
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = h, h
@@ -384,6 +420,7 @@ func (d *window) statusBar(gtx layout.Context) layout.Dimensions {
 	})
 }
 
+// countWords returns the number of words in a copied fragment.
 func countWords(f *model.Fragment) int {
 	n := 0
 	for _, p := range f.Paras {

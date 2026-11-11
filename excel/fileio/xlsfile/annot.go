@@ -16,6 +16,7 @@ import (
 	"officelite/excel/model"
 )
 
+// Note and hyperlink record ids, and the OBJ types used.
 const (
 	recNote         = 0x001C
 	recObj          = 0x005D
@@ -27,6 +28,8 @@ const (
 	otDropDown = 0x14 // OBJ type of a drop-down (an AutoFilter button)
 )
 
+// CLSIDs of an HLINK body: the hyperlink object itself and its two
+// moniker kinds.
 var (
 	clsidStdLink     = []byte{0xD0, 0xC9, 0xEA, 0x79, 0xF9, 0xBA, 0xCE, 0x11, 0x8C, 0x82, 0x00, 0xAA, 0x00, 0x4B, 0xA9, 0x0B}
 	clsidURLMoniker  = []byte{0xE0, 0xC9, 0xEA, 0x79, 0xF9, 0xBA, 0xCE, 0x11, 0x8C, 0x82, 0x00, 0xAA, 0x00, 0x4B, 0xA9, 0x0B}
@@ -62,11 +65,14 @@ type annotReader struct {
 	tooltips map[model.Range]string
 }
 
+// noteRec is a NOTE record: the cell, the drawing object holding the text
+// and the author.
 type noteRec struct {
 	row, col, obj int
 	author        string
 }
 
+// linkRec is a decoded HLINK: the cells it covers and the link.
 type linkRec struct {
 	rng model.Range
 	h   model.Hyperlink
@@ -384,6 +390,7 @@ func latin1Bytes(s string) []byte {
 // carry the drawing group (MSODRAWINGGROUP). The layout follows what
 // Excel 2003 writes.
 
+// OfficeArt record ids.
 const (
 	recMsoDrawingGroup = 0x00EB
 	recMsoDrawing      = 0x00EC
@@ -534,7 +541,7 @@ func (x *writer) notes(b []byte, si int, sh *model.Sheet) []byte {
 		b = rec(b, recObj, obj)
 		b = rec(b, recMsoDrawing, officeArt(nil, 0, 0xF00D, 0))
 
-		text := []rune(truncUTF16(strings.ReplaceAll(sh.Notes[key].Text, "\r\n", "\n"), excel.XlsMaxText))
+		text := []rune(truncUTF16(strings.ReplaceAll(sh.Notes[key].PlainText(), "\r\n", "\n"), excel.XlsMaxText))
 		units := utf16.Encode(text)
 		b = rec(b, recTxo, le(0x0012, 0, 0, 0, 0, len(units), 16, 0, 0))
 		if len(units) == 0 {

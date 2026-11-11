@@ -164,7 +164,7 @@ func (e *Engine) atoms(p *model.Paragraph) []Item {
 			out = append(out, Item{Kind: k, Off: off, N: 1, St: st, brk: true, Adv: []float32{0}})
 			off += n
 		case model.RunOpaque:
-			it := Item{Kind: ItemObject, Off: off, N: 1, St: st, Obj: r.Opaque, brk: true, Text: e.fieldText(p, off, r)}
+			it := Item{Kind: ItemObject, Off: off, N: 1, St: st, Obj: r.Opaque, brk: !model.IsCommentMark(r), Text: e.fieldText(p, off, r)}
 			m := e.m.measure(st, "")
 			it.Asc, it.Desc, it.wAsc, it.wDesc = m.ascent, m.desc, m.wasc, m.wdesc
 			if r.Opaque != nil && r.Opaque.Width > 0 {

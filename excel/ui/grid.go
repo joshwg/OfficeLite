@@ -9,6 +9,7 @@ import (
 	"gioui.org/io/pointer"
 	"gioui.org/io/transfer"
 	"gioui.org/layout"
+	"gioui.org/op"
 	"gioui.org/op/clip"
 
 	"officelite/excel"
@@ -46,8 +47,12 @@ func (a *App) layoutGrid(gtx layout.Context) layout.Dimensions {
 		a.grid.focusPending = false
 		requestFocus(gtx, tag)
 	}
-	a.gridPointer(gtx, st)
-	a.gridKeys(gtx, st)
+	if a.opening() {
+		a.gridScroll(gtx, st) // a placeholder workbook only scrolls (app.go)
+	} else {
+		a.gridPointer(gtx, st)
+		a.gridKeys(gtx, st)
+	}
 
 	size := gtx.Constraints.Max
 	area := clip.Rect{Max: size}.Push(gtx.Ops)
@@ -92,6 +97,27 @@ func (a *App) layoutGrid(gtx layout.Context) layout.Dimensions {
 	return d
 }
 
+// gridScroll takes only the grid's wheel events, while a file loads into
+// the window (opening): clicks, keys and typing are dropped.
+func (a *App) gridScroll(gtx layout.Context, st *sheetState) {
+	for {
+		ev, ok := gtx.Event(pointer.Filter{
+			Target:  &a.grid,
+			Kinds:   pointer.Scroll,
+			ScrollX: pointer.ScrollRange{Min: -1 << 20, Max: 1 << 20},
+			ScrollY: pointer.ScrollRange{Min: -1 << 20, Max: 1 << 20},
+		})
+		if !ok {
+			break
+		}
+		if e, ok := ev.(pointer.Event); ok && e.Kind == pointer.Scroll {
+			a.wheel(gtx, st, e)
+		}
+	}
+}
+
+// gridPointer handles the grid's mouse: selecting, pointing at cells in a
+// formula, resizing, moving, charts, menus and the wheel.
 func (a *App) gridPointer(gtx layout.Context, st *sheetState) {
 	v := &st.view
 	for {
@@ -417,6 +443,7 @@ func (a *App) gridKeys(gtx layout.Context, st *sheetState) {
 	for _, n := range navKeys {
 		filters = append(filters, key.Filter{Focus: tag, Name: n, Optional: key.ModShift | key.ModShortcut})
 	}
+	typed := false // a typed character started an entry
 	for {
 		ev, ok := gtx.Event(filters...)
 		if !ok {
@@ -431,12 +458,18 @@ func (a *App) gridKeys(gtx layout.Context, st *sheetState) {
 				continue // a chart takes no other typing
 			}
 			// Typing replaces the cell's content (Enter mode); characters
-			// typed before the editor took the focus are added to it.
+			// typed before the editor took the focus are added to the end
+			// of it: the user can't have moved the caret yet. Neither the
+			// editor's caret (stale on Windows) nor e.Range (counted in the
+			// grid's own empty text, so 0 in the browser) can be trusted
+			// here.
 			if a.ed.active {
-				a.ed.cell.SetCaret(e.Range.Start, e.Range.End)
+				n := a.ed.cell.Len()
+				a.ed.cell.SetCaret(n, n)
 				a.ed.cell.Insert(e.Text)
 			} else if e.Text != "" {
 				a.beginEdit(e.Text, true, false)
+				typed = true
 			}
 			continue
 		case transfer.DataEvent:
@@ -529,6 +562,19 @@ func (a *App) gridKeys(gtx layout.Context, st *sheetState) {
 				a.goTo(st, render.Pos{Row: max(v.Sheet.UsedRows()-1, 0), Col: max(v.Sheet.UsedCols()-1, 0)}, shift)
 			}
 		}
+	}
+	if typed {
+		// Typing started an entry: the focus moves to the cell editor
+		// once this frame ends, after the grid has taken every key queued
+		// for it (asked for in the next frame, the editor got the rest of
+		// them, placed for the grid's empty text: "12345" came out
+		// "23451"), with the editor's text and caret given to the
+		// platform's text input as the focus moves.
+		requestFocus(gtx, &a.ed.cell)
+		syncIME(gtx, &a.ed.cell)
+		a.ed.focus = nil
+		a.editorKeys(gtx) // editKeys ran before the entry began
+		gtx.Execute(op.InvalidateCmd{})
 	}
 }
 

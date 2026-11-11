@@ -1,7 +1,11 @@
+// Tests for the Font group commands in fontcmds.go.
+
 package model
 
 import "testing"
 
+// TestFontCommands checks the Change Case variants, Grow/Shrink Font
+// steps, superscript toggling and highlight.
 func TestFontCommands(t *testing.T) {
 	d, e := newDoc("hello world. this IS fine")
 	e.SelectAll()

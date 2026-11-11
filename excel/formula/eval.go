@@ -287,7 +287,7 @@ func (e *Env) rangeOp(n binaryNode) Value {
 		R2: max(a.R2, b.R2), C2: max(a.C2, b.C2)}
 }
 
-var parsedNames sync.Map // formula text -> Node
+var parsedNames sync.Map // formula text → Node
 
 // name evaluates a name: a LET/LAMBDA variable, else a defined name's
 // formula (parsed once and cached), else a worksheet function as a value.

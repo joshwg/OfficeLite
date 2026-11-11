@@ -1,3 +1,8 @@
+// The dialogs of the Insert menu, Find & Select, Sort and the AutoFilter:
+// their shared state, keys and drawing helpers. Each dialog lives in its
+// own file (insert.go, find.go, sort.go, notes.go, filterdlg.go,
+// datatools.go, validation.go, outline.go).
+
 package ui
 
 import (
@@ -15,11 +20,7 @@ import (
 	"officelite/common/gui"
 )
 
-// The dialogs of the Insert menu, Find & Select, Sort and the AutoFilter:
-// their shared state, keys and drawing helpers. Each dialog lives in its
-// own file (insert.go, find.go, sort.go, notes.go, filterdlg.go,
-// datatools.go, validation.go, outline.go).
-
+// dlgKind says which of these dialogs is open, dlgNone for none.
 type dlgKind int
 
 const (
@@ -52,7 +53,7 @@ type insertState struct {
 	tag   int  // focus tag of dialogs without a text field
 	err   string
 
-	ok, cancel, extra widget.Clickable
+	ok, cancel, extra, extra2 widget.Clickable
 
 	shift widget.Enum // Insert / Delete Cells
 
@@ -104,7 +105,9 @@ func (a *App) closeDialog() {
 	a.grid.focusPending = true
 }
 
-// dialogFocusTag is what has the keyboard in the open dialog.
+// dialogFocusTags lists what may have the keyboard in the open dialog (its
+// text fields, then the dialog's own tag), the first being focused when
+// it opens; nil for the note editor, which handles its own keys.
 func (a *App) dialogFocusTags() []any {
 	d := &a.ins
 	switch d.kind {

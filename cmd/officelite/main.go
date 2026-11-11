@@ -79,6 +79,8 @@ func main() {
 		windows.Add(1)
 		go func() {
 			defer windows.Done()
+			pages.opened(kind)
+			defer pages.closed(kind)
 			w := new(app.Window)
 			var err error
 			if kind == doctype.Document {

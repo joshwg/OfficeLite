@@ -112,3 +112,15 @@ func ReadStream(data []byte, names ...string) (name string, content []byte, err 
 	}
 	return "", nil, fmt.Errorf("stream %q not found", names)
 }
+
+// HasMacros reports whether names (from Streams) include a VBA project:
+// every one, in an .xls (_VBA_PROJECT_CUR storage) or a .doc (Macros
+// storage), has a _VBA_PROJECT stream.
+func HasMacros(names []string) bool {
+	for _, n := range names {
+		if strings.EqualFold(n, "_VBA_PROJECT") {
+			return true
+		}
+	}
+	return false
+}

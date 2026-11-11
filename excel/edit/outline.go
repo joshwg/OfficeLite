@@ -1,3 +1,8 @@
+// The outline (Data > Outline): grouping and ungrouping rows and columns,
+// collapsing and expanding groups, the level buttons and Show / Hide
+// Detail. Each command is one undo step that restores the outline and
+// the sizes of the rows and columns it hid. Subtotals are in subtotal.go.
+
 package edit
 
 import (
@@ -7,11 +12,6 @@ import (
 	"officelite/excel/model"
 )
 
-// The outline (Data > Outline): grouping and ungrouping rows and columns,
-// collapsing and expanding groups, the level buttons and Show / Hide
-// Detail. Each command is one undo step that restores the outline and
-// the sizes of the rows and columns it hid. Subtotals are in subtotal.go.
-
 // outlineChange is a change of a sheet's outline and hidden rows and
 // columns.
 type outlineChange struct {
@@ -19,16 +19,21 @@ type outlineChange struct {
 	before, after outlineState
 }
 
+// outlineState is a snapshot of a sheet's outline and its row heights and
+// column widths (which hold the hidden ones too).
 type outlineState struct {
 	outline model.Outline
 	heights map[int]float32
 	widths  map[int]float32
 }
 
+// outlineStateOf snapshots the sheet's outline state, in copies.
 func outlineStateOf(sh *model.Sheet) outlineState {
 	return outlineState{sh.Outline.Clone(), maps.Clone(sh.RowHeight), maps.Clone(sh.ColWidth)}
 }
 
+// set puts the sheet's outline, row heights and column widths back to
+// the after or before snapshot, in copies.
 func (c *outlineChange) set(wb *model.Workbook, after bool) {
 	s := c.before
 	if after {
@@ -169,6 +174,9 @@ func (b *Book) ShowDetail(sheet int, r model.Range) bool {
 	return b.detail(sheet, r, false)
 }
 
+// detail does HideDetail's (hide) or ShowDetail's work on the rows and
+// columns of r, skipping the other axis for a whole-row or whole-column
+// selection; it reports whether any group changed.
 func (b *Book) detail(sheet int, r model.Range, hide bool) bool {
 	return b.changeOutline(sheet, r, func(sh *model.Sheet) bool {
 		changed := false

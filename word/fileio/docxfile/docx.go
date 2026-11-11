@@ -64,6 +64,7 @@ func writePackage(doc *model.Document, w io.Writer, template bool) error {
 	}
 	wr.prepareHeaders()
 	wr.prepareNotes()
+	wr.prepareComments()
 	docXML := wr.documentXML()
 	styles := wr.stylesXML()
 	numbering := wr.numberingXML()
@@ -73,6 +74,9 @@ func writePackage(doc *model.Document, w io.Writer, template bool) error {
 	return wr.writeNew(w, docXML, styles, numbering)
 }
 
+// writer holds the state of one save: the document, its source package
+// (when it came from a .docx) and the parts and relationships added while
+// writing.
 type writer struct {
 	doc      *model.Document
 	th       *theme
@@ -96,8 +100,10 @@ type writer struct {
 	noteParts []hfPart
 	inEndnote bool
 	secIndex  map[*model.Section]int
+	cm        commentWriter // comments (comments.go)
 }
 
+// warn adds s to the document's warnings unless it is already there.
 func (w *writer) warn(s string) {
 	for _, x := range w.doc.Warnings {
 		if x == s {
@@ -107,6 +113,9 @@ func (w *writer) warn(s string) {
 	w.doc.Warnings = append(w.doc.Warnings, s)
 }
 
+// loadSource opens the package the document was read from and parses the
+// parts the writer re-uses: the main part, its relationships, the theme,
+// styles.xml and numbering.xml.
 func (w *writer) loadSource() error {
 	p, err := openPkg(w.doc.Source)
 	if err != nil {
@@ -200,6 +209,8 @@ func rootTag(b *strings.Builder, name string, orig *node) {
 	b.WriteString(">")
 }
 
+// documentXML builds document.xml: the body's blocks and the last
+// section's properties, under the source's root element when there is one.
 func (w *writer) documentXML() []byte {
 	var b strings.Builder
 	b.WriteString(xmlHeader)
@@ -232,6 +243,8 @@ type wrapStack struct {
 	ends []string
 }
 
+// to closes the open spans that span's chain doesn't share and opens the
+// rest of the chain, so the next item is written inside exactly span.
 func (s *wrapStack) to(span *model.Span) {
 	chain := span.Chain()
 	n := 0
@@ -249,6 +262,7 @@ func (s *wrapStack) to(span *model.Span) {
 	}
 }
 
+// close ends every open span.
 func (s *wrapStack) close() { s.to(nil) }
 
 // spanTags returns the opening and closing XML for a span.
@@ -296,6 +310,8 @@ func (w *writer) spanTags(sp *model.Span) (string, string) {
 	return "", ""
 }
 
+// hyperlinkRel returns the ID of the external hyperlink relationship for
+// url, adding one when the part has none.
 func (w *writer) hyperlinkRel(url string) string {
 	for _, rl := range w.rels {
 		if rl.is(relHyperlink) && rl.Target == url && rl.Mode == "External" {
@@ -308,6 +324,7 @@ func (w *writer) hyperlinkRel(url string) string {
 	return id
 }
 
+// newRelID returns a relationship ID ("rIdN") not used by the main part.
 func (w *writer) newRelID() string {
 	used := map[string]bool{}
 	for _, rl := range w.rels {
@@ -321,6 +338,7 @@ func (w *writer) newRelID() string {
 	}
 }
 
+// reRelAttr matches the attributes that refer to a relationship ID.
 var reRelAttr = regexp.MustCompile(`\br:(?:id|embed|link|pict|dm|lo|qs|cs|href)\s*=\s*"([^"]*)"`)
 
 // relsOK reports whether every relationship id the XML refers to exists in
@@ -348,10 +366,14 @@ func (w *writer) relsOK(data []byte) bool {
 	return true
 }
 
+// opaqueOK reports whether o's original XML can be written as it is: it
+// is .docx XML whose relationship references all resolve.
 func (w *writer) opaqueOK(o *model.Opaque) bool {
 	return o != nil && o.Format == "docx" && len(o.Data) > 0 && w.relsOK(o.Data)
 }
 
+// blocks writes a sequence of paragraphs and tables with the spans that
+// wrap them (empty tables are skipped).
 func (w *writer) blocks(b *strings.Builder, blocks []model.Block) {
 	ws := &wrapStack{w: w, b: b}
 	for _, bl := range blocks {
@@ -371,6 +393,8 @@ func (w *writer) blocks(b *strings.Builder, blocks []model.Block) {
 	ws.close()
 }
 
+// before writes the opaque XML kept ahead of a block (bookmarks, proofing
+// marks…), skipping any that can't be written as is.
 func (w *writer) before(b *strings.Builder, ops []*model.Opaque) {
 	for _, o := range ops {
 		if w.opaqueOK(o) {
@@ -379,6 +403,8 @@ func (w *writer) before(b *strings.Builder, ops []*model.Opaque) {
 	}
 }
 
+// para writes one <w:p>: its properties (with the section properties when
+// it ends a section) and its runs inside their spans.
 func (w *writer) para(b *strings.Builder, p *model.Paragraph) {
 	b.WriteString("<w:p>")
 	markStyle := ""
@@ -409,9 +435,15 @@ func (w *writer) para(b *strings.Builder, p *model.Paragraph) {
 	b.WriteString("</w:p>")
 }
 
+// run writes one run: opaque content as its original XML when that can be
+// re-used, otherwise as a note, field, floating object, picture, simple
+// field or bracketed placeholder; text runs through textRun.
 func (w *writer) run(b *strings.Builder, r *model.Run) {
 	if o := r.Opaque; r.Kind == model.RunOpaque && o != nil {
 		switch {
+		case o.Comment != nil:
+			w.commentRun(b, r)
+			return
 		case o.Note != nil || o.NoteMark:
 			w.noteRun(b, r)
 			return
@@ -508,11 +540,13 @@ func (w *writer) textRun(b *strings.Builder, r *model.Run, text string) {
 
 // ---- tables ----
 
+// The schema order of the children of w:tblPr, w:trPr, w:tcPr and w:sectPr.
 var tblPrOrder = order("tblStyle tblpPr tblOverlap bidiVisual tblStyleRowBandSize tblStyleColBandSize tblW jc tblCellSpacing tblInd tblBorders shd tblLayout tblCellMar tblLook tblCaption tblDescription tblPrChange")
 var trPrOrder = order("cnfStyle divId gridBefore gridAfter wBefore wAfter cantSplit trHeight tblHeader tblCellSpacing jc hidden ins del trPrChange")
 var tcPrOrder = order("cnfStyle tcW gridSpan hMerge vMerge tcBorders shd noWrap tcMar textDirection tcFitText vAlign hideMark headers cellIns cellDel cellMerge tcPrChange")
 var sectPrOrder = order("headerReference footerReference footnotePr endnotePr type pgSz pgMar paperSrc pgBorders lnNumType pgNumType cols formProt vAlign noEndnote titlePg textDirection bidi rtlGutter docGrid printerSettings sectPrChange")
 
+// has reports whether an element named name is among nodes.
 func has(nodes []*node, name string) bool {
 	for _, n := range nodes {
 		if n.name == name {
@@ -522,6 +556,9 @@ func has(nodes []*node, name string) bool {
 	return false
 }
 
+// table writes a <w:tbl>: its properties merged over the original ones,
+// a grid (made up from the rows when the table has no columns) and its
+// rows.
 func (w *writer) table(b *strings.Builder, t *model.Table) {
 	orig := parseFragment(t.DocxXML)
 	o := parseTblPr(orig, &w.doc.Styles)
@@ -586,6 +623,8 @@ func (w *writer) table(b *strings.Builder, t *model.Table) {
 	b.WriteString("</w:tbl>")
 }
 
+// row writes a <w:tr> with its height, header and can't-split flags
+// merged over the original row properties.
 func (w *writer) row(b *strings.Builder, r *model.TableRow) {
 	b.WriteString("<w:tr>")
 	var orig []*node
@@ -627,6 +666,8 @@ func (w *writer) row(b *strings.Builder, r *model.TableRow) {
 	b.WriteString("</w:tr>")
 }
 
+// cell writes a <w:tc>; a cell always ends in a paragraph, as Word
+// requires.
 func (w *writer) cell(b *strings.Builder, c *model.TableCell) {
 	orig := parseFragment(c.DocxXML)
 	o := parseTcPr(orig, w.th)
@@ -676,13 +717,18 @@ func (w *writer) cell(b *strings.Builder, c *model.TableCell) {
 
 // ---- styles.xml ----
 
+// styleOrder is the schema order of a w:style's children.
 var styleOrder = order("name aliases basedOn next link autoRedefine hidden uiPriority semiHidden unhideWhenUsed qFormat locked personal personalCompose personalReply rsid pPr rPr tblPr trPr tcPr tblStylePr")
 
+// styleTypeNames maps the model's style types to w:type values.
 var styleTypeNames = map[model.StyleType]string{
 	model.ParagraphStyle: "paragraph", model.CharacterStyle: "character",
 	model.TableStyle: "table", model.NumberingStyle: "numbering",
 }
 
+// stylesXML builds styles.xml: the document defaults, whatever else the
+// source had (latent styles…) and every style, its properties merged over
+// the original XML.
 func (w *writer) stylesXML() []byte {
 	ss := &w.doc.Styles
 	var b strings.Builder
@@ -805,6 +851,7 @@ func (w *writer) numberingXML() []byte {
 	return []byte(b.String())
 }
 
+// abstractNumXML is the <w:abstractNum> for a list's levels.
 func abstractNumXML(id int, l *model.List) string {
 	var b strings.Builder
 	b.WriteString(`<w:abstractNum w:abstractNumId="` + strconv.Itoa(id) + `"><w:multiLevelType w:val="hybridMultilevel"/>`)
@@ -839,6 +886,8 @@ func abstractNumXML(id int, l *model.List) string {
 
 // ---- packages ----
 
+// deflate adds a compressed entry to the zip with a fixed timestamp, so
+// equal content gives equal bytes.
 func deflate(zw *zip.Writer, name string, data []byte) error {
 	f, err := zw.CreateHeader(&zip.FileHeader{Name: name, Method: zip.Deflate, Modified: time.Date(1980, 1, 1, 0, 0, 0, 0, time.UTC)})
 	if err != nil {
@@ -899,6 +948,11 @@ func (w *writer) writeInto(out io.Writer, docXML, styles, numbering []byte) erro
 			}
 		}
 		ct.defaults = defs
+		ctDirty = true
+	}
+	for _, part := range w.cm.drop {
+		drop[part] = true
+		ct.removeOverride(part)
 		ctDirty = true
 	}
 	if ct.typeOf(w.main) != w.mainType() {

@@ -257,9 +257,6 @@ func (r *reader) readNotes() {
 
 // subdocWarnings reports stories WordLite doesn't show.
 func (r *reader) subdocWarnings() {
-	if r.fib.lw[lwCcpAtn] > 0 {
-		r.warn("Comments are not shown and are not kept when saving.")
-	}
 	if r.fib.lw[lwCcpHdrTxbx] > 0 {
 		r.warn("Text boxes in headers and footers are not shown and are not kept when saving.")
 	}

@@ -1,3 +1,6 @@
+// Tests for the save formats, SaveFile and the .xlsx round trip of the
+// sample workbooks; compare is the shared "what a save must keep" check.
+
 package fileio
 
 import (
@@ -11,6 +14,9 @@ import (
 	"officelite/excel/model"
 )
 
+// TestFormatFor checks that FormatFor maps extensions (any case) to their
+// formats and rejects unknown ones, and that Ext, String and MultiSheet
+// describe each format.
 func TestFormatFor(t *testing.T) {
 	for name, want := range map[string]Format{"a.xlsx": XLSX, "B.XLSM": XLSX, "c.csv": CSV, "d.tsv": TSV, "e.txt": TSV, "f.xls": XLS} {
 		if got, ok := FormatFor(name); !ok || got != want {
@@ -47,6 +53,8 @@ func roundTrip(t *testing.T, wb *model.Workbook) *model.Workbook {
 	return got
 }
 
+// TestSaveSamples checks that every sample workbook (the .xls test file and
+// the Samples/excel* files, when present) survives a save as .xlsx.
 func TestSaveSamples(t *testing.T) {
 	paths := []string{"xlsfile/testdata/sample.xls"}
 	if m, _ := filepath.Glob("../../Samples/excel*/*.xls*"); len(m) > 0 {
@@ -149,6 +157,9 @@ func compare(t *testing.T, want, got *model.Workbook) {
 	}
 }
 
+// TestSaveFile checks that SaveFile writes each format over an existing
+// file keeping its permissions, that the result opens with the same cells,
+// and that no temporary file is left after a successful or a failed save.
 func TestSaveFile(t *testing.T) {
 	dir := t.TempDir()
 	wb, err := Open("xlsfile/testdata/sample.xls")

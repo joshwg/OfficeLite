@@ -1,3 +1,11 @@
+// Sections and notes. Each w:sectPr (in the pPr of a section's last
+// paragraph, and the body's last child for the last section) holds a
+// section's page setup, break type, columns, page numbering and header
+// references; the properties the model doesn't cover are kept in
+// Section.DocxXML. Footnotes and endnotes live in footnotes.xml and
+// endnotes.xml, referenced by id; their separator notes are kept as
+// they were.
+
 package docxfile
 
 import (
@@ -8,14 +16,7 @@ import (
 	"officelite/word/model"
 )
 
-// Sections and notes. Each w:sectPr (in the pPr of a section's last
-// paragraph, and the body's last child for the last section) holds a
-// section's page setup, break type, columns, page numbering and header
-// references; the properties the model doesn't cover are kept in
-// Section.DocxXML. Footnotes and endnotes live in footnotes.xml and
-// endnotes.xml, referenced by id; their separator notes are kept as
-// they were.
-
+// Content types of the note parts.
 const (
 	ctFootnotes = "application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"
 	ctEndnotes  = "application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"
@@ -110,6 +111,7 @@ func (w *writer) sectPrXML(s *model.Section, i int) string {
 	return "<w:sectPr>" + mergeProps(orig, groups, sectPrOrder) + "</w:sectPr>"
 }
 
+// sameColumns reports whether two column layouts are the same.
 func sameColumns(a, b model.Columns) bool {
 	if a.N() != b.N() || a.Space != b.Space || a.Separator != b.Separator || len(a.Widths) != len(b.Widths) {
 		return false
@@ -122,6 +124,8 @@ func sameColumns(a, b model.Columns) bool {
 	return true
 }
 
+// colsXML is the <w:cols> for a column layout, with a w:col per column
+// when their widths differ.
 func colsXML(c model.Columns) string {
 	sp := c.Space
 	if sp <= 0 {
@@ -149,6 +153,8 @@ func colsXML(c model.Columns) string {
 	return s + "/>"
 }
 
+// pgNumXML is the section's <w:pgNumType>, or "" when numbering neither
+// restarts nor changes format.
 func pgNumXML(s *model.Section) string {
 	if !s.PageNumRestart && s.PageNumFormat == "" {
 		return ""

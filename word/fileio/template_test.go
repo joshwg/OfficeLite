@@ -1,3 +1,6 @@
+// Tests for the template formats (.dotx, .dot): format table, the
+// template marker and round trips through Samples/word-templates.
+
 package fileio
 
 import (

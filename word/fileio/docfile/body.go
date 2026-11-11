@@ -362,6 +362,7 @@ func (r *reader) runs(start, end int, paraStyle string) []model.Run {
 		out = append(out, run)
 	}
 	for cp := start; cp < end; cp++ {
+		r.commentMarksAt(cp, add)
 		if r.skip[cp] {
 			continue
 		}
@@ -434,7 +435,10 @@ func (r *reader) runs(start, end int, paraStyle string) []model.Run {
 				add(r.simpleOpaque(run, "note", "*", cp))
 			}
 		case c == 0x05 && chp.spec:
-			continue // comment anchor
+			if cm := r.atn.ref[cp]; cm != nil && !r.inNote {
+				add(model.Run{Kind: model.RunOpaque, Opaque: &model.Opaque{Comment: cm, CommentMark: model.CommentRef}})
+			}
+			// else the mark that starts a comment's own text
 		case c < 0x20 && c != 0x1E && c != 0x1F:
 			continue
 		default:

@@ -1,3 +1,5 @@
+// Fill Down / Fill Right and the fill handle.
+
 package ui
 
 import (
@@ -14,14 +16,14 @@ import (
 	"officelite/excel/render"
 )
 
-// Fill Down / Fill Right and the fill handle.
-
 // fillDown copies the selection's top row into the rest of it (Ctrl+D).
 func (a *App) fillDown() { a.fill(true) }
 
 // fillRight copies the selection's left column into the rest (Ctrl+R).
 func (a *App) fillRight() { a.fill(false) }
 
+// fill copies the selection's first row (down) or column into the rest of
+// it, unless a pivot table is in the way.
 func (a *App) fill(down bool) {
 	if !a.commitForCommand() {
 		return
@@ -176,6 +178,7 @@ func (a *App) drawFillDrag(gtx layout.Context, v *render.View) {
 	gui.DashedLine(gtx.Ops, box.Max.X-1, box.Min.Y, box.Max.X-1, box.Max.Y, t, on, off, c)
 }
 
+// colorsGray is the fill-handle drag outline's color.
 var colorsGray = gui.MutedText
 
 // rangeName is A1 or A1:B2.

@@ -1,3 +1,7 @@
+// Tests for shifting cell inserts and deletes, sorting, Fill and AutoFill,
+// Find and Replace, Go To references, notes and links under undo, and
+// CurrentRegion.
+
 package edit
 
 import (
@@ -8,6 +12,10 @@ import (
 	"officelite/excel/model"
 )
 
+// TestInsertDeleteCellsShift checks that Insert Cells and Delete Cells
+// move the cells, notes and formulas (on other sheets too) with the
+// shift, that a deleted cell's references become #REF!, and that undo
+// puts everything back.
 func TestInsertDeleteCellsShift(t *testing.T) {
 	b := newBook()
 	for ref, v := range map[string]string{"A1": "1", "A2": "2", "A3": "3", "B1": "10", "B2": "20", "B3": "30"} {
@@ -65,6 +73,8 @@ func TestInsertDeleteCellsShift(t *testing.T) {
 	b.expect(t, "undo right", map[string]string{"B1": "10", "C1": "6"})
 }
 
+// TestShiftCellsMerged checks that a shift that would split a merged area
+// is refused, and one that moves it whole moves the area too.
 func TestShiftCellsMerged(t *testing.T) {
 	b := newBook()
 	sh := b.WB.Sheets[0]
@@ -80,6 +90,9 @@ func TestShiftCellsMerged(t *testing.T) {
 	}
 }
 
+// TestSort checks CurrentRegion and GuessHeader on a small table, then
+// that Sort keeps a header row, carries formulas with their rows, undoes,
+// and sorts text descending.
 func TestSort(t *testing.T) {
 	b := newBook()
 	rows := [][2]string{{"Name", "Qty"}, {"pear", "3"}, {"Apple", "10"}, {"fig", ""}, {"banana", "1"}}
@@ -112,8 +125,11 @@ func TestSort(t *testing.T) {
 	b.expect(t, "by name desc", map[string]string{"A2": "pear", "A3": "fig", "A4": "banana", "A5": "Apple"})
 }
 
+// itoa is n in decimal, by way of a cell name's row number.
 func itoa(n int) string { return model.CellName(n-1, 0)[1:] }
 
+// TestFill checks that Fill Down and Fill Right copy values and shift
+// formulas, and that Fill Down undoes.
 func TestFill(t *testing.T) {
 	b := newBook()
 	b.enter(t, 0, "A1", "5")
@@ -131,6 +147,9 @@ func TestFill(t *testing.T) {
 	}
 }
 
+// TestAutoFill checks each series kind (number trend, copy, counter,
+// weekday, date, formula, repeating pattern, month, stepped counter),
+// filling upward, and that dragging the handle back clears cells.
 func TestAutoFill(t *testing.T) {
 	b := newBook()
 	for ref, v := range map[string]string{
@@ -177,6 +196,9 @@ func TestAutoFill(t *testing.T) {
 	b.expect(t, "undo shrink", map[string]string{"K5": "10"})
 }
 
+// TestFindReplace checks FindAll's scope options (values or formulas, one
+// sheet or the workbook, Match case and Whole cell), FindNext with
+// wildcards, Replace All with its undo, and ErrNotFound.
 func TestFindReplace(t *testing.T) {
 	b := newBook()
 	b.enter(t, 0, "A1", "apple pie")
@@ -219,6 +241,8 @@ func TestFindReplace(t *testing.T) {
 	}
 }
 
+// TestResolveRef checks Go To's reference forms (cells, areas, whole
+// columns and rows, sheet prefixes, a defined name) and what it rejects.
 func TestResolveRef(t *testing.T) {
 	b := newBook()
 	b.WB.Names = []model.DefinedName{{Name: "Tax", Sheet: -1, Formula: "Data!$B$2:$B$4"}}
@@ -246,6 +270,8 @@ func TestResolveRef(t *testing.T) {
 	}
 }
 
+// TestNotesAndLinksUndo checks that SetNote, SetHyperlink and ClearNotes
+// undo and redo, and that inserted rows move notes and links.
 func TestNotesAndLinksUndo(t *testing.T) {
 	b := newBook()
 	sh := b.WB.Sheets[0]

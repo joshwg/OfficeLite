@@ -9,7 +9,7 @@
   <tr>
     <td>{{.Username}}</td>
     <td>{{if .IsAdmin}}Administrator{{else}}User{{end}}</td>
-    <td>{{bytes .QuotaBytes}}</td>
+    <td>{{bytes .Used}} of {{bytes .QuotaBytes}}</td>
     <td>{{.CreatedAt.Format "2006-01-02"}}</td>
     <td class="actions">
       {{if eq .ID $me}}
@@ -23,9 +23,9 @@
           {{if .IsAdmin}}<input type="hidden" name="admin" value="0"><button>Make user</button>
           {{else}}<input type="hidden" name="admin" value="1"><button>Make admin</button>{{end}}
         </form>
-        <form method="post" action="/admin/users/{{.ID}}/delete">
-          <label class="inline"><input type="checkbox" name="confirm" value="1" required> confirm</label>
-          <button class="danger">Delete</button>
+        <form method="post" action="/admin/users/{{.ID}}/delete"
+          data-confirm="Delete user {{.Username}} and all of their files? This can't be undone.">
+          <button class="danger" title="Deletes the account and all its files">Delete</button>
         </form>
       {{end}}
     </td>
@@ -37,10 +37,13 @@
 <section class="card narrow">
   <h2>Add a user</h2>
   <form method="post" action="/admin/users">
-    <label>Username <input name="username" value="{{.Data.NewUsername}}" autocomplete="off" required></label>
+    <label>Username <input name="username" value="{{.Data.NewUsername}}" autocomplete="off" required
+      maxlength="{{.Data.MaxName}}" pattern="[A-Za-z0-9][A-Za-z0-9._\-]*" title="Letters a–z and A–Z, digits, '.', '_' and '-', starting with a letter or digit"></label>
     <label>Password <input name="password" type="password" autocomplete="new-password" required></label>
     <label class="inline"><input type="checkbox" name="admin" value="1"{{if .Data.NewAdmin}} checked{{end}}> Administrator</label>
     <button>Add user</button>
   </form>
+  <p class="hint">Usernames: up to {{.Data.MaxName}} letters a–z and A–Z, digits, '.', '_' and '-', starting with a letter or digit.
+  Case is kept but ignored: Josh and josh are the same user. Deleting a user deletes their files too.</p>
 </section>
 {{end}}

@@ -12,13 +12,23 @@
 package gui
 
 import (
+	"syscall/js"
+
 	"gioui.org/io/key"
 	"gioui.org/layout"
 )
 
+// modalFlag is the page global the web server's file dialog
+// (web/server/static/serverfs.js) sets while it is open over the app.
+const modalFlag = "officewebModalOpen"
+
 // KeepKeyboard keeps the window's keys coming in the browser; call it
-// after laying out a frame, before sending it. On the desktop it does
-// nothing.
+// after laying out a frame, before sending it. It holds off while the
+// page shows its own dialog, whose text box would otherwise lose the
+// focus at every frame. On the desktop it does nothing.
 func KeepKeyboard(gtx layout.Context) {
+	if js.Global().Get(modalFlag).Truthy() {
+		return
+	}
 	gtx.Execute(key.SoftKeyboardCmd{Show: true})
 }

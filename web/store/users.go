@@ -16,7 +16,7 @@ type User struct {
 	ID         int64
 	Username   string
 	IsAdmin    bool
-	QuotaBytes int64 // server storage for documents (later release)
+	QuotaBytes int64 // server storage for documents
 	CreatedAt  time.Time
 }
 
@@ -205,6 +205,21 @@ func checkNotLastAdmin(tx *sql.Tx, id int64) error {
 	}
 	if admins <= 1 {
 		return ErrLastAdmin
+	}
+	return nil
+}
+
+// SetQuota sets how many bytes of documents an account may keep on the
+// server.
+func (s *Store) SetQuota(id, quotaBytes int64) error {
+	res, err := s.db.Exec("UPDATE users SET quota_bytes = ? WHERE id = ?", quotaBytes, id)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return err
+	} else if n == 0 {
+		return ErrNotFound
 	}
 	return nil
 }

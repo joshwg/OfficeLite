@@ -82,5 +82,7 @@ GOOS=darwin GOARCH=amd64 go build -o bin/OfficeLite-Intel ./cmd/officelite      
 
 See [EXCEL.md](./EXCEL.md), [WORD.md](./WORD.md), and
 [EXCEL-FUNCTIONS.md](./EXCEL-FUNCTIONS.md) for feature details, and
-[KEYBOARD.md](./KEYBOARD.md) for every key binding (Windows and Linux, macOS). The
+[KEYBOARD.md](./KEYBOARD.md) for every key binding (Windows and Linux, macOS), and
+[WEB.md](./WEB.md) for the browser version (accounts, server storage and its
+file name rules). The
 [`Samples/`](../Samples/) directory groups workbooks and documents by topic.

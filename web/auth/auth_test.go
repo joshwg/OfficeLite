@@ -42,12 +42,12 @@ func newTest(t *testing.T) (*Service, *clock) {
 
 // TestValidate checks the username and password rules.
 func TestValidate(t *testing.T) {
-	for _, name := range []string{"", "a b", "x/y", "../etc"} {
+	for _, name := range []string{"", "a b", "x/y", "../etc", "josé", "a@b", ".x"} {
 		if ValidateUsername(name) == nil {
 			t.Errorf("ValidateUsername(%q) accepted", name)
 		}
 	}
-	for _, name := range []string{"ann", "j.smith", "josé", "a_b-c@d"} {
+	for _, name := range []string{"ann", "j.smith", "Josh", "a_b-c"} {
 		if err := ValidateUsername(name); err != nil {
 			t.Errorf("ValidateUsername(%q): %v", name, err)
 		}
@@ -207,5 +207,23 @@ func TestChangePassword(t *testing.T) {
 	}
 	if _, _, err := s.Login("ann", "another long password", "ip"); err != nil {
 		t.Fatalf("login with new password: %v", err)
+	}
+}
+
+// TestUsernameCase checks that a username keeps its case but compares
+// without regard to it: logging in with any case works, and no second
+// account may differ only in case.
+func TestUsernameCase(t *testing.T) {
+	s, _ := newTest(t)
+	created, err := s.CreateUser("Josh", testPassword, false)
+	if err != nil || created.Username != "Josh" {
+		t.Fatalf("CreateUser = %+v, %v", created, err)
+	}
+	if _, err := s.CreateUser("jOSH", testPassword, false); !errors.Is(err, store.ErrUsernameTaken) {
+		t.Fatalf("second Josh: err = %v", err)
+	}
+	_, u, err := s.Login("JOSH", testPassword, "10.0.0.1")
+	if err != nil || u.Username != "Josh" {
+		t.Fatalf("Login = %+v, %v", u, err)
 	}
 }

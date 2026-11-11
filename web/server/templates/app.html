@@ -8,6 +8,9 @@
 </head>
 <body class="app-page">
 <div id="status" class="status">Loading {{.Title}}…</div>
+<script src="/static/idle.js" data-idle="{{idleSeconds}}" data-warn="{{warnSeconds}}" data-ping="{{pingSeconds}}"></script>
+<!-- serverfs.js before wasm_exec.js: its file system replaces the stub. -->
+<script src="/static/serverfs.js" data-max-name="{{maxFileName}}" data-exts="{{storableExts}}"></script>
 <script src="/client/wasm_exec.js"></script>
 <script src="/static/app.js" data-app="{{.Data.App}}"></script>
 </body>

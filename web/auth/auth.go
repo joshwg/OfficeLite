@@ -14,12 +14,12 @@ import (
 	"fmt"
 	"strings"
 	"time"
-	"unicode"
 	"unicode/utf8"
 
 	"golang.org/x/crypto/bcrypt"
 
 	"officelite/web"
+	"officelite/web/names"
 	"officelite/web/store"
 )
 
@@ -89,22 +89,9 @@ func ValidatePassword(password string) error {
 	return nil
 }
 
-// ValidateUsername returns why username isn't acceptable, or nil: 1 to
-// UsernameMaxLength letters, digits, '.', '_', '-' or '@'.
-func ValidateUsername(username string) error {
-	if username == "" {
-		return errors.New("username is required")
-	}
-	if utf8.RuneCountInString(username) > web.UsernameMaxLength {
-		return fmt.Errorf("username must be at most %d characters", web.UsernameMaxLength)
-	}
-	for _, r := range username {
-		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && !strings.ContainsRune("._-@", r) {
-			return errors.New("username may contain only letters, digits, '.', '_', '-' and '@'")
-		}
-	}
-	return nil
-}
+// ValidateUsername returns why username isn't acceptable, or nil (the
+// rules are in web/names).
+func ValidateUsername(username string) error { return names.Username(username) }
 
 // newToken returns a new random session token and its hash.
 func newToken() (token, hash string, err error) {

@@ -10,6 +10,7 @@
 package autosave
 
 import (
+	"runtime"
 	"sync"
 	"time"
 
@@ -356,17 +357,27 @@ var def struct {
 }
 
 // Default reports whether AutoSave starts on for the files the user opens
-// or saves (that it works with); off unless the user changed it. It is
-// read from the settings file once per process.
+// or saves (that it works with), as the user last set it; until they do,
+// off on the desktop and on in the browser, where the files are the
+// user's documents on the web server and there's no other copy to lose.
+// It is read from the settings file once per process.
 func Default() bool {
 	def.Lock()
 	defer def.Unlock()
 	if !def.loaded {
 		def.loaded = true
-		def.on, _ = autorecover.Setting(settingKey).(bool)
+		on, ok := autorecover.Setting(settingKey).(bool)
+		if !ok {
+			on = defaultOn
+		}
+		def.on = on
 	}
 	return def.on
 }
+
+// defaultOn is AutoSave's default before the user sets one: on only in
+// the browser (GOOS=js).
+const defaultOn = runtime.GOOS == "js"
 
 // SetDefault changes the default for every window of this process and
 // saves it for later ones.

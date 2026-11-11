@@ -1,0 +1,64 @@
+{{define "content"}}
+<h1>Files</h1>
+<section class="card">
+  <progress class="quota{{if ge .Data.Percent 90}} full{{end}}" max="100" value="{{.Data.Percent}}"
+    aria-label="{{.Data.Percent}}% of your storage used"></progress>
+  <p class="hint">Using {{bytes .Data.Used}} of {{bytes .Data.Quota}}.</p>
+</section>
+
+<section class="card">
+  <h2>Upload</h2>
+  <form method="post" action="/files/upload" enctype="multipart/form-data" class="upload">
+    <label class="inline"><input type="checkbox" name="replace" value="1"> Replace files with the same name</label>
+    <input type="file" name="file" multiple required
+      accept=".docx,.docm,.dotx,.dotm,.doc,.dot,.pages,.xlsx,.xlsm,.xls,.csv,.tsv,.numbers,.txt,.pdf">
+    <button>Upload</button>
+  </form>
+  <details class="rules">
+    <summary>File name rules</summary>
+    <ul>
+      <li>At most {{.Data.MaxName}} characters, extension included. Spaces at the start and end are trimmed.</li>
+      <li>Only printable ASCII: letters A–Z and a–z, digits, spaces and punctuation. No control characters,
+        no invisible characters, no accented letters or other characters above 0177 octal.</li>
+      <li>No <code>/</code>, <code>\</code> or <code>*</code>, and no name starting with <code>.</code> or <code>~$</code>.</li>
+      <li>Must end in .docx .docm .dotx .dotm .doc .dot .pages .xlsx .xlsm .xls .csv .tsv .numbers .txt or .pdf.</li>
+      <li>Case doesn't make a different file: Budget.xlsx and budget.xlsx are the same name.</li>
+      <li>Each file at most {{bytes .Data.MaxFile}}; all your files together within your storage above.</li>
+    </ul>
+  </details>
+</section>
+
+{{if .Data.Files}}
+<div class="scroll">
+<table class="files">
+  <thead><tr><th>Name</th><th class="num">Size</th><th>Modified (UTC)</th><th>Actions</th></tr></thead>
+  <tbody>
+  {{range .Data.Files}}
+  <tr>
+    <td class="fname">
+      {{if .App}}<a class="open {{.App}}" href="/{{.App}}?open={{.Name}}" title="Open in {{if eq .App "word"}}WordLite{{else}}ExcelLite{{end}}">{{.Name}}</a>
+      {{else}}{{.Name}}{{end}}
+    </td>
+    <td class="num">{{bytes .Size}}</td>
+    <td>{{.Modified.UTC.Format "2006-01-02 15:04"}}</td>
+    <td class="actions"><div class="row">
+      <a class="button ghost" href="/api/files/{{.Href}}" download>Download</a>
+      <form method="post" action="/files/rename">
+        <input type="hidden" name="name" value="{{.Name}}">
+        <input name="to" value="{{.Name}}" maxlength="{{$.Data.MaxName}}" aria-label="New name for {{.Name}}" required>
+        <button class="ghost">Rename</button>
+      </form>
+      <form method="post" action="/files/delete" data-confirm="Delete {{.Name}}? This can't be undone.">
+        <input type="hidden" name="name" value="{{.Name}}">
+        <button class="danger">Delete</button>
+      </form>
+    </div></td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{else}}
+<p class="hint">No files yet. Upload some above, or use File → Save As in WordLite or ExcelLite.</p>
+{{end}}
+{{end}}

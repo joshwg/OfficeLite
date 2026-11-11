@@ -1,5 +1,6 @@
 // Tests of the HTTP side through httptest: login, access control, the
-// admin pages, cross-site refusal and the client files.
+// admin pages, cross-site refusal and the client files. The Files page
+// and API are tested in files_test.go.
 
 package server
 
@@ -16,6 +17,7 @@ import (
 	"testing"
 
 	"officelite/web/auth"
+	"officelite/web/files"
 	"officelite/web/store"
 )
 
@@ -27,6 +29,7 @@ const testPassword = "correct horse battery"
 type fixture struct {
 	srv    *httptest.Server
 	svc    *auth.Service
+	files  *files.Store
 	client string // the client directory
 }
 
@@ -50,13 +53,14 @@ func newFixture(t *testing.T) *fixture {
 	if err := os.MkdirAll(clientDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	h, err := New(Config{Auth: svc, ClientDir: clientDir, Log: log.New(io.Discard, "", 0)})
+	docs := files.New(filepath.Join(dir, "users"))
+	h, err := New(Config{Auth: svc, Files: docs, ClientDir: clientDir, Log: log.New(io.Discard, "", 0)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	srv := httptest.NewTLSServer(h)
 	t.Cleanup(srv.Close)
-	return &fixture{srv: srv, svc: svc, client: clientDir}
+	return &fixture{srv: srv, svc: svc, files: docs, client: clientDir}
 }
 
 // browser returns an HTTP client with a cookie jar that doesn't follow

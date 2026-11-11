@@ -1,7 +1,8 @@
 // limits.go holds every limit and tunable of the web server in one
 // place: sessions, login throttling, credentials, storage quota, request
 // caps and HTTP timeouts. Each name says which area owns it (Session…,
-// Login…, Password…, Username…, HTTP…).
+// Login…, Password…, Username…, FileName…, File…, HTTP…). The rules for
+// usernames and file names are in web/names.
 
 package web
 
@@ -25,6 +26,16 @@ const (
 	// SessionCleanupEvery is how often expired sessions and old login
 	// attempts are deleted.
 	SessionCleanupEvery = 10 * time.Minute
+
+	// SessionIdleWarning is how long before an idle logout the pages warn
+	// (static/idle.js): after SessionIdle without a key press, click or
+	// touch in any of the user's tabs, the page logs out.
+	SessionIdleWarning = 2 * time.Minute
+
+	// SessionKeepAliveEvery is how often a page that is being used (but
+	// isn't otherwise talking to the server, as while typing in the app)
+	// tells the server so, keeping the session from ending under it.
+	SessionKeepAliveEvery = 5 * time.Minute
 )
 
 // ---- login throttling (per username) ----
@@ -64,16 +75,32 @@ const (
 	// (2¹² rounds, about a quarter second on a small server).
 	PasswordHashCost = 12
 
-	// UsernameMaxLength is the most characters a username may have.
+	// UsernameMaxLength is the most characters a username may have
+	// (usernames are ASCII, so also the most bytes).
 	UsernameMaxLength = 64
 )
 
 // ---- storage ----
 
-// DefaultUserQuotaBytes is the server storage each new user gets for
-// documents: 1 GiB. Release 1 stores no documents; the quota is recorded
-// for when it does.
-const DefaultUserQuotaBytes = 1 << 30
+const (
+	// DefaultUserQuotaBytes is the server storage each new user gets for
+	// documents: 1 GiB, counting every file in the user's folder.
+	DefaultUserQuotaBytes = 1 << 30
+
+	// FileMaxBytes is the largest document that may be stored, whatever
+	// the quota left: 256 MiB.
+	FileMaxBytes = 256 << 20
+
+	// FileNameMaxLength is the most characters a stored document's name
+	// may have, extension included (names are ASCII, so also the most
+	// bytes). The other file-name rules are in web/names.
+	FileNameMaxLength = 64
+
+	// FileUploadTimeout is how long a client has to send one document
+	// (an upload, or a save from the app). It replaces HTTPReadTimeout
+	// for those requests: a big file on a slow connection takes minutes.
+	FileUploadTimeout = 10 * time.Minute
+)
 
 // ---- database ----
 
@@ -91,7 +118,8 @@ const (
 	// headers.
 	HTTPReadHeaderTimeout = 10 * time.Second
 
-	// HTTPReadTimeout is how long a client has to send a whole request.
+	// HTTPReadTimeout is how long a client has to send a whole request
+	// (but see FileUploadTimeout).
 	HTTPReadTimeout = 30 * time.Second
 
 	// HTTPWriteTimeout is how long a response may take to go out. It is

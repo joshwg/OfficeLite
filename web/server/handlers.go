@@ -7,6 +7,7 @@ package server
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 
 	"officelite/web"
 	"officelite/web/auth"
+	"officelite/web/files"
 	"officelite/web/store"
 )
 
@@ -23,6 +25,10 @@ var messages = map[string]string{
 	"deleted":  "User deleted.",
 	"password": "Password changed.",
 	"admin":    "Administrator status changed.",
+	// The Files page's.
+	"uploaded":    "Uploaded.",
+	"renamed":     "File renamed.",
+	"filedeleted": "File deleted.",
 }
 
 // message returns the success message for the request's ?msg= code.
@@ -108,10 +114,32 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 	s.render(w, http.StatusOK, "home", page{Title: "OfficeLite", User: &u})
 }
 
+// noStorage tells a user whose name breaks today's rules (an account
+// made before them) why they have no server storage.
+const noStorage = "Your username can't hold files on the server under today's rules; ask an administrator for an account with a new name."
+
+// accountData is the account page's data.
+type accountData struct {
+	Used int64 // bytes of server storage in use
+}
+
 // accountPage shows the user's account and the change-password form.
 func (s *Server) accountPage(w http.ResponseWriter, r *http.Request) {
+	s.renderAccount(w, r, http.StatusOK, message(r), "")
+}
+
+// renderAccount shows the account page with a message or an error.
+func (s *Server) renderAccount(w http.ResponseWriter, r *http.Request, status int, msg, errMsg string) {
 	u := currentUser(r)
-	s.render(w, http.StatusOK, "account", page{Title: "Account", User: &u, Msg: message(r)})
+	_, used, err := s.cfg.Files.List(u.Username)
+	var ne *files.NameError
+	if errors.As(err, &ne) && errMsg == "" {
+		errMsg = noStorage
+	} else if err != nil && !errors.As(err, &ne) {
+		s.serverError(w, err)
+		return
+	}
+	s.render(w, status, "account", page{Title: "Account", User: &u, Msg: msg, Err: errMsg, Data: accountData{Used: used}})
 }
 
 // changePassword changes the user's own password. Every session of the
@@ -123,9 +151,7 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f := r.PostForm
-	fail := func(msg string) {
-		s.render(w, http.StatusBadRequest, "account", page{Title: "Account", User: &u, Err: msg})
-	}
+	fail := func(msg string) { s.renderAccount(w, r, http.StatusBadRequest, "", msg) }
 	if f.Get("new") != f.Get("confirm") {
 		fail("The new passwords don't match.")
 		return
@@ -145,12 +171,19 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 
 // ---- user administration ----
 
+// userRow is one account on the user list.
+type userRow struct {
+	store.User
+	Used int64 // bytes of server storage in use
+}
+
 // usersData is the user list page's data.
 type usersData struct {
-	Users []store.User
+	Users []userRow
 	// Form values to keep after a failed create.
 	NewUsername string
 	NewAdmin    bool
+	MaxName     int // web.UsernameMaxLength, for the form
 }
 
 // usersPage lists the accounts.
@@ -165,7 +198,16 @@ func (s *Server) renderUsers(w http.ResponseWriter, r *http.Request, status int,
 		s.serverError(w, err)
 		return
 	}
-	data.Users = users
+	data.MaxName = web.UsernameMaxLength
+	data.Users = data.Users[:0]
+	for _, user := range users {
+		_, used, err := s.cfg.Files.List(user.Username)
+		if err != nil {
+			// An account whose name breaks today's rules has no folder.
+			s.cfg.Log.Printf("storage of user %q: %v", user.Username, err)
+		}
+		data.Users = append(data.Users, userRow{User: user, Used: used})
+	}
 	u := currentUser(r)
 	s.render(w, status, "users", page{Title: "Users", User: &u, Msg: msg, Err: errMsg, Data: data})
 }
@@ -178,6 +220,10 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
 	}
 	f := r.PostForm
 	data := usersData{NewUsername: f.Get("username"), NewAdmin: f.Get("admin") != ""}
+	if err := CheckNoFolder(s.cfg.Files, strings.TrimSpace(f.Get("username"))); err != nil {
+		s.renderUsers(w, r, http.StatusBadRequest, "", err.Error(), data)
+		return
+	}
 	created, err := s.cfg.Auth.CreateUser(f.Get("username"), f.Get("password"), data.NewAdmin)
 	if err != nil {
 		s.renderUsers(w, r, http.StatusBadRequest, "", err.Error(), data)
@@ -247,19 +293,55 @@ func (s *Server) setAdmin(w http.ResponseWriter, r *http.Request) {
 	s.adminResult(w, r, err, "admin")
 }
 
-// deleteUser deletes another user, once the confirm box is ticked.
+// deleteUser deletes another user and their documents, once the user
+// said Yes to the page's question (static/serverfs.js adds confirm=1). The account goes first: a folder that then can't be
+// removed is reported, and CheckNoFolder keeps a new account of the same
+// name from inheriting it.
 func (s *Server) deleteUser(w http.ResponseWriter, r *http.Request) {
 	id, ok := s.targetUser(w, r)
 	if !ok {
 		return
 	}
 	if r.PostForm.Get("confirm") == "" {
-		s.renderUsers(w, r, http.StatusBadRequest, "", "Tick the confirm box to delete a user.", usersData{})
+		s.renderUsers(w, r, http.StatusBadRequest, "", "Confirm the deletion: say Yes when asked (the page needs JavaScript).", usersData{})
 		return
 	}
-	err := s.cfg.Auth.Store.DeleteUser(id)
-	if err == nil {
-		s.cfg.Log.Printf("%s deleted user %d", currentUser(r).Username, id)
+	target, err := s.cfg.Auth.Store.UserByID(id)
+	if err != nil {
+		s.adminResult(w, r, err, "deleted")
+		return
 	}
-	s.adminResult(w, r, err, "deleted")
+	if err := s.cfg.Auth.Store.DeleteUser(id); err != nil {
+		s.adminResult(w, r, err, "deleted")
+		return
+	}
+	s.cfg.Log.Printf("%s deleted user %q", currentUser(r).Username, target.Username)
+	if err := s.cfg.Files.RemoveUser(target.Username); err != nil {
+		var ne *files.NameError
+		if !errors.As(err, &ne) { // an old-rules name never had a folder
+			s.cfg.Log.Printf("remove the files of deleted user %q: %v", target.Username, err)
+			s.renderUsers(w, r, http.StatusInternalServerError, "",
+				"User deleted, but their files couldn't all be removed: see the server log.", usersData{})
+			return
+		}
+	}
+	s.adminResult(w, r, nil, "deleted")
+}
+
+// CheckNoFolder refuses a new account named username while a folder of
+// that name is left on disk (from an earlier account whose files
+// couldn't be removed), so nobody inherits someone else's documents.
+func CheckNoFolder(fs *files.Store, username string) error {
+	has, err := fs.HasFolder(username)
+	var ne *files.NameError
+	switch {
+	case errors.As(err, &ne):
+		return nil // CreateUser reports the bad name
+	case err != nil:
+		return err
+	case has:
+		dir, _ := fs.Dir(username)
+		return fmt.Errorf("a folder of files for %q is left from an earlier account (%s): remove it first", username, dir)
+	}
+	return nil
 }

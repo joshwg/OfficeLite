@@ -1,7 +1,8 @@
 // Package server is the web server's HTTP side: the login page, the
-// account and user-administration pages, and the pages that run the
-// WebAssembly client (/word and /excel), whose files it serves only to
-// logged-in users. Every response carries strict security headers, and
+// account and user-administration pages, the Files page and API for the
+// documents users keep on the server (files.go), and the pages that run
+// the WebAssembly client (/word and /excel), whose files it serves only
+// to logged-in users. Every response carries strict security headers, and
 // every form post must come from this site's own pages.
 package server
 
@@ -19,7 +20,10 @@ import (
 	"strings"
 	"time"
 
+	"officelite/web"
 	"officelite/web/auth"
+	"officelite/web/files"
+	"officelite/web/names"
 	"officelite/web/store"
 )
 
@@ -32,6 +36,8 @@ var staticFS embed.FS
 // Config is what the server needs.
 type Config struct {
 	Auth *auth.Service
+	// Files holds the users' documents.
+	Files *files.Store
 	// ClientDir holds the WebAssembly client: officelite.wasm (and
 	// optionally .br / .gz copies) and wasm_exec.js.
 	ClientDir string
@@ -50,7 +56,7 @@ type Server struct {
 }
 
 // pageNames are the templates rendered inside layout.html.
-var pageNames = []string{"login", "home", "account", "users"}
+var pageNames = []string{"login", "home", "account", "users", "files"}
 
 // New builds the server's routes and templates.
 func New(cfg Config) (*Server, error) {
@@ -58,7 +64,15 @@ func New(cfg Config) (*Server, error) {
 		cfg.Log = log.Default()
 	}
 	s := &Server{cfg: cfg, pages: map[string]*template.Template{}, mux: http.NewServeMux()}
-	funcs := template.FuncMap{"bytes": formatBytes}
+	funcs := template.FuncMap{
+		"bytes": formatBytes,
+		// For static/idle.js and static/serverfs.js.
+		"idleSeconds":  func() int { return int(web.SessionIdle.Seconds()) },
+		"warnSeconds":  func() int { return int(web.SessionIdleWarning.Seconds()) },
+		"pingSeconds":  func() int { return int(web.SessionKeepAliveEvery.Seconds()) },
+		"maxFileName":  func() int { return web.FileNameMaxLength },
+		"storableExts": func() string { return strings.Join(names.StorableExts, " ") },
+	}
 	for _, name := range pageNames {
 		t, err := template.New("").Funcs(funcs).ParseFS(templateFS, "templates/layout.html", "templates/"+name+".html")
 		if err != nil {
@@ -66,7 +80,7 @@ func New(cfg Config) (*Server, error) {
 		}
 		s.pages[name] = t
 	}
-	app, err := template.New("").ParseFS(templateFS, "templates/app.html")
+	app, err := template.New("").Funcs(funcs).ParseFS(templateFS, "templates/app.html")
 	if err != nil {
 		return nil, err
 	}
@@ -87,6 +101,16 @@ func New(cfg Config) (*Server, error) {
 	m.HandleFunc("GET /word", s.user(s.app("word")))
 	m.HandleFunc("GET /excel", s.user(s.app("excel")))
 	m.HandleFunc("GET /client/{file}", s.user(s.clientFile))
+	m.HandleFunc("GET /files", s.user(s.filesPage))
+	m.HandleFunc("POST /files/upload", s.user(s.uploadFiles))
+	m.HandleFunc("POST /files/rename", s.user(s.renameFile))
+	m.HandleFunc("POST /files/delete", s.user(s.deleteFile))
+	m.HandleFunc("GET /api/ping", s.user(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	m.HandleFunc("GET /api/files", s.user(s.apiList))
+	m.HandleFunc("GET /api/files/{name}", s.user(s.apiGet))
+	m.HandleFunc("PUT /api/files/{name}", s.user(s.apiPut))
+	m.HandleFunc("POST /api/files/{name}/rename", s.user(s.apiRename))
+	m.HandleFunc("DELETE /api/files/{name}", s.user(s.apiDelete))
 	m.HandleFunc("GET /account", s.user(s.accountPage))
 	m.HandleFunc("POST /account/password", s.user(s.changePassword))
 
@@ -187,7 +211,8 @@ func currentUser(r *http.Request) store.User {
 }
 
 // user wraps a handler for logged-in users only: others go to the login
-// page (and come back afterwards).
+// page (and come back afterwards), except that the client's files and the
+// API answer 401, which a script can act on.
 func (s *Server) user(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token := s.sessionToken(r)
@@ -200,7 +225,7 @@ func (s *Server) user(next http.HandlerFunc) http.HandlerFunc {
 			if token != "" {
 				s.setSessionCookie(w, "", time.Time{})
 			}
-			if r.Method != http.MethodGet || strings.HasPrefix(r.URL.Path, "/client/") {
+			if r.Method != http.MethodGet || strings.HasPrefix(r.URL.Path, "/client/") || strings.HasPrefix(r.URL.Path, "/api/") {
 				http.Error(w, "not logged in", http.StatusUnauthorized)
 				return
 			}
@@ -248,6 +273,7 @@ func clientIP(r *http.Request) string {
 // page is the data every template gets.
 type page struct {
 	Title string
+	Nav   string      // the top bar's current section: "home", "word", "excel", "files", "account" or "users"
 	User  *store.User // nil on the login page
 	Msg   string      // a success message
 	Err   string      // an error message
@@ -257,6 +283,9 @@ type page struct {
 // render executes a page template; status is the HTTP status.
 func (s *Server) render(w http.ResponseWriter, status int, name string, p page) {
 	t := s.pages[name]
+	if p.Nav == "" {
+		p.Nav = name
+	}
 	entry := "layout"
 	if name == "app" {
 		entry = "app"

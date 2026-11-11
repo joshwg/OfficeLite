@@ -6,18 +6,32 @@
 <title>{{.Title}} · OfficeLite</title>
 <link rel="stylesheet" href="/static/style.css">
 <script src="/static/password.js" defer></script>
+{{if .User}}<script src="/static/idle.js" data-idle="{{idleSeconds}}" data-warn="{{warnSeconds}}" data-ping="{{pingSeconds}}" defer></script>
+<script src="/static/serverfs.js" data-max-name="{{maxFileName}}" data-exts="{{storableExts}}" defer></script>{{end}}
 </head>
 <body>
 <header class="bar">
-  <a class="brand" href="/">OfficeLite</a>
+  <a class="brand" href="/">
+    <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+      <rect class="page-w" x="3" y="5" width="16" height="21" rx="2.5"/>
+      <rect class="page-x" x="13" y="7" width="16" height="21" rx="2.5"/>
+      <path class="ink" d="M16.5 12.5l6 10m0-10l-6 10"/>
+    </svg>
+    <span>OfficeLite</span>
+  </a>
   {{with .User}}
-  <nav>
-    <a href="/word">Word</a>
-    <a href="/excel">Excel</a>
-    <a href="/account">{{.Username}}</a>
-    {{if .IsAdmin}}<a href="/admin/users">Users</a>{{end}}
-    <form method="post" action="/logout"><button class="link">Log out</button></form>
+  <nav class="tabs" aria-label="Main">
+    <a class="tab word" href="/word"><span class="dot"></span>WordLite</a>
+    <a class="tab excel" href="/excel"><span class="dot"></span>ExcelLite</a>
+    <a class="tab" href="/files"{{if eq $.Nav "files"}} aria-current="page"{{end}}>Files</a>
+    {{if .IsAdmin}}<a class="tab" href="/admin/users"{{if eq $.Nav "users"}} aria-current="page"{{end}}>Users</a>{{end}}
   </nav>
+  <div class="who">
+    <a class="account" href="/account"{{if eq $.Nav "account"}} aria-current="page"{{end}} title="Account">
+      <span class="avatar" aria-hidden="true">{{slice .Username 0 1}}</span><span class="name">{{.Username}}</span>
+    </a>
+    <form method="post" action="/logout"><button class="ghost">Log out</button></form>
+  </div>
   {{end}}
 </header>
 <main>

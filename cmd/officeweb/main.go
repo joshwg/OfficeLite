@@ -7,8 +7,9 @@
 //	officeweb -data DIR -reset-password NAME              set a user's password
 //	officeweb -version
 //
-// DIR holds the database (officeweb.db) and, in a later release, users'
-// documents. Each flag can also come from the environment:
+// DIR holds the database (officeweb.db) and the users' documents, one
+// folder per user in DIR/users/ named after the username in lowercase.
+// Each flag can also come from the environment:
 // OFFICEWEB_DATA, OFFICEWEB_ADDR, OFFICEWEB_CLIENT. In production it
 // listens on loopback behind Apache, which terminates HTTPS.
 package main
@@ -33,6 +34,8 @@ import (
 	"officelite/common/version"
 	"officelite/web"
 	"officelite/web/auth"
+	"officelite/web/files"
+	"officelite/web/names"
 	"officelite/web/server"
 	"officelite/web/store"
 )
@@ -44,10 +47,15 @@ const defaultAddr = "127.0.0.1:7100"
 // dbFileName is the database's name in the data directory.
 const dbFileName = "officeweb.db"
 
+// usersDirName is the folder in the data directory that holds a folder
+// of documents per user. It keeps them apart from the database's files,
+// which a username such as "officeweb.db" would otherwise collide with.
+const usersDirName = "users"
+
 // main parses the flags and runs the server or the account command asked
 // for.
 func main() {
-	dataDir := flag.String("data", os.Getenv("OFFICEWEB_DATA"), "data directory (database, later documents)")
+	dataDir := flag.String("data", os.Getenv("OFFICEWEB_DATA"), "data directory (database, users' documents)")
 	addr := flag.String("addr", envOr("OFFICEWEB_ADDR", defaultAddr), "address to listen on")
 	clientDir := flag.String("client", envOr("OFFICEWEB_CLIENT", "client"), "directory holding officelite.wasm and wasm_exec.js")
 	insecure := flag.Bool("insecure-cookies", false, "drop the Secure cookie flag (plain-HTTP testing on a non-localhost host only)")
@@ -79,14 +87,15 @@ func main() {
 		}
 	}()
 	svc := &auth.Service{Store: st}
+	docs := files.New(filepath.Join(dir, usersDirName))
 
 	switch {
 	case *createAdmin != "":
-		err = runCreateAdmin(svc, *createAdmin)
+		err = runCreateAdmin(svc, docs, *createAdmin)
 	case *resetPassword != "":
 		err = runResetPassword(svc, *resetPassword)
 	default:
-		err = serve(svc, *addr, *clientDir, *insecure)
+		err = serve(svc, docs, *addr, *clientDir, *insecure)
 	}
 	if err != nil {
 		log.Print(err)
@@ -106,7 +115,14 @@ func envOr(key, def string) string {
 }
 
 // runCreateAdmin adds an administrator, asking for the password.
-func runCreateAdmin(svc *auth.Service, name string) error {
+func runCreateAdmin(svc *auth.Service, docs *files.Store, name string) error {
+	name = strings.TrimSpace(name)
+	if err := auth.ValidateUsername(name); err != nil {
+		return err // before asking for a password it would be refused with
+	}
+	if err := server.CheckNoFolder(docs, name); err != nil {
+		return err
+	}
 	pw, err := readNewPassword()
 	if err != nil {
 		return err
@@ -182,20 +198,27 @@ func readLine() func(prompt string) (string, error) {
 
 // serve runs the web server until SIGINT or SIGTERM, cleaning up expired
 // sessions in the background.
-func serve(svc *auth.Service, addr, clientDir string, insecure bool) error {
-	if n, err := svc.Store.UserCount(); err != nil {
+func serve(svc *auth.Service, docs *files.Store, addr, clientDir string, insecure bool) error {
+	users, err := svc.Store.Users()
+	if err != nil {
 		return err
-	} else if n == 0 {
+	}
+	if len(users) == 0 {
 		log.Print("no users yet: create the first administrator with officeweb -data DIR -create-admin NAME")
 	}
-	clientDir, err := filepath.Abs(clientDir)
+	for _, u := range users {
+		if err := names.Username(u.Username); err != nil {
+			log.Printf("warning: user %q can't store files (%v); delete the account and create it under a valid name", u.Username, err)
+		}
+	}
+	clientDir, err = filepath.Abs(clientDir)
 	if err != nil {
 		return err
 	}
 	if _, err := os.Stat(filepath.Join(clientDir, "officelite.wasm")); err != nil {
 		log.Printf("warning: no client in %s (build it with ./web.sh build); the app pages won't load", clientDir)
 	}
-	h, err := server.New(server.Config{Auth: svc, ClientDir: clientDir, InsecureCookies: insecure})
+	h, err := server.New(server.Config{Auth: svc, Files: docs, ClientDir: clientDir, InsecureCookies: insecure})
 	if err != nil {
 		return err
 	}

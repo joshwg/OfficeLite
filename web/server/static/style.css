@@ -1,51 +1,124 @@
-/* style.css: the server pages' look (login, home, account, users). */
+/* style.css: the server pages' look (login, home, files, account, users),
+   the top bar, and the file dialog serverfs.js shows over the apps. The
+   colors are OfficeLite's own, from its icon: violet for WordLite (and the
+   site), amber for ExcelLite, each deepened enough for white text. */
 :root {
-  --bg: #f6f7f9; --fg: #1d2330; --muted: #5b6475; --card: #fff; --line: #d9dde5;
-  --accent: #2b579a; --excel: #217346; --ok-bg: #e6f4ea; --ok: #1e6b35;
-  --err-bg: #fdecea; --err: #a52a1a;
+  --bg: #f6f5fa; --fg: #1f1d2b; --muted: #625e74; --card: #fff; --line: #dedbe8;
+  --accent: #5e3fbf; --accent-dark: #45289a; --accent-tint: #eee9fb;
+  --word: #5e3fbf; --word-tint: #eee9fb; --excel: #a85c00; --excel-tint: #fff2dc;
+  --ok-bg: #e6f4ea; --ok: #1e6b35; --err-bg: #fdecea; --err: #a52a1a;
+  --shadow: 0 1px 2px rgba(31, 29, 43, 0.06), 0 4px 16px rgba(31, 29, 43, 0.06);
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #15181e; --fg: #e4e7ec; --muted: #9aa3b2; --card: #1e232b; --line: #343b47;
-    --accent: #7aa7e8; --excel: #5cbf86; --ok-bg: #173323; --ok: #8fd6a6;
-    --err-bg: #3a1c18; --err: #f2a093;
+    --bg: #15141c; --fg: #e8e6f0; --muted: #a29eb5; --card: #1f1d29; --line: #36334a;
+    --accent: #a795f2; --accent-dark: #c4b8f7; --accent-tint: #2c2547;
+    --word: #a795f2; --word-tint: #2c2547; --excel: #f0a84a; --excel-tint: #3a2a14;
+    --ok-bg: #173323; --ok: #8fd6a6; --err-bg: #3a1c18; --err: #f2a093;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.25);
   }
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 "Segoe UI", system-ui, sans-serif; }
 a { color: var(--accent); }
-.bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;
-  padding: 10px 16px; background: var(--card); border-bottom: 1px solid var(--line); }
-.brand { font-weight: 600; text-decoration: none; color: var(--fg); }
-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
-nav form { margin: 0; }
-main { max-width: 960px; margin: 0 auto; padding: 24px 16px; }
-h1 { font-size: 1.5rem; margin: 0 0 16px; }
+code { font: 0.9em ui-monospace, Consolas, monospace; background: var(--accent-tint); padding: 0 4px; border-radius: 3px; }
+
+/* ---- top bar ---- */
+.bar { position: sticky; top: 0; z-index: 10; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 20px;
+  padding: 0 20px; min-height: 56px; background: var(--card); border-bottom: 1px solid var(--line); box-shadow: var(--shadow); }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 1.1rem; letter-spacing: 0.01em;
+  text-decoration: none; color: var(--fg); }
+.logo { width: 30px; height: 30px; }
+.logo .page-w { fill: var(--word-tint); stroke: var(--word); stroke-width: 1.6; }
+.logo .page-x { fill: var(--excel-tint); stroke: var(--excel); stroke-width: 1.6; }
+.logo .ink { fill: none; stroke: var(--excel); stroke-width: 2.4; stroke-linecap: round; }
+.tabs { display: flex; flex-wrap: wrap; align-items: stretch; gap: 4px; flex: 1; align-self: stretch; }
+.tab { display: flex; align-items: center; gap: 7px; padding: 0 12px; color: var(--muted); text-decoration: none;
+  font-weight: 500; border-bottom: 3px solid transparent; border-top: 3px solid transparent; }
+.tab:hover { color: var(--fg); background: var(--accent-tint); }
+.tab[aria-current="page"] { color: var(--fg); border-bottom-color: var(--accent); }
+.tab .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); }
+.tab.word .dot { background: var(--word); }
+.tab.excel .dot { background: var(--excel); }
+.who { display: flex; align-items: center; gap: 10px; }
+.who form { margin: 0; }
+.account { display: flex; align-items: center; gap: 8px; padding: 4px 10px 4px 4px; border-radius: 999px;
+  color: var(--fg); text-decoration: none; }
+.account:hover, .account[aria-current="page"] { background: var(--accent-tint); }
+.avatar { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--accent);
+  color: #fff; font-weight: 600; text-transform: uppercase; }
+@media (prefers-color-scheme: dark) { .avatar { color: #15141c; } }
+@media (max-width: 560px) {
+  .bar { padding: 8px 16px; }
+  .tabs { order: 3; flex-basis: 100%; }
+  .tab { padding: 6px 10px; }
+  .who .name { display: none; }
+  .who { margin-left: auto; }
+}
+
+/* ---- page ---- */
+main { max-width: 1100px; margin: 0 auto; padding: 28px 16px; }
+h1 { font-size: 1.55rem; margin: 0 0 18px; }
 h2 { font-size: 1.15rem; margin: 0 0 12px; }
-.card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 16px 20px; margin-bottom: 20px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px 20px; margin-bottom: 20px;
+  box-shadow: var(--shadow); }
 .narrow { max-width: 420px; }
 label { display: block; margin-bottom: 12px; }
 label input { display: block; width: 100%; margin-top: 4px; }
-label.inline, label.inline input { display: inline; width: auto; }
-input { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--fg); }
-button { font: inherit; padding: 6px 14px; border: 1px solid var(--accent); border-radius: 4px;
-  background: var(--accent); color: #fff; cursor: pointer; }
+label.inline, label.inline input { display: inline; width: auto; margin: 0; }
+input { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
+input:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button, .button { display: inline-block; font: inherit; padding: 6px 14px; border: 1px solid var(--accent); border-radius: 6px;
+  background: var(--accent); color: #fff; cursor: pointer; text-decoration: none; line-height: 1.4; }
+button:hover, .button:hover { background: var(--accent-dark); border-color: var(--accent-dark); }
+@media (prefers-color-scheme: dark) { button, .button { color: #15141c; } }
+button.ghost, .button.ghost { background: transparent; color: var(--accent); }
+button.ghost:hover, .button.ghost:hover { background: var(--accent-tint); }
 button.link { background: none; border: none; color: var(--accent); padding: 0; text-decoration: underline; }
-button.danger { background: var(--err); border-color: var(--err); }
-.msg { background: var(--ok-bg); color: var(--ok); padding: 8px 12px; border-radius: 4px; }
-.err { background: var(--err-bg); color: var(--err); padding: 8px 12px; border-radius: 4px; }
+button.danger { background: var(--err); border-color: var(--err); color: #fff; }
+.msg { background: var(--ok-bg); color: var(--ok); padding: 8px 12px; border-radius: 6px; }
+.err { background: var(--err-bg); color: var(--err); padding: 8px 12px; border-radius: 6px; }
 .hint { color: var(--muted); font-size: 0.9rem; }
 .apps { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 16px; }
-.app { display: block; padding: 20px; border-radius: 8px; background: var(--card); border: 1px solid var(--line);
-  border-left: 6px solid var(--accent); text-decoration: none; color: var(--fg); }
+.app { display: block; padding: 20px; border-radius: 10px; background: var(--card); border: 1px solid var(--line);
+  border-left: 6px solid var(--accent); text-decoration: none; color: var(--fg); box-shadow: var(--shadow); }
+.app:hover { background: var(--accent-tint); }
+.app.word { border-left-color: var(--word); }
+.app.word:hover { background: var(--word-tint); }
 .app.excel { border-left-color: var(--excel); }
+.app.excel:hover { background: var(--excel-tint); }
+.app.files { border-left-color: var(--muted); }
 .app strong { display: block; font-size: 1.2rem; }
 .app span { color: var(--muted); }
 .scroll { overflow-x: auto; margin-bottom: 20px; }
-table { width: 100%; border-collapse: collapse; background: var(--card); }
+table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 10px; }
 th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 600; color: var(--muted); font-size: 0.9rem; }
+.num { text-align: right; white-space: nowrap; }
 .actions form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 0 6px; }
 .actions input[type=password] { width: 12em; }
+
+/* ---- Files page ---- */
+.quota { width: 100%; height: 12px; appearance: none; border: none; border-radius: 999px; overflow: hidden; background: var(--accent-tint); }
+.quota::-webkit-progress-bar { background: var(--accent-tint); }
+.quota::-webkit-progress-value { background: var(--accent); border-radius: 999px; }
+.quota::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
+.quota.full::-webkit-progress-value { background: var(--err); }
+.quota.full::-moz-progress-bar { background: var(--err); }
+.upload { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+.rules { margin-top: 12px; color: var(--muted); font-size: 0.9rem; }
+.rules summary { cursor: pointer; }
+.rules ul { margin: 8px 0 0; padding-left: 20px; }
+.files .fname { min-width: 11em; overflow-wrap: anywhere; font-weight: 500; }
+.files td:nth-child(3) { white-space: nowrap; }
+.files .open { text-decoration: none; padding-left: 8px; border-left: 3px solid var(--accent); }
+.files .open.word { border-left-color: var(--word); }
+.files .open.excel { border-left-color: var(--excel); }
+.files .open:hover { text-decoration: underline; }
+.files .actions .row { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: flex-start; min-width: 30em; }
+.files .actions form { margin: 0; }
+.files .actions input[name=to] { width: 12em; }
+
 /* Login cooldown countdown (login.js). */
 .cooldown { margin-top: 14px; text-align: center; }
 .cooldown .timer { font-size: 1.3rem; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -58,9 +131,41 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .actions .pw input { width: 12em; }
 button.eye { position: absolute; top: 50%; right: 4px; transform: translateY(-50%); display: flex;
   padding: 4px; border: none; background: none; color: var(--muted); cursor: pointer; }
-button.eye:hover, button.eye:focus-visible { color: var(--fg); }
+button.eye:hover, button.eye:focus-visible { color: var(--fg); background: none; }
 button.eye svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2;
   stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---- the app pages ---- */
 .app-page { overflow: hidden; }
 .status { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; }
 .status.err { inset: auto 16px 16px; }
+
+/* The file dialog (serverfs.js) shown over WordLite and ExcelLite. */
+.fd-back { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 16px;
+  background: rgba(20, 18, 30, 0.45); }
+.fd { display: flex; flex-direction: column; gap: 12px; width: min(560px, 100%); max-height: min(640px, 100%);
+  padding: 18px 20px; border-radius: 12px; background: var(--card); color: var(--fg); box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35); }
+.fd h2 { margin: 0; }
+.fd-list { flex: 1; min-height: 120px; overflow-y: auto; margin: 0; padding: 0; list-style: none;
+  border: 1px solid var(--line); border-radius: 8px; }
+.fd-list li { display: flex; justify-content: space-between; gap: 12px; padding: 7px 10px; cursor: pointer;
+  border-bottom: 1px solid var(--line); }
+.fd-list li:last-child { border-bottom: none; }
+.fd-list li:hover { background: var(--accent-tint); }
+.fd-list li[aria-selected="true"] { background: var(--accent); color: #fff; }
+@media (prefers-color-scheme: dark) { .fd-list li[aria-selected="true"] { color: #15141c; } }
+.fd-list .size { opacity: 0.75; white-space: nowrap; }
+.fd-list .empty { cursor: default; color: var(--muted); }
+.fd-name input { width: 100%; }
+.fd-buttons { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.fd-buttons .local { margin-right: auto; }
+.fd .err { margin: 0; }
+
+/* Messages over the app pages: serverfs.js's errors and idle.js's
+   countdown. */
+.toast { position: fixed; left: 50%; bottom: 20px; z-index: 110; transform: translateX(-50%); max-width: min(560px, calc(100% - 32px));
+  box-shadow: var(--shadow); }
+.idle-bar { position: fixed; left: 50%; top: 16px; z-index: 120; transform: translateX(-50%); display: flex; flex-wrap: wrap;
+  align-items: center; gap: 10px 16px; max-width: calc(100% - 32px); padding: 10px 16px; border-radius: 10px;
+  background: var(--card); color: var(--fg); border: 1px solid var(--line); border-left: 5px solid var(--excel);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25); }

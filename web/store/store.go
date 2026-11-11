@@ -1,6 +1,6 @@
 // Package store is the web server's SQLite database: users, sessions and
-// login attempts (and, in a later release, the metadata of documents kept
-// on disk). It uses the pure-Go modernc.org/sqlite driver, so the server
+// login attempts. Documents aren't in it: they are plain files on disk
+// (web/files), described by the file system. It uses the pure-Go modernc.org/sqlite driver, so the server
 // builds without CGO. Times are stored as Unix milliseconds.
 package store
 

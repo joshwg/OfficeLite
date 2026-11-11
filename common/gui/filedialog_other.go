@@ -1,7 +1,7 @@
 // FileDialog stubs for platforms without a native dialog: Open and Save
 // return ErrNoFileDialog.
 
-//go:build !windows
+//go:build !windows && !js
 
 package gui
 

@@ -96,6 +96,11 @@ const (
 	// bytes). The other file-name rules are in web/names.
 	FileNameMaxLength = 64
 
+	// RecentMaxBytes is the largest recent-files list (the apps' File →
+	// Recent, kept per user on the server) that may be stored. A full
+	// list of 50 entries is a few KiB.
+	RecentMaxBytes = 64 << 10
+
 	// FileUploadTimeout is how long a client has to send one document
 	// (an upload, or a save from the app). It replaces HTTPReadTimeout
 	// for those requests: a big file on a slow connection takes minutes.

@@ -9,6 +9,8 @@
 //	PUT    /api/files/{name}        store the body (?replace=0: only if new)
 //	POST   /api/files/{name}/rename {"to": "new name"}
 //	DELETE /api/files/{name}
+//	GET    /api/recent              the apps' recent-files list (a JSON array)
+//	PUT    /api/recent              store the body as that list
 //
 // API errors are {"error": "message"} with 400 (name breaks a rule), 404,
 // 409 (name taken), 413 (file over web.FileMaxBytes) or 507 (quota).
@@ -154,6 +156,50 @@ func (s *Server) apiPut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.writeJSON(w, http.StatusOK, info)
+}
+
+// apiRecent sends the user's recent-files list (a JSON array, [] when
+// there is none yet), which the apps keep here in the browser
+// (common/recent).
+func (s *Server) apiRecent(w http.ResponseWriter, r *http.Request) {
+	data, err := s.cfg.Files.Recent(currentUser(r).Username)
+	if err != nil {
+		s.apiError(w, err)
+		return
+	}
+	if data == nil {
+		data = []byte("[]")
+	}
+	h := w.Header()
+	h.Set("Content-Type", "application/json")
+	h.Set("Cache-Control", "no-store")
+	if _, err := w.Write(data); err != nil {
+		s.cfg.Log.Printf("write response: %v", err)
+	}
+}
+
+// apiSetRecent stores the request body, a JSON array of at most
+// web.RecentMaxBytes, as the user's recent-files list.
+func (s *Server) apiSetRecent(w http.ResponseWriter, r *http.Request) {
+	data, err := io.ReadAll(io.LimitReader(r.Body, web.RecentMaxBytes+1))
+	if err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Couldn't read the list."})
+		return
+	}
+	if len(data) > web.RecentMaxBytes {
+		s.writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "The recent-files list is too long."})
+		return
+	}
+	var list []json.RawMessage
+	if err := json.Unmarshal(data, &list); err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "The recent-files list isn't a JSON array."})
+		return
+	}
+	if err := s.cfg.Files.SetRecent(currentUser(r).Username, data); err != nil {
+		s.apiError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // apiRename renames one of the user's documents to the posted {"to"}.

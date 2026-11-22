@@ -44,6 +44,13 @@ apps they look like a folder named `/server`:
   an extension gets the format's. Saving over an existing file asks first.
   **Download to this computer** saves by downloading instead.
 - **Save** (Ctrl+S) writes a server document back in place.
+- Opening another server document, or **New**, opens it in a **new
+  browser tab** (the first file opens in the empty window you start
+  with). If the browser blocks the tab, a message at the bottom offers a
+  link to open it.
+- **File → Recent** is kept on the server for your account, so it is the
+  same in every tab and on every computer or phone you log in from (a
+  tab that was in the background catches up when you come back to it).
 - **AutoSave is on by default** in the browser, so server documents save
   themselves a few seconds after each change. (On the desktop it stays off
   until you turn it on.)
@@ -54,7 +61,11 @@ name), download, rename and delete them (delete asks Yes/No). Clicking a
 document's name opens it in WordLite or ExcelLite.
 
 Documents from your computer still work as before: open them from your
-disk and save by downloading.
+disk and save by downloading. One opened while the window already holds a
+file goes to a new tab too; because picking a file takes longer than the
+browser allows a page to open a tab on its own, a small dialog asks you
+to click **Open in a new tab**. Such a document has no file name of its
+own, so **Save** asks where to save it.
 
 ## File name rules
 
@@ -109,6 +120,7 @@ data/
   officeweb.db        users, sessions, login attempts
   users/
     josh/
+      .recent.json    josh's File → Recent list
       Budget.xlsx
       Memo.docx
 ```
@@ -129,3 +141,7 @@ file-name rules are in `web/names`.
 - Server storage is a single folder per user: no subfolders.
 - Only documents are stored (the extensions above), not pictures or other
   files. Inserting a picture still uses the browser's file picker.
+- Phone and tablet keyboards: suggestions and autocorrect work, but the
+  keyboard does not capitalize the start of sentences by itself (use
+  Shift). It isn't shown the text around the caret, which kept it from
+  rewriting earlier words wrongly.

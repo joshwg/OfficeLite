@@ -2,7 +2,7 @@
 package version
 
 // Version is the OfficeLite software version.
-const Version = "0.7.1"
+const Version = "0.8.0"
 
 // Product is the suite name shown in About text.
 const Product = "OfficeLite"

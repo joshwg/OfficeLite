@@ -354,6 +354,59 @@ func (s *Store) HasFolder(username string) (bool, error) {
 	}
 }
 
+// recentName is the file in a user's folder holding their recent-files
+// list (the apps' File → Recent). The leading '.' keeps it out of their
+// documents.
+const recentName = ".recent.json"
+
+// Recent returns username's recent-files list as stored by SetRecent, or
+// nil when there is none yet.
+func (s *Store) Recent(username string) ([]byte, error) {
+	dir, err := s.Dir(username)
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(filepath.Join(dir, recentName))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	return data, err
+}
+
+// SetRecent stores data as username's recent-files list, whole or not
+// at all. It isn't counted against their quota (web.RecentMaxBytes caps
+// it).
+func (s *Store) SetRecent(username string, data []byte) error {
+	dir, unlock, err := s.lock(username)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(dir, tempPrefix+"*")
+	if err != nil {
+		return err
+	}
+	_, err = tmp.Write(data)
+	if err == nil {
+		err = tmp.Sync()
+	}
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Rename(tmp.Name(), filepath.Join(dir, recentName))
+	}
+	if err != nil {
+		if rmErr := os.Remove(tmp.Name()); rmErr != nil && !errors.Is(rmErr, fs.ErrNotExist) {
+			err = errors.Join(err, rmErr)
+		}
+	}
+	return err
+}
+
 // RemoveUser deletes username's folder and every file in it.
 func (s *Store) RemoveUser(username string) error {
 	dir, unlock, err := s.lock(username)

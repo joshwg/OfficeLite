@@ -17,13 +17,19 @@
 //
 // It also offers the apps' Open and Save As dialogs of server files
 // (window.officeweb.openDialog / saveDialog, used by
-// common/gui/filedialog_js.go), and Yes/No confirmation for the server
+// common/gui/filedialog_js.go), a new tab for each further file the apps
+// open (officeweb.openTab, cmd/officelite/page_js.go; openDataTab for a
+// file from the user's computer, common/gui/opentab_js.go), and Yes/No
+// confirmation for the server
 // pages' forms marked data-confirm. The file-name rules come from the
 // server through this script tag's data-max-name and data-exts (the
 // server checks them again).
 (function () {
   "use strict";
   const MOUNT = "/server";
+  // HANDOFF_MS is how long a file from the user's computer waits for the
+  // new tab opened for it (openDataTab).
+  const HANDOFF_MS = 120000;
   // No document under Node, where serverfs_test.go runs this file.
   const hasDOM = typeof document !== "undefined";
   const script = hasDOM ? document.currentScript : null;
@@ -414,6 +420,57 @@
     toastTimer = setTimeout(function () { el.hidden = true; }, 8000);
   }
 
+  // openTab opens url (an app page) in a new tab, as the app does for a
+  // second file; label names what opens there.
+  function openTab(url, label) {
+    if (!window.open(url, "_blank")) askNewTab(url, label);
+  }
+
+  // askNewTab asks to open url in a new tab, for a browser that blocked
+  // it: a page may open a tab only just after a click (picking a file
+  // takes longer), and the dialog's button is that click.
+  function askNewTab(url, label) {
+    modal("Open in a new tab", function (box, close) {
+      box.appendChild(el("p", "", label.charAt(0).toUpperCase() + label.slice(1) + " opens in a new tab."));
+      const row = el("div", "fd-buttons");
+      row.append(
+        button("Cancel", "ghost", function () { close("cancel"); }),
+        button("Open in a new tab", "", function () {
+          window.open(url, "_blank"); // within this click, so allowed
+          close("open");
+        }));
+      box.appendChild(row);
+    });
+  }
+
+  // Files from the user's computer waiting for the tab opened for each
+  // (openDataTab), by the id in that tab's address.
+  const handoffs = new Map();
+
+  // openDataTab opens app ("word" or "excel") in a new tab with data, a
+  // file from the user's computer: the picker gave no path, so the new
+  // tab asks this one for the contents (app.js, ?local=ID) and gets them
+  // by postMessage, which only this site's own pages can exchange.
+  function openDataTab(app, data) {
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2);
+    const url = "/" + app + "?local=" + id;
+    handoffs.set(id, data);
+    setTimeout(function () { handoffs.delete(id); }, HANDOFF_MS);
+    if (!window.open(url, "_blank")) askNewTab(url, "the file from your computer");
+  }
+
+  // A tab opened by openDataTab asking for its file.
+  if (hasDOM) {
+    window.addEventListener("message", function (e) {
+      const m = e.data;
+      if (e.origin !== location.origin || !m || m.type !== "officeweb-ready" || !e.source) return;
+      const data = handoffs.get(m.id);
+      if (!data) return;
+      handoffs.delete(m.id);
+      e.source.postMessage({ type: "officeweb-file", id: m.id, data: data }, location.origin);
+    });
+  }
+
   // ---- dialogs ----
 
   // el makes an element with a class and text.
@@ -662,5 +719,5 @@
     });
   });
 
-  globalThis.officeweb = { openDialog: openDialog, saveDialog: saveDialog, confirm: confirmBox };
+  globalThis.officeweb = { openDialog: openDialog, saveDialog: saveDialog, confirm: confirmBox, openTab: openTab, openDataTab: openDataTab };
 })();

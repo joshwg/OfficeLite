@@ -55,9 +55,10 @@ func (h *harness) frame() {
 	h.r.Frame(gtx.Ops)
 }
 
-// typeText types s into the focused widget.
+// typeText types s into the focused widget, at the selection it last
+// reported, as a platform's text input does.
 func (h *harness) typeText(s string) {
-	h.r.Queue(key.EditEvent{Text: s})
+	h.r.Queue(key.EditEvent{Range: h.r.EditorState().Selection.Range, Text: s})
 	h.frame()
 }
 

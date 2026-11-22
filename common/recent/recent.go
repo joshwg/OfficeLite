@@ -1,11 +1,13 @@
 // Package recent keeps the most-recently-used file list shared by every
-// OfficeLite window. It is stored as JSON in the user's config directory.
+// OfficeLite window. It is stored as JSON in the user's config directory,
+// or in the browser on the web server, per user (remote_js.go).
 package recent
 
 import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -41,10 +43,20 @@ func (e Entry) Dir() string { return filepath.Dir(e.Path) }
 // List is a recent-files list backed by a file. Its methods are safe for
 // concurrent use by several windows.
 type List struct {
-	mu   sync.Mutex
-	path string // "" keeps the list in memory only
-	list []Entry
-	rev  int
+	mu     sync.Mutex
+	path   string     // "" keeps the list in memory only (or in remote)
+	remote remote     // where the list is kept when not in a file, or nil
+	pushMu sync.Mutex // one remote load or save at a time, in order
+	list   []Entry
+	rev    int
+}
+
+// remote is a list kept somewhere slow to reach: the browser build keeps
+// it on the web server. Its calls wait on the network, so the List makes
+// them on a goroutine of its own and the windows never wait.
+type remote interface {
+	load() ([]Entry, error)
+	save([]Entry) error
 }
 
 var (
@@ -55,6 +67,11 @@ var (
 // Default is the list stored in the user's config directory.
 func Default() *List {
 	defaultOnce.Do(func() {
+		if r := defaultRemote(); r != nil {
+			defaultList = &List{remote: r}
+			defaultList.Refresh()
+			return
+		}
 		path := ""
 		if dir, err := os.UserConfigDir(); err == nil {
 			path = filepath.Join(dir, "OfficeLite", "recent.json")
@@ -85,6 +102,27 @@ func load(path string) ([]Entry, error) {
 		return nil, err
 	}
 	return list, nil
+}
+
+// Refresh reloads a remote list (another browser tab or device may have
+// changed it) in the background. Other lists only reload when changed.
+func (l *List) Refresh() {
+	if l.remote == nil {
+		return
+	}
+	go func() {
+		l.pushMu.Lock()
+		defer l.pushMu.Unlock()
+		list, err := l.remote.load()
+		if err != nil {
+			log.Printf("load the recent files: %v", err)
+			return
+		}
+		l.mu.Lock()
+		l.list = list
+		l.rev++
+		l.mu.Unlock()
+	}()
 }
 
 // Entries returns the list, most recent first.
@@ -141,6 +179,12 @@ func (l *List) Remove(path string) error {
 func (l *List) update(change func([]Entry) []Entry) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if l.remote != nil {
+		l.list = change(l.list)
+		l.rev++
+		go l.push(change)
+		return nil
+	}
 	if l.path != "" {
 		if list, err := load(l.path); err == nil {
 			l.list = list
@@ -158,6 +202,31 @@ func (l *List) update(change func([]Entry) []Entry) error {
 		return err
 	}
 	return atomicfile.WriteFile(l.path, data, 0o644)
+}
+
+// push applies change to the remote list as last saved and saves it,
+// keeping the result. When the list can't be loaded, this list's copy
+// (which has the change already) is saved instead.
+func (l *List) push(change func([]Entry) []Entry) {
+	l.pushMu.Lock()
+	defer l.pushMu.Unlock()
+	list, err := l.remote.load()
+	if err != nil {
+		log.Printf("load the recent files: %v", err)
+		l.mu.Lock()
+		list = slices.Clone(l.list)
+		l.mu.Unlock()
+	} else {
+		list = change(list)
+	}
+	if err := l.remote.save(list); err != nil {
+		log.Printf("save the recent files: %v", err)
+		return
+	}
+	l.mu.Lock()
+	l.list = list
+	l.rev++
+	l.mu.Unlock()
 }
 
 // samePath compares paths case-insensitively on Windows-style paths.

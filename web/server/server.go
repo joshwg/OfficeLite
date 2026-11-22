@@ -111,6 +111,8 @@ func New(cfg Config) (*Server, error) {
 	m.HandleFunc("PUT /api/files/{name}", s.user(s.apiPut))
 	m.HandleFunc("POST /api/files/{name}/rename", s.user(s.apiRename))
 	m.HandleFunc("DELETE /api/files/{name}", s.user(s.apiDelete))
+	m.HandleFunc("GET /api/recent", s.user(s.apiRecent))
+	m.HandleFunc("PUT /api/recent", s.user(s.apiSetRecent))
 	m.HandleFunc("GET /account", s.user(s.accountPage))
 	m.HandleFunc("POST /account/password", s.user(s.changePassword))
 

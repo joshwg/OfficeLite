@@ -5,6 +5,7 @@
 package ui
 
 import (
+	"bytes"
 	"io"
 	"log"
 	"os"
@@ -73,6 +74,10 @@ type Config struct {
 	// Recovered is a recovery copy to open (Document Recovery), instead
 	// of Path.
 	Recovered *autorecover.Entry
+	// Data is the contents of a file without a path, opened as the Open
+	// dialog opens one (Save goes to Save As), instead of Path: a file
+	// from the user's computer handed to a new browser tab.
+	Data []byte
 }
 
 // loadResult is what a loader goroutine hands the UI goroutine through
@@ -173,6 +178,9 @@ func Run(w *app.Window, cfg Config) error {
 		d.openRecovered(*cfg.Recovered)
 	} else if cfg.Template != "" {
 		d.newFromTemplate(cfg.Template)
+	} else if cfg.Data != nil {
+		d.newBlank()
+		d.openReader(io.NopCloser(bytes.NewReader(cfg.Data)))
 	} else if cfg.Path != "" {
 		d.lk.closeOnCancel = true
 		d.setDoc(model.New(filepath.Base(cfg.Path)), d.th.Shaper, nil)
@@ -368,10 +376,14 @@ func (d *window) openDialog() {
 
 // openReader reads a file the Open dialog gave without a path into the
 // window, which then has no file of its own (Save goes to Save As). Only
-// a pristine window takes it; otherwise it is closed unread and the
-// status line says why.
+// a pristine window takes it; otherwise the browser opens it in a new tab
+// (gui.OpenInTab), and the desktop closes it unread and the status line
+// says why.
 func (d *window) openReader(rc io.ReadCloser) {
 	d.back.Hide()
+	if !d.pristine() && gui.OpenInTab(rc, doctype.Document, d.calls, func(err error) { d.errMsg = "Can't open the file: " + err.Error() }) {
+		return
+	}
 	if !d.pristine() || !d.startLoad() {
 		gui.CloseChosen(rc)
 		d.errMsg = gui.OpenHereOnlyEmpty

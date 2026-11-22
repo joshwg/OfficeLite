@@ -66,6 +66,7 @@ func main() {
 	// doesn't list them too.
 	orphans := autorecover.ClaimAll(autorecover.Orphans(""))
 	// open starts a window; windows call it for New, Open and recent files.
+	// In the browser, once a window is up, it opens a new tab instead (openTab).
 	// A file already open in a window (of this process or another
 	// OfficeLite's) brings that window to the front instead.
 	var open func(kind doctype.Kind, path string)
@@ -73,8 +74,9 @@ func main() {
 	// a template, which may be open for editing elsewhere.
 	var openTemplate func(path string)
 	// start opens a window for a file or, with rec, a recovered copy, or
-	// for a new document from template.
-	start := func(kind doctype.Kind, path, template string, rec *autorecover.Entry) {
+	// for a new document from template, or for data, a file without a
+	// path (the browser's, page_js.go).
+	start := func(kind doctype.Kind, path, template string, rec *autorecover.Entry, data []byte) {
 		started.Add(1)
 		windows.Add(1)
 		go func() {
@@ -85,9 +87,9 @@ func main() {
 			var err error
 			if kind == doctype.Document {
 				err = wordui.Run(w, wordui.Config{Path: path, Template: template, Fonts: fonts,
-					Launch: open, LaunchTemplate: openTemplate, Recovered: rec})
+					Launch: open, LaunchTemplate: openTemplate, Recovered: rec, Data: data})
 			} else {
-				err = excelui.Run(w, excelui.Config{Path: path, Fonts: fonts, Launch: open, Recovered: rec})
+				err = excelui.Run(w, excelui.Config{Path: path, Fonts: fonts, Launch: open, Recovered: rec, Data: data})
 			}
 			if err != nil {
 				log.Print(err)
@@ -98,9 +100,12 @@ func main() {
 		if path != "" && lockfile.Activate(path) {
 			return
 		}
-		start(kind, path, "", nil)
+		if started.Load() > 0 && openTab(kind, path) {
+			return // the browser: a new tab, not a window inside this page
+		}
+		start(kind, path, "", nil, nil)
 	}
-	openTemplate = func(path string) { start(doctype.Document, "", path, nil) }
+	openTemplate = func(path string) { start(doctype.Document, "", path, nil, nil) }
 	forced := doctype.Unknown
 	switch {
 	case *excel:
@@ -113,7 +118,11 @@ func main() {
 		if forced == doctype.Document {
 			kind = doctype.Document
 		}
-		open(kind, "")
+		if data := localFile(); data != nil {
+			start(kind, "", "", nil, data) // a file from another tab
+		} else {
+			open(kind, "")
+		}
 	}
 	var opened []os.FileInfo
 	for _, path := range flag.Args() {
@@ -157,7 +166,7 @@ func main() {
 				if e.App == autorecover.Word {
 					kind = doctype.Document
 				}
-				start(kind, "", "", &e)
+				start(kind, "", "", &e, nil)
 			})
 		}()
 	}

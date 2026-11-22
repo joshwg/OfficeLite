@@ -57,13 +57,13 @@ with_progress() {
 # build_client builds the WebAssembly client into $OUT/client.
 build_client() {
     mkdir -p "$OUT/client"
-    step "Building the WebAssembly client (the slowest step, often a minute or more)"
+    step "Building the WebAssembly client"
     with_progress env GOOS=js GOARCH=wasm go build -trimpath -ldflags "-s -w" -o "$OUT/client/officelite.wasm" ./cmd/officelite
     # install, not cp: the toolchain's copy is read-only.
     install -m 0644 "$(go env GOROOT)/lib/wasm/wasm_exec.js" "$OUT/client/"
     rm -f "$OUT/client/officelite.wasm.br" "$OUT/client/officelite.wasm.gz"
     if command -v brotli >/dev/null; then
-        step "Compressing the client with brotli (slow at its best setting)"
+        step "Compressing the client with brotli"
         with_progress brotli -q 11 -k "$OUT/client/officelite.wasm"
     else
         step "Skipping brotli (not installed: sudo apt install brotli)"

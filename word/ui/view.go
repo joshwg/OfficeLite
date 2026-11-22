@@ -7,6 +7,7 @@ import (
 	"image"
 	"io"
 	"math"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -54,8 +55,9 @@ type docView struct {
 	blinkStart   time.Time
 	wheelZoom    float32
 	size         image.Point
-	scale        float64 // pixels per point
-	skipSpace    bool    // Ctrl+Space also types a space; drop it
+	scale        float64   // pixels per point
+	skipSpace    bool      // Ctrl+Space also types a space; drop it
+	ime          imeReport // what the platform's text input was last told (ime.go)
 
 	// eol is the caret's end-of-line affinity, set by End (and Up/Down)
 	// on a line wrapped after a hyphen or inside a word: the caret at the
@@ -104,6 +106,7 @@ func (d *window) layoutDoc(gtx layout.Context) layout.Dimensions {
 		d.docKeys(gtx)
 		d.insertKeys(gtx)
 	}
+	d.reportIME(gtx)
 	d.relayout()
 	if v.ensureCaret {
 		v.ensureCaret = false
@@ -158,9 +161,16 @@ func (d *window) layoutDoc(gtx layout.Context) layout.Dimensions {
 
 // drawCaret draws the blinking caret when the view has focus and the
 // selection is empty, scheduling the next blink.
+//
+// In the browser, the window counts as focused only while Gio's hidden
+// <textarea> has the page's focus, and a phone's browser won't give an
+// input the focus before the user touches the page: a document just
+// opened showed no caret at all. There the caret shows whenever the view
+// holds the app's keyboard focus.
 func (d *window) drawCaret(gtx layout.Context, px int) {
 	v := &d.v
-	if !v.focused || !d.ed.Sel.Empty() || d.back.Visible {
+	focused := v.focused || runtime.GOOS == "js" && gtx.Focused(v)
+	if !focused || !d.ed.Sel.Empty() || d.back.Visible {
 		return
 	}
 	since := time.Since(v.blinkStart)
@@ -435,6 +445,7 @@ func (d *window) docKeys(gtx layout.Context) {
 		switch e := ev.(type) {
 		case key.FocusEvent:
 			d.v.focused = e.Focus
+			d.v.ime.valid = false // a focus change clears the platform's text
 			d.v.resetBlink()
 		case key.EditEvent:
 			if d.modalOpen() {
@@ -445,7 +456,7 @@ func (d *window) docKeys(gtx layout.Context) {
 				continue
 			}
 			d.v.skipSpace = false
-			d.ed.InsertText(e.Text)
+			d.imeEdit(e.Range, e.Text)
 			d.v.hasGoal = false
 			d.edited()
 		case transfer.DataEvent:

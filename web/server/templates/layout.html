@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="/static/style.css">
 <script src="/static/password.js" defer></script>
 {{if .User}}<script src="/static/idle.js" data-idle="{{idleSeconds}}" data-warn="{{warnSeconds}}" data-ping="{{pingSeconds}}" defer></script>
-<script src="/static/serverfs.js" data-max-name="{{maxFileName}}" data-exts="{{storableExts}}" defer></script>{{end}}
+<script src="/static/serverfs.js" data-max-name="{{maxFileName}}" data-max-depth="{{maxDepth}}" data-exts="{{storableExts}}" defer></script>{{end}}
 </head>
 <body>
 <header class="bar">

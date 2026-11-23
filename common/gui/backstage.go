@@ -54,10 +54,11 @@ type Template struct {
 type Action int
 
 const (
-	ActBack       Action = iota // the backstage was dismissed
-	ActNew                      // Template holds the chosen tile's index
-	ActOpenRecent               // Entry holds the file
-	ActBrowse                   // show the Open dialog
+	ActBack        Action = iota // the backstage was dismissed
+	ActNew                       // Template holds the chosen tile's index
+	ActOpenRecent                // Entry holds the file
+	ActBrowse                    // show the Open dialog (in the browser, of cloud files)
+	ActBrowseLocal               // the browser's picker of files on the user's computer, skipping the cloud dialog
 	ActSave
 	ActClose // close the window
 )
@@ -91,6 +92,7 @@ type Backstage struct {
 	back     widget.Clickable
 	nav      [numPages]widget.Clickable
 	browse   widget.Clickable
+	local    widget.Clickable // the browser build's Browse (this computer); browse is Cloud files there
 	tiles    []widget.Clickable
 	recents  []widget.Clickable
 	list     widget.List
@@ -142,6 +144,9 @@ func (b *Backstage) update(gtx layout.Context, cfg BackstageConfig, handle func(
 	}
 	for b.browse.Clicked(gtx) {
 		handle(BackstageEvent{Action: ActBrowse})
+	}
+	for b.local.Clicked(gtx) {
+		handle(BackstageEvent{Action: ActBrowseLocal})
 	}
 	if len(b.tiles) != len(cfg.Templates) {
 		b.tiles = make([]widget.Clickable, len(cfg.Templates))
@@ -243,11 +248,24 @@ func (b *Backstage) content(gtx layout.Context, th *Theme, cfg BackstageConfig) 
 			rows = append(rows, th.Paragraph(cfg.TemplateNote, MutedText))
 		}
 	case PageOpen:
-		rows = append(rows, th.Title("Open"),
-			func(gtx layout.Context) layout.Dimensions {
+		rows = append(rows, th.Title("Open"))
+		if HasServerFiles() {
+			// In the browser: Browse goes straight to the picker of files on
+			// the user's computer, Cloud files to the dialog of the files
+			// kept on the server.
+			rows = append(rows,
+				func(gtx layout.Context) layout.Dimensions {
+					return th.Option(gtx, &b.local, IconPC, "Browse", "Choose a file on this computer", false)
+				},
+				func(gtx layout.Context) layout.Dimensions {
+					return th.Option(gtx, &b.browse, IconCloud, "Cloud files", "Choose a file saved in the cloud", false)
+				})
+		} else {
+			rows = append(rows, func(gtx layout.Context) layout.Dimensions {
 				return th.Option(gtx, &b.browse, IconFolder, "Browse", "Choose a file on this PC", false)
-			},
-			th.Heading("Recent"))
+			})
+		}
+		rows = append(rows, th.Heading("Recent"))
 		rows = append(rows, b.recentRows(th, cfg.Recent, len(cfg.Recent))...)
 	default:
 		rows = append(rows, th.Title(b.Page.String()))

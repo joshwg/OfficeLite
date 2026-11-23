@@ -5,11 +5,7 @@
 
 package gui
 
-import (
-	"io"
+import "officelite/common/doctype"
 
-	"officelite/common/doctype"
-)
-
-// OpenInTab reports false on the desktop, leaving rc alone.
-func OpenInTab(io.ReadCloser, doctype.Kind, *CallQueue, func(error)) bool { return false }
+// OpenDataInTab reports false: the desktop has no tabs.
+func OpenDataInTab([]byte, doctype.Kind) bool { return false }

@@ -1,29 +1,34 @@
 // serverfs.js gives the WebAssembly client the user's server documents
-// as files. Go's os package in the browser calls a Node-style globalThis.fs
-// (wasm_exec.js puts a stub there that fails everything); this script,
-// loaded first, puts a file system there instead in which /server is a
-// folder of the user's documents, read and written through the server's
-// /api/files. So WordLite and ExcelLite open, save and AutoSave
-// /server/Budget.xlsx with the same code that handles files on a desktop.
+// (cloud files) as files. Go's os package in the browser calls a
+// Node-style globalThis.fs (wasm_exec.js puts a stub there that fails
+// everything); this script, loaded first, puts a file system there
+// instead in which /server is the user's top folder, its folders real
+// folders, read and written through the server's /api/files, /api/folders
+// and /api/move. So WordLite and ExcelLite open, save and AutoSave
+// /server/Reports/Budget.xlsx with the same code that handles files on a
+// desktop.
 //
+//   * A path's last name says what it is, as on the server: a name ending
+//     in a stored extension is a document; one starting with "." or "~$",
+//     or any name created for writing without such an extension (".tmp"
+//     temporary files, lock files), is a file in this page's memory only;
+//     any other name is a folder.
 //   * A document is fetched whole when opened and kept in memory; what is
 //     written goes to the server when the file is closed (or, for the
 //     hidden temporary file a safe save writes first, when it is renamed
 //     over the document).
-//   * Names the server never stores (starting with "." or "~$", or with an
-//     extension it doesn't keep, such as the ".tmp" of temporary files and
-//     the lock files) never reach it: they live in this page's memory only.
 //   * Every path outside /server fails with ENOSYS, as with the stub.
 //
-// It also offers the apps' Open and Save As dialogs of server files
-// (window.officeweb.openDialog / saveDialog, used by
+// It also offers the apps' Open and Save As dialogs of cloud files, which
+// move between folders and make new ones (window.officeweb.openDialog /
+// saveDialog, used by
 // common/gui/filedialog_js.go), a new tab for each further file the apps
 // open (officeweb.openTab, cmd/officelite/page_js.go; openDataTab for a
 // file from the user's computer, common/gui/opentab_js.go), and Yes/No
 // confirmation for the server
-// pages' forms marked data-confirm. The file-name rules come from the
-// server through this script tag's data-max-name and data-exts (the
-// server checks them again).
+// pages' forms marked data-confirm. The file- and folder-name rules come
+// from the server through this script tag's data-max-name,
+// data-max-depth and data-exts (the server checks them again).
 (function () {
   "use strict";
   const MOUNT = "/server";
@@ -34,9 +39,10 @@
   const hasDOM = typeof document !== "undefined";
   const script = hasDOM ? document.currentScript : null;
   // The rules from the script tag, or (under Node) from
-  // globalThis.officewebRules = { maxName, exts }.
+  // globalThis.officewebRules = { maxName, maxDepth, exts }.
   const rules = script ? script.dataset : (globalThis.officewebRules || {});
   const MAX_NAME = parseInt(rules.maxName || "64", 10);
+  const MAX_DEPTH = parseInt(rules.maxDepth || "4", 10);
   const EXTS = (rules.exts || "").split(" ").filter(Boolean);
 
   // ---- errors ----
@@ -54,18 +60,35 @@
 
   // ---- names ----
 
+  // commonProblem returns why name (already trimmed) breaks the rules
+  // file and folder names share, or "": what is "File" or "Folder".
+  function commonProblem(name, what) {
+    if (name === "") return "Type a " + what.toLowerCase() + " name.";
+    if (name.length > MAX_NAME) return what + " names may have at most " + MAX_NAME + " characters.";
+    for (let i = 0; i < name.length; i++) {
+      const c = name.charCodeAt(i);
+      if (c < 0x20 || c > 0x7e) return what + " names may contain only printable ASCII characters (no control, invisible or accented characters).";
+    }
+    if (/[\/\\*]/.test(name)) return what + " names may not contain '/', '\\' or '*'.";
+    if (name.startsWith(".") || name.startsWith("~$")) return what + " names may not start with '.' or '~$'.";
+    return "";
+  }
+
   // nameProblem returns why name (already trimmed) can't be a server
   // document's name, or "" when it can: the rules of web/names.
   function nameProblem(name) {
-    if (name === "") return "Type a file name.";
-    if (name.length > MAX_NAME) return "File names may have at most " + MAX_NAME + " characters.";
-    for (let i = 0; i < name.length; i++) {
-      const c = name.charCodeAt(i);
-      if (c < 0x20 || c > 0x7e) return "File names may contain only printable ASCII characters (no control, invisible or accented characters).";
-    }
-    if (/[\/\\*]/.test(name)) return "File names may not contain '/', '\\' or '*'.";
-    if (name.startsWith(".") || name.startsWith("~$")) return "File names may not start with '.' or '~$'.";
+    const why = commonProblem(name, "File");
+    if (why) return why;
     if (!storable(name)) return "File names must end in one of " + EXTS.join(" ") + ".";
+    return "";
+  }
+
+  // folderProblem returns why name (already trimmed) can't be a folder's
+  // name, or "" when it can.
+  function folderProblem(name) {
+    const why = commonProblem(name, "Folder");
+    if (why) return why;
+    if (storable(name)) return "Folder names may not end in a file extension (" + EXTS.join(" ") + ").";
     return "";
   }
 
@@ -80,31 +103,49 @@
     return EXTS.includes(extOf(name));
   }
 
-  // localOnly reports whether name stays in this page's memory: a
-  // temporary or lock file, or anything else the server wouldn't store.
-  function localOnly(name) {
-    return name.startsWith(".") || name.startsWith("~$") || !storable(name);
+  // hidden reports whether name is always this page's own: a temporary
+  // or lock file.
+  function hidden(name) {
+    return name.startsWith(".") || name.startsWith("~$");
   }
 
-  // parse splits a path into { dir: true } for /server itself,
-  // { name } for a file in it, or null for anything else.
+  // isDoc reports whether name is a server document's.
+  function isDoc(name) {
+    return !hidden(name) && storable(name);
+  }
+
+  // join joins a folder path ("" for the top) and a name.
+  function join(dir, name) {
+    return dir === "" ? name : dir + "/" + name;
+  }
+
+  // parse splits a path under /server into { root: true, rel: "" } for
+  // /server itself, or { rel, dir, name } for something in it (rel its
+  // path below /server, dir the folder holding it), or null for anything
+  // else.
   function parse(path) {
     if (typeof path !== "string") return null;
-    if (path === MOUNT || path === MOUNT + "/") return { dir: true };
+    if (path === MOUNT || path === MOUNT + "/") return { root: true, rel: "", dir: "", name: "" };
     if (!path.startsWith(MOUNT + "/")) return null;
-    const name = path.slice(MOUNT.length + 1);
-    if (name === "" || name.includes("/")) return null;
-    return { name: name };
+    let rel = path.slice(MOUNT.length + 1);
+    if (rel.endsWith("/")) rel = rel.slice(0, -1);
+    const parts = rel.split("/");
+    if (parts.some(function (p) { return p === "" || p === "." || p === ".."; })) return null;
+    const name = parts.pop();
+    return { rel: rel, dir: parts.join("/"), name: name };
   }
 
   // ---- the server ----
 
-  // api calls /api/files[/name][suffix] and returns the response, or
-  // throws an fsError (after telling the user what the server said).
-  async function api(method, name, body, suffix) {
-    let url = "/api/files";
-    if (name !== undefined) url += "/" + encodeURIComponent(name);
-    if (suffix) url += suffix;
+  // encodePath escapes each name of a '/'-joined path for a URL.
+  function encodePath(rel) {
+    return rel.split("/").map(encodeURIComponent).join("/");
+  }
+
+  // api calls url with method and body and returns the response, or
+  // throws an fsError (after telling the user what the server said,
+  // except for a GET's 404 and the statuses in quiet).
+  async function api(method, url, body, quiet) {
     const init = { method: method, credentials: "same-origin", cache: "no-store" };
     if (body !== undefined) init.body = body;
     let resp;
@@ -115,24 +156,59 @@
       throw fsError("EIO");
     }
     if (resp.ok) return resp;
-    if (resp.status !== 404 || method !== "GET") {
-      let msg = resp.statusText;
-      try { msg = (await resp.json()).error || msg; } catch (e) { /* not JSON */ }
-      if (resp.status === 401) msg = "You've been logged out. Log in again in another tab, then try again.";
-      toast(msg);
-    }
-    throw fsError(CODES[resp.status] || "EIO");
+    let msg = resp.statusText, code = "";
+    try {
+      const b = await resp.json();
+      msg = b.error || msg;
+      code = b.code || "";
+    } catch (e) { /* not JSON */ }
+    if (resp.status === 401) msg = "You've been logged out. Log in again in another tab, then try again.";
+    const silent = (resp.status === 404 && method === "GET") || (quiet && quiet.includes(resp.status));
+    if (!silent) toast(msg);
+    throw fsError(code || CODES[resp.status] || "EIO");
   }
 
-  // listing returns { used, quota, files: [{name, size, modified}] }.
-  async function listing() {
-    return (await api("GET")).json();
+  // fileURL is the API address of the document at rel.
+  function fileURL(rel) { return "/api/files/" + encodePath(rel); }
+
+  // folderURL is the API address of the folder at rel.
+  function folderURL(rel) { return "/api/folders/" + encodePath(rel); }
+
+  // listing returns what the folder dir ("" for the top) holds:
+  // { used, quota, dir, folders: [{name, path, modified}],
+  // files: [{name, path, size, modified}] }. A missing folder throws
+  // ENOENT.
+  async function listing(dir) {
+    return (await api("GET", "/api/files" + (dir ? "?dir=" + encodeURIComponent(dir) : ""))).json();
   }
 
-  // find returns the listed file named name without regard to case.
-  function find(files, name) {
+  // move moves or renames a document or folder on the server.
+  function move(from, to) {
+    return api("POST", "/api/move", JSON.stringify({ from: from, to: to }));
+  }
+
+  // find returns the entry in list named name without regard to case.
+  function find(list, name) {
     const lower = name.toLowerCase();
-    return files.find(function (f) { return f.name.toLowerCase() === lower; });
+    return list.find(function (f) { return f.name.toLowerCase() === lower; });
+  }
+
+  // lookup returns the document or folder at p ({ file } or { folder })
+  // from its folder's listing, or null when it or its folder is missing.
+  async function lookup(p) {
+    let l;
+    try {
+      l = await listing(p.dir);
+    } catch (e) {
+      if (e.code === "ENOENT") return null;
+      throw e;
+    }
+    if (isDoc(p.name)) {
+      const f = find(l.files, p.name);
+      return f ? { file: f } : null;
+    }
+    const d = find(l.folders, p.name);
+    return d ? { folder: d } : null;
   }
 
   // ---- the file system ----
@@ -140,30 +216,30 @@
   const S_IFDIR = 0o040000, S_IFREG = 0o100000;
   const O = { O_RDONLY: 0, O_WRONLY: 1, O_RDWR: 2, O_CREAT: 0o100, O_EXCL: 0o200, O_TRUNC: 0o1000, O_APPEND: 0o2000, O_DIRECTORY: 0o200000 };
 
-  // A record is a file's bytes in memory: { name, data, size, mtime,
-  // server, dirty }. locals holds the local-only ones by name.
+  // A record is a file's bytes in memory: { rel, data, size, mtime,
+  // server, dirty }. locals holds the page-only ones by path.
   const locals = new Map();
   // fds maps open file descriptors to { rec, pos, write, append, dir }.
   const fds = new Map();
   let nextFD = 100;
 
-  // newRecord returns an empty record for name.
-  function newRecord(name, server) {
-    return { name: name, data: new Uint8Array(0), size: 0, mtime: Date.now(), server: server, dirty: false };
+  // newRecord returns an empty record for the file at rel.
+  function newRecord(rel, server) {
+    return { rel: rel, data: new Uint8Array(0), size: 0, mtime: Date.now(), server: server, dirty: false };
   }
 
-  // inode is a stable number for a name (any case), so os.SameFile works.
-  function inode(name) {
+  // inode is a stable number for a path (any case), so os.SameFile works.
+  function inode(rel) {
     let h = 2166136261;
-    const s = name.toLowerCase();
+    const s = rel.toLowerCase();
     for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619) >>> 0;
     return h & 0x7fffffff;
   }
 
   // statOf builds the stat object Go reads (fs_js.go setStat).
-  function statOf(isDir, name, size, mtime) {
+  function statOf(isDir, rel, size, mtime) {
     return {
-      dev: 1, ino: isDir ? 1 : inode(name), mode: isDir ? S_IFDIR | 0o755 : S_IFREG | 0o644, nlink: 1,
+      dev: 1, ino: rel === "" ? 1 : inode(rel), mode: isDir ? S_IFDIR | 0o755 : S_IFREG | 0o644, nlink: 1,
       uid: 0, gid: 0, rdev: 0, size: size, blksize: 4096, blocks: Math.ceil(size / 512),
       atimeMs: mtime, mtimeMs: mtime, ctimeMs: mtime,
       isDirectory: function () { return isDir; },
@@ -178,9 +254,9 @@
     rec.data = grown;
   }
 
-  // upload stores rec's bytes as the server document name.
-  async function upload(rec, name) {
-    await api("PUT", name, rec.data.slice(0, rec.size));
+  // upload stores rec's bytes as the server document at rel.
+  async function upload(rec, rel) {
+    await api("PUT", fileURL(rel), rec.data.slice(0, rec.size));
     rec.dirty = false;
   }
 
@@ -217,33 +293,39 @@
       run(callback, async function () {
         const acc = flags & 3, creat = flags & O.O_CREAT, excl = flags & O.O_EXCL, trunc = flags & O.O_TRUNC;
         const write = acc !== O.O_RDONLY;
-        let rec;
-        if (p.dir) {
+        let rec = null, dir = false;
+        if (p.root) {
           if (write) throw fsError("EISDIR");
-          rec = null;
-        } else if (localOnly(p.name)) {
-          rec = locals.get(p.name);
+          dir = true;
+        } else if (!isDoc(p.name)) {
+          rec = locals.get(p.rel);
           if (rec && creat && excl) throw fsError("EEXIST");
-          if (!rec) {
+          if (!rec && (write || creat || hidden(p.name))) {
+            // A page-only file: a temporary or lock file, or one the
+            // server wouldn't keep.
             if (!creat) throw fsError("ENOENT");
-            rec = newRecord(p.name, false);
-            locals.set(p.name, rec);
+            rec = newRecord(p.rel, false);
+            locals.set(p.rel, rec);
+          } else if (!rec) {
+            const found = await lookup(p); // a folder, read
+            if (!found || !found.folder) throw fsError("ENOENT");
+            dir = true;
           }
         } else if (write && creat && trunc && !excl) {
-          rec = newRecord(p.name, true); // replaced whole: nothing to fetch
+          rec = newRecord(p.rel, true); // replaced whole: nothing to fetch
           rec.dirty = true;
         } else {
-          if (creat && excl && find((await listing()).files, p.name)) throw fsError("EEXIST");
+          if (creat && excl && await lookup(p)) throw fsError("EEXIST");
           try {
-            const resp = await api("GET", p.name);
-            rec = newRecord(p.name, true);
+            const resp = await api("GET", fileURL(p.rel));
+            rec = newRecord(p.rel, true);
             rec.data = new Uint8Array(await resp.arrayBuffer());
             rec.size = rec.data.length;
             const lm = Date.parse(resp.headers.get("Last-Modified") || "");
             if (!isNaN(lm)) rec.mtime = lm;
           } catch (e) {
             if (e.code !== "ENOENT" || !creat) throw e;
-            rec = newRecord(p.name, true);
+            rec = newRecord(p.rel, true);
             rec.dirty = true;
           }
         }
@@ -252,7 +334,7 @@
           rec.dirty = true;
         }
         const fd = nextFD++;
-        fds.set(fd, { rec: rec, pos: 0, write: write, append: (flags & O.O_APPEND) !== 0, dir: p.dir === true });
+        fds.set(fd, { rec: rec, rel: p.rel, pos: 0, write: write, append: (flags & O.O_APPEND) !== 0, dir: dir });
         return fd;
       });
     },
@@ -262,7 +344,7 @@
       if (!f) return callback(fsError("EBADF"));
       fds.delete(fd);
       if (!f.rec || !f.rec.server || !f.rec.dirty) return callback(null);
-      run(callback, function () { return upload(f.rec, f.rec.name); });
+      run(callback, function () { return upload(f.rec, f.rec.rel); });
     },
 
     read(fd, buffer, offset, length, position, callback) {
@@ -299,23 +381,22 @@
     fstat(fd, callback) {
       const f = fds.get(fd);
       if (!f) return callback(fsError("EBADF"));
-      if (f.dir) return callback(null, statOf(true, "", 0, Date.now()));
-      callback(null, statOf(false, f.rec.name, f.rec.size, f.rec.mtime));
+      if (f.dir) return callback(null, statOf(true, f.rel, 0, Date.now()));
+      callback(null, statOf(false, f.rec.rel, f.rec.size, f.rec.mtime));
     },
 
     stat(path, callback) {
       const p = parse(path);
       if (!p) return enosys(callback);
       run(callback, async function () {
-        if (p.dir) return statOf(true, "", 0, Date.now());
-        if (localOnly(p.name)) {
-          const rec = locals.get(p.name);
-          if (!rec) throw fsError("ENOENT");
-          return statOf(false, rec.name, rec.size, rec.mtime);
-        }
-        const f = find((await listing()).files, p.name);
-        if (!f) throw fsError("ENOENT");
-        return statOf(false, f.name, f.size, f.modified);
+        if (p.root) return statOf(true, "", 0, Date.now());
+        const rec = locals.get(p.rel);
+        if (rec) return statOf(false, rec.rel, rec.size, rec.mtime);
+        if (hidden(p.name)) throw fsError("ENOENT");
+        const found = await lookup(p);
+        if (!found) throw fsError("ENOENT");
+        if (found.folder) return statOf(true, found.folder.path, 0, found.folder.modified);
+        return statOf(false, found.file.path, found.file.size, found.file.modified);
       });
     },
 
@@ -324,51 +405,60 @@
     readdir(path, callback) {
       const p = parse(path);
       if (!p) return enosys(callback);
-      if (!p.dir) return callback(fsError("ENOTDIR"));
+      if (!p.root && isDoc(p.name)) return callback(fsError("ENOTDIR"));
       run(callback, async function () {
-        return (await listing()).files.map(function (f) { return f.name; });
+        const l = await listing(p.rel);
+        return l.folders.map(function (f) { return f.name; }).concat(l.files.map(function (f) { return f.name; }));
       });
     },
 
     rename(from, to, callback) {
       const a = parse(from), b = parse(to);
       if (!a || !b) return enosys(callback);
-      if (a.dir || b.dir) return callback(fsError("EINVAL"));
+      if (a.root || b.root) return callback(fsError("EINVAL"));
       run(callback, async function () {
-        if (localOnly(a.name)) {
-          const rec = locals.get(a.name);
-          if (!rec) throw fsError("ENOENT");
-          if (localOnly(b.name)) {
-            locals.delete(a.name);
-            rec.name = b.name;
-            locals.set(b.name, rec);
+        const rec = locals.get(a.rel);
+        if (rec) {
+          if (!isDoc(b.name)) {
+            locals.delete(a.rel);
+            rec.rel = b.rel;
+            locals.set(b.rel, rec);
             return;
           }
           // A safe save's temporary file renamed over the document.
-          await upload(rec, b.name);
-          locals.delete(a.name);
+          await upload(rec, b.rel);
+          locals.delete(a.rel);
           return;
         }
-        if (localOnly(b.name)) throw fsError("ENOSYS");
-        await api("POST", a.name, JSON.stringify({ to: b.name }), "/rename");
+        if (hidden(a.name) || hidden(b.name)) throw fsError(hidden(a.name) ? "ENOENT" : "ENOSYS");
+        if (isDoc(a.name) !== isDoc(b.name)) throw fsError("EINVAL"); // a document and a folder
+        await move(a.rel, b.rel);
       });
     },
 
     unlink(path, callback) {
       const p = parse(path);
       if (!p) return enosys(callback);
-      if (p.dir) return callback(fsError("EISDIR"));
-      if (localOnly(p.name)) {
-        if (!locals.delete(p.name)) return callback(fsError("ENOENT"));
-        return callback(null);
-      }
-      run(callback, function () { return api("DELETE", p.name); });
+      if (p.root) return callback(fsError("EISDIR"));
+      if (locals.delete(p.rel)) return callback(null);
+      if (!isDoc(p.name)) return callback(fsError(hidden(p.name) ? "ENOENT" : "EISDIR")); // os.Remove then tries rmdir
+      run(callback, function () { return api("DELETE", fileURL(p.rel)); });
     },
 
     mkdir(path, perm, callback) {
       const p = parse(path);
       if (!p) return enosys(callback);
-      callback(fsError(p.dir ? "EEXIST" : "ENOSYS"));
+      if (p.root) return callback(fsError("EEXIST"));
+      if (hidden(p.name) || isDoc(p.name)) return callback(fsError("EINVAL"));
+      run(callback, function () { return api("PUT", folderURL(p.rel), undefined, [409]); });
+    },
+
+    rmdir(path, callback) {
+      const p = parse(path);
+      if (!p) return enosys(callback);
+      if (p.root) return callback(fsError("EBUSY"));
+      if (hidden(p.name) || isDoc(p.name)) return callback(fsError("ENOTDIR"));
+      run(callback, function () { return api("DELETE", folderURL(p.rel), undefined, [409]); });
     },
 
     ftruncate(fd, length, callback) {
@@ -396,7 +486,6 @@
     readlink(path, callback) { parse(path) ? callback(fsError("EINVAL")) : enosys(callback); },
     link(path, link, callback) { enosys(callback); },
     symlink(path, link, callback) { enosys(callback); },
-    rmdir(path, callback) { enosys(callback); },
   };
 
   // ---- messages ----
@@ -526,45 +615,167 @@
       globalThis.officewebModalOpen = true;
       build(box, close);
       document.body.appendChild(back);
-      const first = box.querySelector("input, [aria-selected], button");
+      const first = Array.from(box.querySelectorAll("input, [aria-selected], button")).find(function (e) {
+        return e.offsetParent !== null; // shown, not in a hidden part
+      });
       if (first) first.focus();
     });
   }
 
-  // fileList adds the user's server files (with extensions in exts, or all
-  // when exts is empty) to box as a list; pick(name, open) is called when
-  // one is clicked (open: double-clicked or Enter).
-  function fileList(box, exts, pick) {
+  // lastDir is the folder the dialogs were last in, where the next one
+  // starts.
+  let lastDir = "";
+
+  // browser adds a folder browser to box: the path from the top (each
+  // step goes back there), the folder's subfolders and documents (with
+  // extensions in exts, or all when exts is empty), a New folder button
+  // and the quota. A click on a folder goes into it; pick(path, name,
+  // open) is called when a document is clicked (open: double-clicked or
+  // Enter). It starts in start ("" for the top; the top when start is
+  // gone) and returns { dir() }, the folder shown.
+  function browser(box, exts, start, pick) {
+    let dir = start;
+    const crumbs = el("nav", "crumbs");
+    crumbs.setAttribute("aria-label", "Folder");
     const list = el("ul", "fd-list");
     list.setAttribute("role", "listbox");
-    list.appendChild(el("li", "empty", "Loading…"));
-    box.appendChild(list);
     const quota = el("p", "hint");
-    box.appendChild(quota);
-    listing().then(function (l) {
-      list.replaceChildren();
-      const shown = l.files.filter(function (f) { return exts.length === 0 || exts.includes(extOf(f.name)); });
-      if (shown.length === 0) list.appendChild(el("li", "empty", "No files on the server yet."));
-      shown.forEach(function (f) {
-        const li = el("li");
-        li.setAttribute("role", "option");
-        li.tabIndex = 0;
-        li.append(el("span", "", f.name), el("span", "size", formatSize(f.size)));
-        const select = function () {
-          list.querySelectorAll("[aria-selected]").forEach(function (o) { o.removeAttribute("aria-selected"); });
-          li.setAttribute("aria-selected", "true");
-        };
-        li.addEventListener("click", function () { select(); pick(f.name, false); });
-        li.addEventListener("dblclick", function () { select(); pick(f.name, true); });
-        li.addEventListener("keydown", function (e) {
-          if (e.key === "Enter") { select(); pick(f.name, true); }
-        });
-        list.appendChild(li);
-      });
-      quota.textContent = "Using " + formatSize(l.used) + " of " + formatSize(l.quota) + " on the server.";
-    }, function () {
-      list.replaceChildren(el("li", "empty", "Couldn't list your server files."));
+    const newRow = el("div", "fd-newfolder");
+    const newName = el("input");
+    newName.placeholder = "New folder's name";
+    newName.maxLength = MAX_NAME + 2;
+    newName.setAttribute("autocomplete", "off");
+    newName.spellcheck = false;
+    const newProblem = el("p", "err");
+    newProblem.hidden = true;
+    const make = button("Make folder", "ghost", makeFolder);
+    const cancelNew = button("Cancel", "ghost", function () { showNew(false); });
+    newRow.append(newName, make, cancelNew);
+    const newButton = button("New folder", "ghost", function () { showNew(true); });
+    box.append(crumbs, list, newRow, newProblem, quota);
+
+    // showNew shows or hides the new folder's name box.
+    function showNew(on) {
+      newRow.hidden = !on;
+      newProblem.hidden = true;
+      newButton.hidden = on;
+      if (on) {
+        newName.value = "";
+        newName.focus();
+      }
+    }
+
+    // depth is how many folders deep path is.
+    function depth(path) { return path === "" ? 0 : path.split("/").length; }
+
+    // makeFolder makes the typed folder in this one and goes into it.
+    async function makeFolder() {
+      const name = newName.value.trim();
+      const why = folderProblem(name);
+      if (why) {
+        newProblem.textContent = why;
+        newProblem.hidden = false;
+        newName.focus();
+        return;
+      }
+      try {
+        await api("PUT", folderURL(join(dir, name)), undefined, [409]);
+      } catch (e) {
+        newProblem.textContent = e.code === "EEXIST" ? name + " already exists here." : "Couldn't make the folder.";
+        newProblem.hidden = false;
+        return;
+      }
+      showNew(false);
+      show(join(dir, name));
+    }
+    newName.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); makeFolder(); }
+      if (e.key === "Escape") { e.stopPropagation(); showNew(false); }
     });
+
+    // option adds a list entry labeled text that calls choose(open).
+    function option(text, cls, size, choose) {
+      const li = el("li", cls);
+      li.setAttribute("role", "option");
+      li.tabIndex = 0;
+      li.append(el("span", "", text), el("span", "size", size));
+      const select = function () {
+        list.querySelectorAll("[aria-selected]").forEach(function (o) { o.removeAttribute("aria-selected"); });
+        li.setAttribute("aria-selected", "true");
+      };
+      li.addEventListener("click", function () { select(); choose(false); });
+      li.addEventListener("dblclick", function () { select(); choose(true); });
+      li.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { select(); choose(true); }
+      });
+      list.appendChild(li);
+    }
+
+    // drawCrumbs shows the path to the folder shown.
+    function drawCrumbs(shown) {
+      crumbs.replaceChildren();
+      const steps = [{ name: "Cloud files", path: "" }];
+      let at = "";
+      if (shown !== "") shown.split("/").forEach(function (n) { at = join(at, n); steps.push({ name: n, path: at }); });
+      steps.forEach(function (st, i) {
+        if (i > 0) crumbs.appendChild(el("span", "", "›"));
+        if (i === steps.length - 1) {
+          crumbs.appendChild(el("strong", "", st.name));
+        } else {
+          crumbs.appendChild(button(st.name, "ghost", function () { show(st.path); }));
+        }
+      });
+    }
+
+    // show lists the folder at path (the top when it's gone).
+    async function show(path) {
+      list.replaceChildren(el("li", "empty", "Loading…"));
+      let l;
+      try {
+        l = await listing(path);
+      } catch (e) {
+        if (e.code === "ENOENT" && path !== "") return show("");
+        list.replaceChildren(el("li", "empty", "Couldn't list your cloud files."));
+        return;
+      }
+      dir = l.dir;
+      lastDir = dir;
+      drawCrumbs(dir);
+      list.replaceChildren();
+      if (dir !== "") {
+        option("Up to " + parentName(dir), "up", "", function () { show(parentOf(dir)); });
+      }
+      l.folders.forEach(function (f) {
+        option(f.name, "folder", "", function () { show(f.path); });
+      });
+      const shown = l.files.filter(function (f) { return exts.length === 0 || exts.includes(extOf(f.name)); });
+      shown.forEach(function (f) {
+        option(f.name, "", formatSize(f.size), function (open) { pick(f.path, f.name, open); });
+      });
+      if (l.folders.length === 0 && shown.length === 0) {
+        list.appendChild(el("li", "empty", dir === "" ? "No cloud files yet." : "This folder is empty."));
+      }
+      newButton.disabled = depth(dir) >= MAX_DEPTH;
+      newButton.title = newButton.disabled ? "Folders may be at most " + MAX_DEPTH + " deep." : "";
+      quota.textContent = "Using " + formatSize(l.used) + " of " + formatSize(l.quota) + " of cloud storage.";
+    }
+
+    showNew(false);
+    show(start);
+    return { dir: function () { return dir; }, newButton: newButton };
+  }
+
+  // parentOf is the folder holding path ("" for the top).
+  function parentOf(path) {
+    const i = path.lastIndexOf("/");
+    return i < 0 ? "" : path.slice(0, i);
+  }
+
+  // parentName is the name of the folder holding path, or "Cloud files"
+  // for the top.
+  function parentName(path) {
+    const up = parentOf(path);
+    return up === "" ? "Cloud files" : up.slice(up.lastIndexOf("/") + 1);
   }
 
   // anyStorable reports whether exts is empty (all files) or names a type
@@ -573,40 +784,52 @@
     return exts.length === 0 || exts.some(function (e) { return EXTS.includes(e.toLowerCase()); });
   }
 
-  // openDialog asks which server file to open. It resolves with its path,
-  // "cancel", or "local" (open a file from this computer instead).
+  // openDialog asks which cloud file to open, starting in the folder the
+  // dialogs were last in. It resolves with its path, "cancel", or "local"
+  // (open a file from this computer instead).
   function openDialog(_, exts) {
     exts = (exts || []).map(function (e) { return e.toLowerCase(); });
     if (!anyStorable(exts)) return Promise.resolve("local"); // pictures and the like
-    return modal("Open", function (box, close) {
+    return modal("Open from cloud files", function (box, close) {
       let chosen = "";
       const ok = button("Open", "", function () { if (chosen) close(MOUNT + "/" + chosen); });
       ok.disabled = true;
-      fileList(box, exts, function (name, open) {
-        chosen = name;
+      const b = browser(box, exts, lastDir, function (path, name, open) {
+        chosen = path;
         ok.disabled = false;
-        if (open) close(MOUNT + "/" + name);
+        if (open) close(MOUNT + "/" + path);
       });
       const row = el("div", "fd-buttons");
       row.append(
         button("From this computer…", "ghost local", function () { close("local"); }),
+        b.newButton,
         button("Cancel", "ghost", function () { close("cancel"); }),
         ok);
       box.appendChild(row);
     });
   }
 
-  // saveDialog asks for the server file to save as, suggesting name; a
-  // name typed without an extension gets exts' first. It asks before
-  // replacing a file and resolves with the path, "cancel", or "local"
-  // (download to this computer instead).
+  // saveDialog asks for the cloud file to save as, suggesting name: a
+  // /server path starts in its folder, anything else in the folder the
+  // dialogs were last in. A name typed without an extension gets exts'
+  // first. It asks before replacing a file and resolves with the path,
+  // "cancel", or "local" (download to this computer instead).
   function saveDialog(name, exts) {
     exts = (exts || []).map(function (e) { return e.toLowerCase(); });
     if (!anyStorable(exts)) return Promise.resolve("local");
-    return modal("Save As", function (box, close) {
-      const label = el("label", "fd-name", "File name on the server");
+    let start = lastDir;
+    name = name || "";
+    const p = parse(name);
+    if (p && !p.root) {
+      start = p.dir;
+      name = p.name;
+    } else if (name.includes("/")) {
+      name = name.slice(name.lastIndexOf("/") + 1);
+    }
+    return modal("Save to cloud files", function (box, close) {
+      const label = el("label", "fd-name", "File name");
       const input = el("input");
-      input.value = name || "";
+      input.value = name;
       input.maxLength = MAX_NAME + 2; // room for spaces that get trimmed
       input.setAttribute("autocomplete", "off");
       input.spellcheck = false;
@@ -615,6 +838,7 @@
       problem.hidden = true;
       let replacing = "";
       const save = button("Save", "", submit);
+      let b = null;
 
       // fixed is the typed name, trimmed, with the default extension
       // added when it has none.
@@ -634,38 +858,45 @@
           input.focus();
           return;
         }
-        if (replacing && replacing.toLowerCase() === n.toLowerCase()) {
+        const dir = b.dir();
+        if (replacing && replacing.toLowerCase() === join(dir, n).toLowerCase()) {
           close(MOUNT + "/" + replacing);
           return;
         }
         let existing;
         try {
-          existing = find((await listing()).files, n);
+          existing = find((await listing(dir)).files, n);
         } catch (e) {
           problem.textContent = "Couldn't reach the server.";
           problem.hidden = false;
           return;
         }
         if (existing) {
-          replacing = existing.name;
-          problem.textContent = existing.name + " already exists. Click Replace to save over it.";
+          replacing = existing.path;
+          problem.textContent = existing.name + " already exists here. Click Replace to save over it.";
           problem.hidden = false;
           save.textContent = "Replace";
           return;
         }
-        close(MOUNT + "/" + n);
+        close(MOUNT + "/" + join(dir, n));
       }
 
-      input.addEventListener("input", function () {
+      // reset forgets a Replace asked for, after the name or folder changed.
+      function reset() {
         problem.hidden = true;
         replacing = "";
         save.textContent = "Save";
-      });
+      }
+
+      input.addEventListener("input", reset);
       input.addEventListener("keydown", function (e) { if (e.key === "Enter") submit(); });
-      fileList(box, exts, function (picked, open) {
+      b = browser(box, exts, start, function (path, picked, open) {
         input.value = picked;
-        input.dispatchEvent(new Event("input"));
+        reset();
         if (open) submit();
+      });
+      box.querySelector(".fd-list").addEventListener("click", function (e) {
+        if (e.target.closest(".folder, .up")) reset();
       });
       box.appendChild(label);
       box.appendChild(problem);
@@ -674,6 +905,7 @@
       const row = el("div", "fd-buttons");
       row.append(
         button("Download to this computer", "ghost local", function () { close("local"); }),
+        b.newButton,
         button("Cancel", "ghost", function () { close("cancel"); }),
         save);
       box.appendChild(row);

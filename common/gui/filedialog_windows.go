@@ -56,6 +56,9 @@ const (
 	ofnForceShowHidden = 0x10000000
 )
 
+// HasServerFiles reports false: only the browser build has server files.
+func HasServerFiles() bool { return false }
+
 // listen records the window's HWND from its Win32ViewEvent as the
 // dialogs' owner.
 func (d *FileDialog) listen(e event.Event) {

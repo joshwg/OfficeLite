@@ -1,6 +1,6 @@
-// FileDialog in the browser: the web server's dialog of the user's files
-// on the server (web/server/static/serverfs.js, as window.officeweb). It
-// returns paths under /server/, which the same script's file system
+// FileDialog in the browser: the web server's dialog of the user's cloud
+// files and their folders (web/server/static/serverfs.js, as
+// window.officeweb). It returns paths under /server/, which the same script's file system
 // reads and writes through the server, so the apps open, save and
 // AutoSave server documents as they do files on disk. Choosing "this
 // computer" in the dialog, or a page without the dialog, returns
@@ -12,7 +12,6 @@
 package gui
 
 import (
-	"path"
 	"syscall/js"
 
 	"gioui.org/io/event"
@@ -24,6 +23,13 @@ const (
 	dialogLocal  = "local"  // the user chose a file on this computer
 )
 
+// HasServerFiles reports whether the page offers the dialog of the
+// user's files on the server (window.officeweb.openDialog).
+func HasServerFiles() bool {
+	ow := js.Global().Get("officeweb")
+	return !ow.IsUndefined() && !ow.Get("openDialog").IsUndefined()
+}
+
 // listen does nothing: the page's dialog has no owner window.
 func (d *FileDialog) listen(event.Event) {}
 
@@ -33,10 +39,11 @@ func (d *FileDialog) open(filters []FileFilter) (string, error) {
 	return ask("openDialog", js.Undefined(), filters)
 }
 
-// save shows the page's Save As dialog of server files, suggesting name
-// (its last element, without a folder).
+// save shows the page's Save As dialog of server files, suggesting name:
+// a /server path opens the dialog in that document's folder, and of any
+// other only its last element is kept.
 func (d *FileDialog) save(name string, filters []FileFilter) (string, error) {
-	return ask("saveDialog", js.ValueOf(path.Base(name)), filters)
+	return ask("saveDialog", js.ValueOf(name), filters)
 }
 
 // ask calls window.officeweb[method](arg, exts) and waits for the

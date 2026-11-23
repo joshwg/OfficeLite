@@ -1,7 +1,7 @@
 // limits.go holds every limit and tunable of the web server in one
 // place: sessions, login throttling, credentials, storage quota, request
 // caps and HTTP timeouts. Each name says which area owns it (Session…,
-// Login…, Password…, Username…, FileName…, File…, HTTP…). The rules for
+// Login…, Password…, Username…, FileName…, File…, Folder…, HTTP…). The rules for
 // usernames and file names are in web/names.
 
 package web
@@ -95,6 +95,15 @@ const (
 	// may have, extension included (names are ASCII, so also the most
 	// bytes). The other file-name rules are in web/names.
 	FileNameMaxLength = 64
+
+	// FolderMaxDepth is how deep a user's folders may nest: a document
+	// may sit at most this many folders down ("A/B/C/D/Budget.xlsx").
+	// Folder names follow the file-name rules (web/names).
+	FolderMaxDepth = 4
+
+	// FolderMaxCount is the most folders a user may have in all. Folders
+	// take no quota of their own, so this keeps their number in check.
+	FolderMaxCount = 1000
 
 	// RecentMaxBytes is the largest recent-files list (the apps' File →
 	// Recent, kept per user on the server) that may be stored. A full

@@ -10,6 +10,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+
+	"officelite/common/doctype"
 )
 
 // OpenHereOnlyEmpty is the message for a file the Open dialog gave
@@ -74,6 +76,61 @@ func (c ChooseOpen) Start() {
 		}
 		c.Calls.Post(func() { c.Read(rc) })
 	}()
+}
+
+// ChosenData is where a file the Open dialog gave without a path (the
+// browser's picker) goes, for ChosenData.Start.
+type ChosenData struct {
+	Own   doctype.Kind // the window's own kind: Document or Spreadsheet
+	Calls *CallQueue
+	// Pristine reports whether the window may take the file.
+	Pristine func() bool
+	// Load reads data into this window, Fail shows a failure; both on
+	// the UI goroutine.
+	Load func(data []byte)
+	Fail func(err error)
+}
+
+// Start reads rc and closes it on a goroutine, then, on the UI goroutine,
+// tells the file's kind from its contents (Own when they don't say): the
+// other app's kind, or any file while the window isn't pristine, opens in
+// a new browser tab of the right app (OpenDataInTab); otherwise Load gets
+// it. Where there are no tabs, the other app's kind fails and the rest go
+// to Load, which refuses them when the window isn't pristine.
+func (c ChosenData) Start(rc io.ReadCloser) {
+	go func() {
+		data, err := io.ReadAll(rc)
+		if closeErr := rc.Close(); err == nil {
+			err = closeErr
+		}
+		c.Calls.Post(func() {
+			if err != nil {
+				c.Fail(err)
+				return
+			}
+			kind := doctype.Detect("", data)
+			if kind != doctype.Document && kind != doctype.Spreadsheet {
+				kind = c.Own
+			}
+			if (kind != c.Own || !c.Pristine()) && OpenDataInTab(data, kind) {
+				return
+			}
+			if kind != c.Own {
+				c.Fail(errWrongApp(kind))
+				return
+			}
+			c.Load(data)
+		})
+	}()
+}
+
+// errWrongApp is the failure for a file of kind opened in the other app
+// where it can't be handed over.
+func errWrongApp(kind doctype.Kind) error {
+	if kind == doctype.Document {
+		return errors.New("it is a document; open it in WordLite")
+	}
+	return errors.New("it is a spreadsheet; open it in ExcelLite")
 }
 
 // CloseChosen closes a file the Open dialog gave that isn't read after

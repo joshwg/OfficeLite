@@ -71,6 +71,7 @@ func New(cfg Config) (*Server, error) {
 		"warnSeconds":  func() int { return int(web.SessionIdleWarning.Seconds()) },
 		"pingSeconds":  func() int { return int(web.SessionKeepAliveEvery.Seconds()) },
 		"maxFileName":  func() int { return web.FileNameMaxLength },
+		"maxDepth":     func() int { return web.FolderMaxDepth },
 		"storableExts": func() string { return strings.Join(names.StorableExts, " ") },
 	}
 	for _, name := range pageNames {
@@ -103,14 +104,18 @@ func New(cfg Config) (*Server, error) {
 	m.HandleFunc("GET /client/{file}", s.user(s.clientFile))
 	m.HandleFunc("GET /files", s.user(s.filesPage))
 	m.HandleFunc("POST /files/upload", s.user(s.uploadFiles))
+	m.HandleFunc("POST /files/mkdir", s.user(s.makeFolder))
 	m.HandleFunc("POST /files/rename", s.user(s.renameFile))
+	m.HandleFunc("POST /files/move", s.user(s.moveFile))
 	m.HandleFunc("POST /files/delete", s.user(s.deleteFile))
 	m.HandleFunc("GET /api/ping", s.user(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) }))
 	m.HandleFunc("GET /api/files", s.user(s.apiList))
-	m.HandleFunc("GET /api/files/{name}", s.user(s.apiGet))
-	m.HandleFunc("PUT /api/files/{name}", s.user(s.apiPut))
-	m.HandleFunc("POST /api/files/{name}/rename", s.user(s.apiRename))
-	m.HandleFunc("DELETE /api/files/{name}", s.user(s.apiDelete))
+	m.HandleFunc("GET /api/files/{path...}", s.user(s.apiGet))
+	m.HandleFunc("PUT /api/files/{path...}", s.user(s.apiPut))
+	m.HandleFunc("DELETE /api/files/{path...}", s.user(s.apiDelete))
+	m.HandleFunc("PUT /api/folders/{path...}", s.user(s.apiMakeFolder))
+	m.HandleFunc("DELETE /api/folders/{path...}", s.user(s.apiDeleteFolder))
+	m.HandleFunc("POST /api/move", s.user(s.apiMove))
 	m.HandleFunc("GET /api/recent", s.user(s.apiRecent))
 	m.HandleFunc("PUT /api/recent", s.user(s.apiSetRecent))
 	m.HandleFunc("GET /account", s.user(s.accountPage))

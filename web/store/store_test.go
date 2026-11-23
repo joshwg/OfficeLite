@@ -110,6 +110,12 @@ func TestSessions(t *testing.T) {
 	if err != nil || sess.User.ID != u.ID {
 		t.Fatalf("SessionByHash = %+v, %v", sess, err)
 	}
+	if err := s.ExtendSession("missing", now.Add(time.Hour)); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Extend missing: err = %v", err)
+	}
+	if err := s.ExtendSession("tok", now.Add(time.Hour)); err != nil {
+		t.Fatalf("Extend: %v", err)
+	}
 	if _, err := s.SessionByHash("tok", now.Add(time.Hour)); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expired session: err = %v", err)
 	}

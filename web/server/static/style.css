@@ -118,6 +118,11 @@ th { font-weight: 600; color: var(--muted); font-size: 0.9rem; }
 .files .actions .row { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: flex-start; min-width: 30em; }
 .files .actions form { margin: 0; }
 .files .actions input[name=to] { width: 12em; }
+.files .actions input[name=dest] { width: 12em; }
+.files .open.folder { border-left-color: var(--muted); }
+/* The Files page's folder path, and the file dialog's. */
+.crumbs { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin: 0 0 12px; overflow-wrap: anywhere; }
+.crumbs button { padding: 2px 6px; }
 
 /* Login cooldown countdown (login.js). */
 .cooldown { margin-top: 14px; text-align: center; }
@@ -160,6 +165,11 @@ button.eye svg { width: 18px; height: 18px; fill: none; stroke: currentColor; st
 .fd-buttons { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 .fd-buttons .local { margin-right: auto; }
 .fd .err { margin: 0; }
+.fd .crumbs { margin: 0; }
+.fd-list .folder span:first-child::before { content: "📁 "; }
+.fd-list .up span:first-child::before { content: "↑ "; }
+.fd-newfolder { display: flex; gap: 8px; }
+.fd-newfolder input { flex: 1; }
 
 /* Messages over the app pages: serverfs.js's errors and idle.js's
    countdown. */

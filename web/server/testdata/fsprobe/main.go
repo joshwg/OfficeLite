@@ -2,8 +2,8 @@
 // with static/serverfs.js as its file system and a test server behind
 // it, it does what WordLite and ExcelLite do to /server files (a safe
 // save through common/atomicfile, reading a zip with ReadAt, stat,
-// listing, renaming, deleting, lock files) and checks the errors the
-// server's rules turn into. It prints a line per failed check and exits
+// listing, renaming, deleting, lock files, folders) and checks the
+// errors the server's rules turn into. It prints a line per failed check and exits
 // 1 if there was any.
 
 //go:build js
@@ -114,8 +114,62 @@ func main() {
 	_, err = os.Stat("/server/Final.docx")
 	check(errors.Is(err, fs.ErrNotExist), "stat after remove: %v", err)
 
+	folders()
+
 	if failed > 0 {
 		os.Exit(1)
 	}
 	fmt.Println("ok")
+}
+
+// folders checks folders: making them, a safe save and a lock file in
+// one, listing, stat, moving a document and renaming a folder, and
+// removing folders.
+func folders() {
+	check(os.MkdirAll("/server/Reports/2026", 0o755) == nil, "MkdirAll")
+	fi, err := os.Stat("/server/reports/2026")
+	check(err == nil && fi.IsDir(), "stat folder in another case: %v %v", fi, err)
+	err = os.Mkdir("/server/Reports", 0o755)
+	check(errors.Is(err, fs.ErrExist), "Mkdir existing: %v", err)
+	err = os.Mkdir("/server/.hidden", 0o755)
+	check(err != nil, "Mkdir of a hidden folder worked")
+	err = os.Mkdir("/server/Old.docx", 0o755)
+	check(err != nil, "Mkdir with a file's extension worked")
+	err = os.Mkdir("/server/Missing/Sub", 0o755)
+	check(errors.Is(err, fs.ErrNotExist), "Mkdir in a missing folder: %v", err)
+
+	check(atomicfile.WriteFile("/server/Reports/2026/Plan.docx", []byte("plan"), 0o644) == nil, "safe save in a folder")
+	b, err := os.ReadFile("/server/REPORTS/2026/plan.docx")
+	check(err == nil && string(b) == "plan", "read back from the folder: %q %v", b, err)
+	lf, err := os.OpenFile("/server/Reports/2026/~$Plan.docx", os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o644)
+	check(err == nil, "lock file in a folder: %v", err)
+	if lf != nil {
+		_ = lf.Close()
+	}
+	entries, err := os.ReadDir("/server/Reports/2026")
+	var listed []string
+	for _, e := range entries {
+		listed = append(listed, e.Name())
+	}
+	check(err == nil && slices.Equal(listed, []string{"Plan.docx"}), "ReadDir of the folder: %v %v", listed, err)
+	check(os.Remove("/server/Reports/2026/~$Plan.docx") == nil, "remove the lock file")
+	entries, err = os.ReadDir("/server")
+	folder := slices.IndexFunc(entries, func(e fs.DirEntry) bool { return e.Name() == "Reports" })
+	check(err == nil && folder >= 0 && entries[folder].IsDir(), "ReadDir top: %v %v", entries, err)
+	_, err = os.ReadDir("/server/Nowhere")
+	check(errors.Is(err, fs.ErrNotExist), "ReadDir missing: %v", err)
+	err = os.WriteFile("/server/Nowhere/x.docx", []byte("x"), 0o644)
+	check(errors.Is(err, fs.ErrNotExist), "save into a missing folder: %v", err)
+
+	check(os.Rename("/server/Reports/2026/Plan.docx", "/server/Reports/Plan.docx") == nil, "move a document up")
+	check(os.Rename("/server/Reports/2026", "/server/Reports/Done") == nil, "rename a folder")
+	fi, err = os.Stat("/server/Reports/Done")
+	check(err == nil && fi.IsDir(), "renamed folder: %v %v", fi, err)
+	err = os.Remove("/server/Reports")
+	check(errors.Is(err, syscall.ENOTEMPTY), "remove a full folder: %v", err)
+	check(os.Remove("/server/Reports/Done") == nil, "remove an empty folder")
+	check(os.Remove("/server/Reports/Plan.docx") == nil, "remove the document")
+	check(os.Remove("/server/Reports") == nil, "remove the emptied folder")
+	_, err = os.Stat("/server/Reports")
+	check(errors.Is(err, fs.ErrNotExist), "stat removed folder: %v", err)
 }

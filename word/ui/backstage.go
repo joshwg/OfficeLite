@@ -83,6 +83,9 @@ func (d *window) handleBackstage(ev gui.BackstageEvent) {
 	case gui.ActBrowse:
 		d.closeAfterSave = false
 		d.openDialog()
+	case gui.ActBrowseLocal:
+		d.closeAfterSave = false
+		d.openLocal()
 	case gui.ActSave:
 		d.save()
 	case gui.ActClose:

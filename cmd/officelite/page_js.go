@@ -49,7 +49,7 @@ func localFile() []byte {
 }
 
 // openTab opens kind's app in a new browser tab: with the server document
-// path, or a blank one for "". It reports false for a file that exists
+// path (in any of the user's folders), or a blank one for "". It reports false for a file that exists
 // only in this page (one opened from the user's computer), which another
 // tab can't reach; that one gets a window here as on the desktop. When
 // the browser blocks the tab, the page offers a link instead
@@ -67,7 +67,7 @@ func openTab(kind doctype.Kind, path string) bool {
 	url := app
 	if path != "" {
 		name, ok := strings.CutPrefix(path, serverDir)
-		if !ok || name == "" || strings.Contains(name, "/") {
+		if !ok || name == "" {
 			return false
 		}
 		url += "?open=" + g.Call("encodeURIComponent", name).String()

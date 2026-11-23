@@ -1,19 +1,26 @@
-// Server storage for documents: the Files page (upload, download, rename,
-// delete, the quota) and the JSON API the WebAssembly client's file
-// system (static/serverfs.js) uses to open and save documents in place.
-// Each user sees only their own folder (web/files); every name follows
-// the rules in web/names.
+// Server storage for documents (cloud files): the Files page (folders,
+// upload, download, rename, move, delete, the quota) and the JSON API the
+// WebAssembly client's file system (static/serverfs.js) uses to open and
+// save documents in place. Each user sees only their own folder
+// (web/files); every name and path follows the rules in web/names.
+// Paths join folder names and a file name with '/', each part escaped:
+// "Reports/2026/Budget%20%231.xlsx".
 //
-//	GET    /api/files               {"used", "quota", "files": [{"name", "size", "modified"}]}
-//	GET    /api/files/{name}        the document (as an attachment)
-//	PUT    /api/files/{name}        store the body (?replace=0: only if new)
-//	POST   /api/files/{name}/rename {"to": "new name"}
-//	DELETE /api/files/{name}
+//	GET    /api/files?dir=PATH      {"used", "quota", "dir", "folders": [{"name", "path", "modified"}],
+//	                                 "files": [{"name", "path", "size", "modified"}]}
+//	GET    /api/files/{path}        the document (as an attachment)
+//	PUT    /api/files/{path}        store the body (?replace=0: only if new)
+//	DELETE /api/files/{path}
+//	PUT    /api/folders/{path}      make the folder
+//	DELETE /api/folders/{path}      delete the folder (?all=1: with all in it, else only if empty)
+//	POST   /api/move                {"from": path, "to": path}: move or rename a document or folder
 //	GET    /api/recent              the apps' recent-files list (a JSON array)
 //	PUT    /api/recent              store the body as that list
 //
-// API errors are {"error": "message"} with 400 (name breaks a rule), 404,
-// 409 (name taken), 413 (file over web.FileMaxBytes) or 507 (quota).
+// API errors are {"error": "message", "code": errno} with 400 (name
+// breaks a rule), 404, 409 (name taken, or a folder isn't empty: code
+// ENOTEMPTY), 413 (file over web.FileMaxBytes) or 507 (quota, or too
+// many folders).
 
 package server
 
@@ -39,13 +46,15 @@ func fileStatus(err error) int {
 	switch {
 	case errors.As(err, &ne):
 		return http.StatusBadRequest
+	case errors.Is(err, files.ErrTooDeep), errors.Is(err, files.ErrIntoItself):
+		return http.StatusBadRequest
 	case errors.Is(err, files.ErrNotFound):
 		return http.StatusNotFound
-	case errors.Is(err, files.ErrExists):
+	case errors.Is(err, files.ErrExists), errors.Is(err, files.ErrNotEmpty):
 		return http.StatusConflict
 	case errors.Is(err, files.ErrTooLarge), errors.As(err, &mbe):
 		return http.StatusRequestEntityTooLarge
-	case errors.Is(err, files.ErrQuota):
+	case errors.Is(err, files.ErrQuota), errors.Is(err, files.ErrTooManyFolders):
 		return http.StatusInsufficientStorage
 	default:
 		return http.StatusInternalServerError
@@ -94,36 +103,45 @@ func (s *Server) writeJSON(w http.ResponseWriter, status int, v any) {
 	}
 }
 
-// apiError sends a file store error as {"error": message}.
+// apiError sends a file store error as {"error": message}, with the
+// errno the client's file system should report where the status alone
+// doesn't say it ("code").
 func (s *Server) apiError(w http.ResponseWriter, err error) {
-	s.writeJSON(w, fileStatus(err), map[string]string{"error": s.fileMessage(err)})
+	body := map[string]string{"error": s.fileMessage(err)}
+	if errors.Is(err, files.ErrNotEmpty) {
+		body["code"] = "ENOTEMPTY"
+	}
+	s.writeJSON(w, fileStatus(err), body)
 }
 
 // listing is GET /api/files's answer.
 type listing struct {
-	Used  int64        `json:"used"`
-	Quota int64        `json:"quota"`
-	Files []files.Info `json:"files"`
+	files.Listing
+	Quota int64 `json:"quota"`
 }
 
-// apiList lists the user's documents.
+// apiList lists one of the user's folders (?dir=, the top one when
+// absent).
 func (s *Server) apiList(w http.ResponseWriter, r *http.Request) {
 	u := currentUser(r)
-	docs, used, err := s.cfg.Files.List(u.Username)
+	l, err := s.cfg.Files.List(u.Username, r.URL.Query().Get("dir"))
 	if err != nil {
 		s.apiError(w, err)
 		return
 	}
-	if docs == nil {
-		docs = []files.Info{} // [] rather than null
+	if l.Folders == nil {
+		l.Folders = []files.Folder{} // [] rather than null
 	}
-	s.writeJSON(w, http.StatusOK, listing{Used: used, Quota: u.QuotaBytes, Files: docs})
+	if l.Files == nil {
+		l.Files = []files.Info{}
+	}
+	s.writeJSON(w, http.StatusOK, listing{Listing: l, Quota: u.QuotaBytes})
 }
 
 // apiGet sends one of the user's documents, always as an attachment so a
 // browser never shows a stored file as a page of this site.
 func (s *Server) apiGet(w http.ResponseWriter, r *http.Request) {
-	f, info, err := s.cfg.Files.Open(currentUser(r).Username, r.PathValue("name"))
+	f, info, err := s.cfg.Files.Open(currentUser(r).Username, r.PathValue("path"))
 	if err != nil {
 		s.apiError(w, err)
 		return
@@ -150,7 +168,7 @@ func (s *Server) apiPut(w http.ResponseWriter, r *http.Request) {
 	s.allowUpload(w)
 	u := currentUser(r)
 	replace := r.URL.Query().Get("replace") != "0"
-	info, err := s.cfg.Files.Put(u.Username, r.PathValue("name"), r.Body, u.QuotaBytes, replace)
+	info, err := s.cfg.Files.Put(u.Username, r.PathValue("path"), r.Body, u.QuotaBytes, replace)
 	if err != nil {
 		s.apiError(w, err)
 		return
@@ -202,26 +220,50 @@ func (s *Server) apiSetRecent(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// apiRename renames one of the user's documents to the posted {"to"}.
-func (s *Server) apiRename(w http.ResponseWriter, r *http.Request) {
+// apiMove moves or renames one of the user's documents or folders, as
+// posted: {"from": path, "to": path}. It answers {"path"}: the new path
+// as stored.
+func (s *Server) apiMove(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		To string `json:"to"`
+		From string `json:"from"`
+		To   string `json:"to"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, web.HTTPFormMaxBytes)).Decode(&req); err != nil {
 		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad request"})
 		return
 	}
-	info, err := s.cfg.Files.Rename(currentUser(r).Username, r.PathValue("name"), req.To)
+	path, err := s.cfg.Files.Move(currentUser(r).Username, req.From, req.To)
 	if err != nil {
 		s.apiError(w, err)
 		return
 	}
-	s.writeJSON(w, http.StatusOK, info)
+	s.writeJSON(w, http.StatusOK, map[string]string{"path": path})
+}
+
+// apiMakeFolder makes one of the user's folders.
+func (s *Server) apiMakeFolder(w http.ResponseWriter, r *http.Request) {
+	f, err := s.cfg.Files.MakeFolder(currentUser(r).Username, r.PathValue("path"))
+	if err != nil {
+		s.apiError(w, err)
+		return
+	}
+	s.writeJSON(w, http.StatusOK, f)
+}
+
+// apiDeleteFolder deletes one of the user's folders: only an empty one,
+// unless ?all=1.
+func (s *Server) apiDeleteFolder(w http.ResponseWriter, r *http.Request) {
+	all := r.URL.Query().Get("all") == "1"
+	if err := s.cfg.Files.DeleteFolder(currentUser(r).Username, r.PathValue("path"), all); err != nil {
+		s.apiError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // apiDelete deletes one of the user's documents.
 func (s *Server) apiDelete(w http.ResponseWriter, r *http.Request) {
-	if err := s.cfg.Files.Delete(currentUser(r).Username, r.PathValue("name")); err != nil {
+	if err := s.cfg.Files.Delete(currentUser(r).Username, r.PathValue("path")); err != nil {
 		s.apiError(w, err)
 		return
 	}
@@ -230,21 +272,36 @@ func (s *Server) apiDelete(w http.ResponseWriter, r *http.Request) {
 
 // ---- the Files page ----
 
-// fileRow is one document on the Files page.
+// crumb is one step of the Files page's folder path, from the top.
+type crumb struct {
+	Name string
+	Dir  string // its path, for /files?dir=
+}
+
+// fileRow is one document or folder on the Files page.
 type fileRow struct {
-	files.Info
-	App  string // "word" or "excel": the app that opens it, "" for none
-	Href string // escaped name for URLs
+	Name     string
+	Path     string // with its folders, as stored
+	Folder   bool
+	Size     int64
+	Modified time.Time
+	App      string // "word" or "excel": the app that opens a document, "" for none
+	Href     string // the escaped path, for /api/files/
 }
 
 // filesData is the Files page's data.
 type filesData struct {
-	Files   []fileRow
-	Used    int64
-	Quota   int64
-	Percent int // of the quota used, 0–100
-	MaxFile int64
-	MaxName int
+	Dir      string  // the folder shown, as stored; "" for the top
+	Crumbs   []crumb // the folders above it and itself, from the top
+	Rows     []fileRow
+	Folders  []string // all the user's folders, for moving to
+	CanNest  bool     // whether Dir may hold more folders (web.FolderMaxDepth)
+	Used     int64
+	Quota    int64
+	Percent  int // of the quota used, 0–100
+	MaxFile  int64
+	MaxName  int
+	MaxDepth int
 }
 
 // appFor is the app that opens a document named name: "word", "excel",
@@ -259,15 +316,65 @@ func appFor(name string) string {
 	return ""
 }
 
-// filesPage lists the user's documents.
-func (s *Server) filesPage(w http.ResponseWriter, r *http.Request) {
-	s.renderFiles(w, r, http.StatusOK, message(r), "")
+// escapePath escapes each part of a '/'-joined path for a URL path.
+func escapePath(p string) string {
+	parts := strings.Split(p, "/")
+	for i, part := range parts {
+		parts[i] = url.PathEscape(part)
+	}
+	return strings.Join(parts, "/")
 }
 
-// renderFiles shows the Files page with a message or an error.
-func (s *Server) renderFiles(w http.ResponseWriter, r *http.Request, status int, msg, errMsg string) {
+// parentOf is the folder holding path ("" for the top).
+func parentOf(p string) string {
+	if i := strings.LastIndexByte(p, '/'); i >= 0 {
+		return p[:i]
+	}
+	return ""
+}
+
+// joinDir joins a folder path and a name ("" is the top folder).
+func joinDir(dir, name string) string {
+	dir = strings.Trim(dir, " /")
+	if dir == "" {
+		return name
+	}
+	return dir + "/" + name
+}
+
+// filesURL is the Files page showing folder dir, with message code msg
+// ("" for none).
+func filesURL(dir, msg string) string {
+	q := url.Values{}
+	if dir != "" {
+		q.Set("dir", dir)
+	}
+	if msg != "" {
+		q.Set("msg", msg)
+	}
+	if len(q) == 0 {
+		return "/files"
+	}
+	return "/files?" + q.Encode()
+}
+
+// filesPage lists one of the user's folders (?dir=, the top one when
+// absent).
+func (s *Server) filesPage(w http.ResponseWriter, r *http.Request) {
+	s.renderFiles(w, r, http.StatusOK, r.URL.Query().Get("dir"), message(r), "")
+}
+
+// renderFiles shows the Files page at folder dir with a message or an
+// error; a folder that is gone shows the top one.
+func (s *Server) renderFiles(w http.ResponseWriter, r *http.Request, status int, dir, msg, errMsg string) {
 	u := currentUser(r)
-	docs, used, err := s.cfg.Files.List(u.Username)
+	l, err := s.cfg.Files.List(u.Username, dir)
+	if dir != "" && (errors.Is(err, files.ErrNotFound) || fileStatus(err) == http.StatusBadRequest) {
+		if errMsg == "" {
+			errMsg = "That folder isn't there any more."
+		}
+		l, err = s.cfg.Files.List(u.Username, "")
+	}
 	var ne *files.NameError
 	if errors.As(err, &ne) {
 		errMsg = noStorage
@@ -275,19 +382,41 @@ func (s *Server) renderFiles(w http.ResponseWriter, r *http.Request, status int,
 		s.serverError(w, err)
 		return
 	}
-	data := filesData{Used: used, Quota: u.QuotaBytes, MaxFile: web.FileMaxBytes, MaxName: web.FileNameMaxLength}
-	if u.QuotaBytes > 0 {
-		data.Percent = int(min(100, used*100/u.QuotaBytes))
+	all, err := s.cfg.Files.AllFolders(u.Username)
+	if err != nil && !errors.As(err, &ne) {
+		s.serverError(w, err)
+		return
 	}
-	for _, d := range docs {
-		data.Files = append(data.Files, fileRow{Info: d, App: appFor(d.Name), Href: url.PathEscape(d.Name)})
+	depth := 0
+	if l.Dir != "" {
+		depth = strings.Count(l.Dir, "/") + 1
+	}
+	data := filesData{Dir: l.Dir, Folders: all, CanNest: depth < web.FolderMaxDepth, Used: l.Used, Quota: u.QuotaBytes,
+		MaxFile: web.FileMaxBytes, MaxName: web.FileNameMaxLength, MaxDepth: web.FolderMaxDepth}
+	if u.QuotaBytes > 0 {
+		data.Percent = int(min(100, l.Used*100/u.QuotaBytes))
+	}
+	if l.Dir != "" {
+		at := ""
+		for _, part := range strings.Split(l.Dir, "/") {
+			at = joinDir(at, part)
+			data.Crumbs = append(data.Crumbs, crumb{Name: part, Dir: at})
+		}
+	}
+	for _, f := range l.Folders {
+		data.Rows = append(data.Rows, fileRow{Name: f.Name, Path: f.Path, Folder: true, Modified: f.Modified})
+	}
+	for _, d := range l.Files {
+		data.Rows = append(data.Rows, fileRow{Name: d.Name, Path: d.Path, Size: d.Size, Modified: d.Modified,
+			App: appFor(d.Name), Href: escapePath(d.Path)})
 	}
 	s.render(w, status, "files", page{Title: "Files", User: &u, Msg: msg, Err: errMsg, Data: data})
 }
 
-// uploadFiles stores the files of a multipart upload form, replacing
-// ones of the same name only when its "replace" box (which comes before
-// the files) is ticked. Every file is tried; the errors are listed.
+// uploadFiles stores the files of a multipart upload form in its folder
+// (its "dir" field), replacing ones of the same name only when its
+// "replace" box is ticked; both fields come before the files. Every file
+// is tried; the errors are listed.
 func (s *Server) uploadFiles(w http.ResponseWriter, r *http.Request) {
 	s.allowUpload(w)
 	u := currentUser(r)
@@ -299,7 +428,7 @@ func (s *Server) uploadFiles(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	replace, stored := false, 0
+	dir, replace, stored := "", false, 0
 	var problems []string
 	for {
 		part, err := mr.NextPart()
@@ -310,11 +439,17 @@ func (s *Server) uploadFiles(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		switch {
+		case part.FormName() == "dir":
+			b, err := io.ReadAll(io.LimitReader(part, web.HTTPFormMaxBytes))
+			if err != nil {
+				problems = append(problems, s.fileMessage(err))
+			}
+			dir = string(b)
 		case part.FormName() == "replace":
 			replace = true
 		case part.FormName() == "file" && part.FileName() != "":
 			name := part.FileName()
-			if _, err := s.cfg.Files.Put(u.Username, name, part, u.QuotaBytes, replace); err != nil {
+			if _, err := s.cfg.Files.Put(u.Username, joinDir(dir, name), part, u.QuotaBytes, replace); err != nil {
 				msg := s.fileMessage(err)
 				if errors.Is(err, files.ErrExists) {
 					msg += " (tick Replace to overwrite it)"
@@ -334,42 +469,88 @@ func (s *Server) uploadFiles(w http.ResponseWriter, r *http.Request) {
 		if stored > 0 {
 			msg = "Some files were uploaded."
 		}
-		s.renderFiles(w, r, http.StatusBadRequest, msg, strings.Join(problems, " · "))
+		s.renderFiles(w, r, http.StatusBadRequest, dir, msg, strings.Join(problems, " · "))
 	case stored == 0:
-		s.renderFiles(w, r, http.StatusBadRequest, "", "Choose one or more files to upload.")
+		s.renderFiles(w, r, http.StatusBadRequest, dir, "", "Choose one or more files to upload.")
 	default:
 		s.cfg.Log.Printf("%s uploaded %d file(s)", u.Username, stored)
-		http.Redirect(w, r, "/files?msg=uploaded", http.StatusSeeOther)
+		http.Redirect(w, r, filesURL(dir, "uploaded"), http.StatusSeeOther)
 	}
 }
 
-// renameFile renames one of the user's documents from the Files page.
+// makeFolder makes a folder named "name" in the Files page's folder
+// "dir".
+func (s *Server) makeFolder(w http.ResponseWriter, r *http.Request) {
+	if err := parseForm(w, r); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	dir := r.PostForm.Get("dir")
+	if _, err := s.cfg.Files.MakeFolder(currentUser(r).Username, joinDir(dir, r.PostForm.Get("name"))); err != nil {
+		s.renderFiles(w, r, fileStatus(err), dir, "", s.fileMessage(err))
+		return
+	}
+	http.Redirect(w, r, filesURL(dir, "folder"), http.StatusSeeOther)
+}
+
+// renameFile renames one of the user's documents or folders ("name", a
+// path) to "to" in the same folder, from the Files page.
 func (s *Server) renameFile(w http.ResponseWriter, r *http.Request) {
 	if err := parseForm(w, r); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	if _, err := s.cfg.Files.Rename(currentUser(r).Username, r.PostForm.Get("name"), r.PostForm.Get("to")); err != nil {
-		s.renderFiles(w, r, fileStatus(err), "", s.fileMessage(err))
+	from := r.PostForm.Get("name")
+	dir := parentOf(from)
+	if _, err := s.cfg.Files.Move(currentUser(r).Username, from, joinDir(dir, r.PostForm.Get("to"))); err != nil {
+		s.renderFiles(w, r, fileStatus(err), dir, "", s.fileMessage(err))
 		return
 	}
-	http.Redirect(w, r, "/files?msg=renamed", http.StatusSeeOther)
+	http.Redirect(w, r, filesURL(dir, "renamed"), http.StatusSeeOther)
 }
 
-// deleteFile deletes one of the user's documents from the Files page,
-// once the user said Yes to the page's question (confirm=1).
+// moveFile moves one of the user's documents or folders ("name", a path)
+// into the folder "dest" ("" or "/" for the top), from the Files page.
+func (s *Server) moveFile(w http.ResponseWriter, r *http.Request) {
+	if err := parseForm(w, r); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	from := r.PostForm.Get("name")
+	dir := parentOf(from)
+	base := from[strings.LastIndexByte(from, '/')+1:]
+	if _, err := s.cfg.Files.Move(currentUser(r).Username, from, joinDir(r.PostForm.Get("dest"), base)); err != nil {
+		s.renderFiles(w, r, fileStatus(err), dir, "", s.fileMessage(err))
+		return
+	}
+	http.Redirect(w, r, filesURL(dir, "moved"), http.StatusSeeOther)
+}
+
+// deleteFile deletes one of the user's documents, or a folder with all
+// in it, from the Files page, once the user said Yes to the page's
+// question (confirm=1).
 func (s *Server) deleteFile(w http.ResponseWriter, r *http.Request) {
 	if err := parseForm(w, r); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
+	name := r.PostForm.Get("name")
+	dir := parentOf(name)
 	if r.PostForm.Get("confirm") == "" {
-		s.renderFiles(w, r, http.StatusBadRequest, "", "Confirm the deletion: say Yes when asked (the page needs JavaScript).")
+		s.renderFiles(w, r, http.StatusBadRequest, dir, "", "Confirm the deletion: say Yes when asked (the page needs JavaScript).")
 		return
 	}
-	if err := s.cfg.Files.Delete(currentUser(r).Username, r.PostForm.Get("name")); err != nil {
-		s.renderFiles(w, r, fileStatus(err), "", s.fileMessage(err))
+	u := currentUser(r).Username
+	var err error
+	msg := "filedeleted"
+	if files.IsFolderPath(name) {
+		err, msg = s.cfg.Files.DeleteFolder(u, name, true), "folderdeleted"
+	} else {
+		err = s.cfg.Files.Delete(u, name)
+	}
+	if err != nil {
+		s.renderFiles(w, r, fileStatus(err), dir, "", s.fileMessage(err))
 		return
 	}
-	http.Redirect(w, r, "/files?msg=filedeleted", http.StatusSeeOther)
+	http.Redirect(w, r, filesURL(dir, msg), http.StatusSeeOther)
 }

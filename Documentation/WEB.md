@@ -35,12 +35,20 @@ so nobody inherits someone else's files.
 
 ## Documents on the server
 
-Each user has their own documents on the server, 1 GiB by default. In the
+Each user has their own documents on the server — **cloud files** — 1 GiB
+by default, which they can sort into **folders** (up to 4 deep). In the
 apps they look like a folder named `/server`:
 
-- **File → Open → Browse** shows your server files (the ones the app can
-  open). **From this computer…** opens the browser's file picker instead.
-- **File → Save As** asks for a name on the server; a name typed without
+- **File → Open → Browse** opens the browser's file picker straight away,
+  for a file on your computer.
+- **File → Open → Cloud files** lists your folders and the files in them
+  that the app can open. Click a folder to go into it, and the path at the
+  top (*Cloud files › Reports › 2026*) or **Up to …** to go back.
+  **New folder** makes a folder where you are. **From this computer…**
+  goes to the browser's picker too. Ctrl+F12 opens the same dialog. It
+  starts in the folder you last used.
+- **File → Save As** shows the same folders, starting in the document's
+  own folder. Type a name for the folder you are in; a name typed without
   an extension gets the format's. Saving over an existing file asks first.
   **Download to this computer** saves by downloading instead.
 - **Save** (Ctrl+S) writes a server document back in place.
@@ -55,10 +63,13 @@ apps they look like a folder named `/server`:
   themselves a few seconds after each change. (On the desktop it stays off
   until you turn it on.)
 
-The **Files** page lists your documents with their sizes, and lets you
-upload (several at once; tick *Replace* to overwrite files of the same
-name), download, rename and delete them (delete asks Yes/No). Clicking a
-document's name opens it in WordLite or ExcelLite.
+The **Files** page lists one folder at a time, its folders first, with
+the path to it at the top. It lets you make folders, upload into the
+folder shown (several files at once; tick *Replace* to overwrite files of
+the same name), download, rename, move (type or pick the folder; blank is
+the top) and delete. Delete asks Yes/No; deleting a folder deletes
+everything in it. Clicking a folder goes into it; clicking a document's
+name opens it in WordLite or ExcelLite.
 
 Documents from your computer still work as before: open them from your
 disk and save by downloading. One opened while the window already holds a
@@ -67,10 +78,11 @@ browser allows a page to open a tab on its own, a small dialog asks you
 to click **Open in a new tab**. Such a document has no file name of its
 own, so **Save** asks where to save it.
 
-## File name rules
+## File and folder name rules
 
-Every document stored on the server follows these rules. The Files page,
-the Save As dialog and the server all check them.
+Every document stored on the server follows these rules, and so does every
+folder, except for the extension. The Files page, the dialogs and the
+server all check them.
 
 | Rule | Detail |
 |------|--------|
@@ -81,8 +93,9 @@ the Save As dialog and the server all check them.
 | No invisible or non-ASCII characters | Nothing above 0177 octal: no accented letters, no zero-width or other invisible characters, no look-alikes. |
 | Forbidden characters | `/`, `\` and `*`. |
 | Forbidden starts | A name may not start with `.` (hidden and temporary files) or `~$` (Office lock files). |
-| Extension | Must end in one of `.docx .docm .dotx .dotm .doc .dot .pages .xlsx .xlsm .xls .csv .tsv .numbers .txt .pdf` (any case). |
-| Case | Ignored when comparing: `Budget.xlsx` and `budget.xlsx` are the same file, which keeps the case it was first saved with. |
+| Extension | A file name must end in one of `.docx .docm .dotx .dotm .doc .dot .pages .xlsx .xlsm .xls .csv .tsv .numbers .txt .pdf` (any case). A folder name may **not** end in any of them (`Reports.docx` can't be a folder), so a file and a folder never share a name. |
+| Case | Ignored when comparing: `Budget.xlsx` and `budget.xlsx` are the same file, which keeps the case it was first saved with; the same goes for folders. |
+| Depth | Folders nest at most **4 deep** (`A/B/C/D/Budget.xlsx`). |
 
 ## Size limits
 
@@ -90,6 +103,7 @@ the Save As dialog and the server all check them.
 |-------|-------|
 | Storage per user | 1 GiB (all of the user's documents together) |
 | One document | 256 MiB |
+| Folders per user | 1,000 |
 | Time to upload one document | 10 minutes |
 
 A save or upload over a limit is refused whole; the document already on
@@ -123,16 +137,27 @@ data/
       .recent.json    josh's File → Recent list
       Budget.xlsx
       Memo.docx
+      Reports/
+        2026/
+          Q1.xlsx
 ```
 
-The documents are ordinary files under their own names: back up the whole
-data directory (the database and `users/`) and restore it the same way. A
-save writes a hidden temporary file (`.upload-…`) in the user's folder and
-renames it over the document, so a document is never left half written.
+The documents are ordinary files under their own names, and the users'
+folders are real folders: back up the whole data directory (the database
+and `users/`) and restore it the same way. A save writes a hidden
+temporary file (`.upload-…`) in the document's folder and renames it over
+the document, so a document is never left half written.
+
+The data directory must be outside any web space. Apache only forwards
+requests to officeweb (it serves no files itself), and officeweb sends
+documents only to their logged-in owner. It refuses to start when the
+data directory is, holds or sits inside the client directory (`-client`),
+the one folder it serves as it is. The sample unit keeps the data in
+`/var/lib/officeweb`, readable only by the `officeweb` user.
 
 `web/deploy/` has a sample Apache configuration and systemd unit. All the
-server's limits are named constants in `web/limits.go`; the username and
-file-name rules are in `web/names`.
+server's limits are named constants in `web/limits.go`; the username,
+file-name and folder-name rules are in `web/names`.
 
 ## Limitations
 

@@ -13,8 +13,8 @@ const realFetch = globalThis.fetch;
 globalThis.fetch = (url, init = {}) =>
   realFetch(base + url, { ...init, headers: { ...(init.headers || {}), Cookie: cookie } });
 
-// The file-name rules a browser gets from serverfs.js's script tag.
-globalThis.officewebRules = { maxName: process.env.MAX_NAME, exts: process.env.EXTS };
+// The file- and folder-name rules a browser gets from serverfs.js's script tag.
+globalThis.officewebRules = { maxName: process.env.MAX_NAME, maxDepth: process.env.MAX_DEPTH, exts: process.env.EXTS };
 
 // Node's own process stays (wasm_exec.js uses it when present); serverfs
 // replaces fs before wasm_exec.js would install its stub.

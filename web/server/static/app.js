@@ -1,8 +1,9 @@
 // app.js starts the OfficeLite WebAssembly client in the app named by
 // this script tag's data-app ("word" or "excel"), as the desktop
-// command line's --word / --excel would. With ?open=NAME in the address
-// (the Files page's links) it opens the user's server document NAME
-// instead, as /server/NAME (serverfs.js), in whichever app the file's
+// command line's --word / --excel would. With ?open=PATH in the address
+// (the Files page's links; "Reports/Budget.xlsx" for one in a folder) it
+// opens the user's cloud document PATH instead, as /server/PATH
+// (serverfs.js), in whichever app the file's
 // type calls for. With ?local=ID it was opened by another tab for a file
 // from the user's computer, and asks that tab for the file's contents
 // (serverfs.js, openDataTab), which the client opens as the Open dialog

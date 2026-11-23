@@ -10,42 +10,26 @@
 package gui
 
 import (
-	"io"
 	"syscall/js"
 
 	"officelite/common/doctype"
 )
 
-// OpenInTab reads rc (a file the Open dialog gave without a path, which
-// it closes) and opens it in a new tab of the app its contents call for
-// (own when they don't say). It reports false, leaving rc alone, where
-// there are no tabs: the desktop, or a page without the web server's
-// scripts. A read failure goes to fail on calls' UI goroutine.
-func OpenInTab(rc io.ReadCloser, own doctype.Kind, calls *CallQueue, fail func(error)) bool {
+// OpenDataInTab opens data, a file the Open dialog gave without a path,
+// in a new tab of kind's app (ExcelLite for anything but a document). It
+// reports false where there are no tabs: a page without the web server's
+// scripts.
+func OpenDataInTab(data []byte, kind doctype.Kind) bool {
 	ow := js.Global().Get("officeweb")
 	if !ow.Truthy() || !ow.Get("openDataTab").Truthy() {
 		return false
 	}
-	go func() {
-		data, err := io.ReadAll(rc)
-		if closeErr := rc.Close(); err == nil {
-			err = closeErr
-		}
-		if err != nil {
-			calls.Post(func() { fail(err) })
-			return
-		}
-		kind := doctype.Detect("", data)
-		if kind != doctype.Document && kind != doctype.Spreadsheet {
-			kind = own
-		}
-		app := "excel"
-		if kind == doctype.Document {
-			app = "word"
-		}
-		buf := js.Global().Get("Uint8Array").New(len(data))
-		js.CopyBytesToJS(buf, data)
-		ow.Call("openDataTab", app, buf)
-	}()
+	app := "excel"
+	if kind == doctype.Document {
+		app = "word"
+	}
+	buf := js.Global().Get("Uint8Array").New(len(data))
+	js.CopyBytesToJS(buf, data)
+	ow.Call("openDataTab", app, buf)
 	return true
 }

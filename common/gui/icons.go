@@ -24,6 +24,8 @@ var (
 	IconNew    = mustIcon(icons.ContentAdd)
 	IconOpen   = mustIcon(icons.FileFolderOpen)
 	IconFolder = mustIcon(icons.FileFolder)
+	IconPC     = mustIcon(icons.HardwareComputer)
+	IconCloud  = mustIcon(icons.FileCloud)
 	IconInfo   = mustIcon(icons.ActionInfo)
 	IconSave   = mustIcon(icons.ContentSave)
 	IconPrint  = mustIcon(icons.ActionPrint)

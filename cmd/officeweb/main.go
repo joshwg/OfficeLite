@@ -74,6 +74,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	if err := apart(dir, *clientDir); err != nil {
+		log.Fatal(err)
+	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		log.Fatal(err)
 	}
@@ -266,4 +269,24 @@ func cleanup(ctx context.Context, svc *auth.Service) {
 		case <-t.C:
 		}
 	}
+}
+
+// apart refuses a data folder that is, holds or sits inside the client
+// folder, the only folder the server sends files from as they are: the
+// users' documents and the database must never be served that way.
+func apart(dataDir, clientDir string) error {
+	client, err := filepath.Abs(clientDir)
+	if err != nil {
+		return err
+	}
+	if within(dataDir, client) || within(client, dataDir) {
+		return fmt.Errorf("officeweb: the data directory %s and the client directory %s must be apart, neither inside the other", dataDir, client)
+	}
+	return nil
+}
+
+// within reports whether path is dir or inside it (both absolute).
+func within(path, dir string) bool {
+	rel, err := filepath.Rel(dir, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }

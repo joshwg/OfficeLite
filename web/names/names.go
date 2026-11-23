@@ -17,6 +17,12 @@
 // lock files), and it must end in one of StorableExts. Like usernames,
 // file names keep their case but compare without regard to it: a user
 // can't have both "Budget.xlsx" and "budget.xlsx".
+//
+// Folder names: the file-name rules, except that a folder name may not
+// end in one of StorableExts (so "Reports.docx" is never a folder, and a
+// folder and a document can never share a name). Paths join folder names
+// and a file name with '/' ("Reports/2026/Budget.xlsx"), at most
+// web.FolderMaxDepth folders deep; "" is the user's top folder.
 package names
 
 import (
@@ -72,28 +78,95 @@ func UserDir(username string) string { return strings.ToLower(username) }
 // FileName trims leading and trailing spaces from a document name and
 // returns it, or why it isn't acceptable.
 func FileName(name string) (string, error) {
-	name = strings.Trim(name, " ")
-	if name == "" {
-		return "", errors.New("file name is required")
-	}
-	if len(name) > web.FileNameMaxLength {
-		return "", fmt.Errorf("file name must be at most %d characters", web.FileNameMaxLength)
-	}
-	for i := 0; i < len(name); i++ {
-		switch c := name[i]; {
-		case c < ' ' || c > '~':
-			return "", errors.New("file name may contain only printable ASCII characters (no control, invisible or accented characters)")
-		case c == '/' || c == '\\' || c == '*':
-			return "", errors.New(`file name may not contain '/', '\' or '*'`)
-		}
-	}
-	if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "~$") {
-		return "", errors.New("file name may not start with '.' or '~$'")
+	name, err := common(name, "file name")
+	if err != nil {
+		return "", err
 	}
 	if !Storable(name) {
 		return "", fmt.Errorf("file name must end in one of %s", strings.Join(StorableExts, " "))
 	}
 	return name, nil
+}
+
+// FolderName trims leading and trailing spaces from a folder name and
+// returns it, or why it isn't acceptable.
+func FolderName(name string) (string, error) {
+	name, err := common(name, "folder name")
+	if err != nil {
+		return "", err
+	}
+	if Storable(name) {
+		return "", fmt.Errorf("folder name may not end in a file extension (%s)", strings.Join(StorableExts, " "))
+	}
+	return name, nil
+}
+
+// common trims name and applies the rules file and folder names share;
+// what names the kind of name in the messages.
+func common(name, what string) (string, error) {
+	name = strings.Trim(name, " ")
+	if name == "" {
+		return "", fmt.Errorf("%s is required", what)
+	}
+	if len(name) > web.FileNameMaxLength {
+		return "", fmt.Errorf("%s must be at most %d characters", what, web.FileNameMaxLength)
+	}
+	for i := 0; i < len(name); i++ {
+		switch c := name[i]; {
+		case c < ' ' || c > '~':
+			return "", fmt.Errorf("%s may contain only printable ASCII characters (no control, invisible or accented characters)", what)
+		case c == '/' || c == '\\' || c == '*':
+			return "", fmt.Errorf(`%s may not contain '/', '\' or '*'`, what)
+		}
+	}
+	if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "~$") {
+		return "", fmt.Errorf("%s may not start with '.' or '~$'", what)
+	}
+	return name, nil
+}
+
+// FolderPath splits a folder's path ("Reports/2026"; "" for the top
+// folder) into its folder names, each trimmed, or says why it isn't
+// acceptable: a name breaks the rules, or it is over web.FolderMaxDepth
+// deep.
+func FolderPath(path string) ([]string, error) {
+	if strings.Trim(path, " ") == "" {
+		return nil, nil
+	}
+	parts := strings.Split(path, "/")
+	if len(parts) > web.FolderMaxDepth {
+		return nil, fmt.Errorf("folders may be at most %d deep", web.FolderMaxDepth)
+	}
+	for i, p := range parts {
+		clean, err := FolderName(p)
+		if err != nil {
+			return nil, err
+		}
+		parts[i] = clean
+	}
+	return parts, nil
+}
+
+// FilePath splits a document's path ("Reports/2026/Budget.xlsx") into its
+// folders and its file name, each trimmed, or says why it isn't
+// acceptable.
+func FilePath(path string) ([]string, string, error) {
+	dir, name := "", path
+	if i := strings.LastIndexByte(path, '/'); i >= 0 {
+		dir, name = path[:i], path[i+1:]
+		if strings.Trim(dir, " ") == "" {
+			return nil, "", errors.New("folder name is required")
+		}
+	}
+	folders, err := FolderPath(dir)
+	if err != nil {
+		return nil, "", err
+	}
+	name, err = FileName(name)
+	if err != nil {
+		return nil, "", err
+	}
+	return folders, name, nil
 }
 
 // Storable reports whether name ends in one of StorableExts.

@@ -4,11 +4,14 @@
 package ui
 
 import (
+	"archive/zip"
 	"bytes"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"gioui.org/io/key"
 
@@ -84,7 +87,8 @@ func (c *closeTracker) Close() error {
 // TestOpenReader: a file the Open dialog gave without a path is read into
 // a pristine window, which then has no path and no registration of the
 // file it had; a window with a document in it doesn't read it, closes it
-// and says why.
+// and says why; a spreadsheet isn't read as a document (on the desktop,
+// with no tabs to hand it to, it is refused).
 func TestOpenReader(t *testing.T) {
 	templateEnv(t)
 	data, err := os.ReadFile(saveTemplate(t, t.TempDir(), fileio.DOCX))
@@ -97,6 +101,7 @@ func TestOpenReader(t *testing.T) {
 	before := d.ed.Version
 	rc := &closeTracker{Reader: bytes.NewReader(data)}
 	d.openReader(rc)
+	runUntil(t, d.calls, func() bool { return d.errMsg != "" })
 	if !rc.closed || d.loading.Load() || d.errMsg != gui.OpenHereOnlyEmpty || d.ed.Version != before {
 		t.Errorf("modified window: closed %v, loading %v, error %q", rc.closed, d.loading.Load(), d.errMsg)
 	}
@@ -105,6 +110,7 @@ func TestOpenReader(t *testing.T) {
 	stale := filepath.Join(t.TempDir(), "Stale.docx")
 	d.lk.doc.Set(stale, false)
 	d.openReader(&closeTracker{Reader: bytes.NewReader(data)})
+	runUntil(t, d.calls, d.loading.Load)
 	waitLoaded(t, d)
 	if d.errMsg != "" || d.path != "" || d.lk.doc.Path() != "" {
 		t.Errorf("pristine window: error %q, path %q, registered %q", d.errMsg, d.path, d.lk.doc.Path())
@@ -114,6 +120,41 @@ func TestOpenReader(t *testing.T) {
 	}
 	if f, ok := d.saveFormat(); ok {
 		t.Errorf("Save writes %v without a file", f)
+	}
+
+	d, _ = templateWindow(t, t.TempDir())
+	d.openReader(&closeTracker{Reader: bytes.NewReader(zipWith(t, "xl/workbook.xml"))})
+	runUntil(t, d.calls, func() bool { return d.errMsg != "" })
+	if d.loading.Load() || !strings.Contains(d.errMsg, "ExcelLite") {
+		t.Errorf("spreadsheet: loading %v, error %q", d.loading.Load(), d.errMsg)
+	}
+}
+
+// zipWith returns a zip holding one empty part named name, enough for
+// doctype.Detect to tell its kind.
+func zipWith(t *testing.T, name string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	if _, err := zw.Create(name); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// runUntil runs calls' queued work until done reports true, failing the
+// test after a while.
+func runUntil(t *testing.T, calls *gui.CallQueue, done func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for calls.Run(); !done(); calls.Run() {
+		if time.Now().After(deadline) {
+			t.Fatal("the posted work never came")
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
 

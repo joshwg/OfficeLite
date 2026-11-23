@@ -93,6 +93,8 @@ func (a *App) handleBackstage(ev gui.BackstageEvent) {
 		a.openFile(ev.Entry.Path)
 	case gui.ActBrowse:
 		a.openDialog()
+	case gui.ActBrowseLocal:
+		a.openLocal()
 	case gui.ActSave:
 		a.save()
 	case gui.ActClose:

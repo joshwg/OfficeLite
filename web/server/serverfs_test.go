@@ -82,7 +82,7 @@ func TestServerFS(t *testing.T) {
 	run := exec.Command(node, "testdata/fsprobe/run.mjs", "static/serverfs.js",
 		filepath.Join(runtime.GOROOT(), "lib", "wasm", "wasm_exec.js"), probe)
 	run.Env = append(os.Environ(), "BASE="+srv.URL, "COOKIE="+cookie,
-		"MAX_NAME="+strconv.Itoa(web.FileNameMaxLength), "EXTS="+strings.Join(names.StorableExts, " "))
+		"MAX_NAME="+strconv.Itoa(web.FileNameMaxLength), "MAX_DEPTH="+strconv.Itoa(web.FolderMaxDepth), "EXTS="+strings.Join(names.StorableExts, " "))
 	out, err := run.CombinedOutput()
 	if err != nil || !strings.Contains(string(out), "ok") {
 		t.Fatalf("fsprobe: %v\n%s", err, out)

@@ -26,9 +26,12 @@ var messages = map[string]string{
 	"password": "Password changed.",
 	"admin":    "Administrator status changed.",
 	// The Files page's.
-	"uploaded":    "Uploaded.",
-	"renamed":     "File renamed.",
-	"filedeleted": "File deleted.",
+	"uploaded":      "Uploaded.",
+	"renamed":       "Renamed.",
+	"moved":         "Moved.",
+	"folder":        "Folder made.",
+	"filedeleted":   "File deleted.",
+	"folderdeleted": "Folder deleted.",
 }
 
 // message returns the success message for the request's ?msg= code.
@@ -131,7 +134,7 @@ func (s *Server) accountPage(w http.ResponseWriter, r *http.Request) {
 // renderAccount shows the account page with a message or an error.
 func (s *Server) renderAccount(w http.ResponseWriter, r *http.Request, status int, msg, errMsg string) {
 	u := currentUser(r)
-	_, used, err := s.cfg.Files.List(u.Username)
+	used, err := s.cfg.Files.Usage(u.Username)
 	var ne *files.NameError
 	if errors.As(err, &ne) && errMsg == "" {
 		errMsg = noStorage
@@ -201,7 +204,7 @@ func (s *Server) renderUsers(w http.ResponseWriter, r *http.Request, status int,
 	data.MaxName = web.UsernameMaxLength
 	data.Users = data.Users[:0]
 	for _, user := range users {
-		_, used, err := s.cfg.Files.List(user.Username)
+		used, err := s.cfg.Files.Usage(user.Username)
 		if err != nil {
 			// An account whose name breaks today's rules has no folder.
 			s.cfg.Log.Printf("storage of user %q: %v", user.Username, err)

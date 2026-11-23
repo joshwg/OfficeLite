@@ -6,50 +6,82 @@
   <p class="hint">Using {{bytes .Data.Used}} of {{bytes .Data.Quota}}.</p>
 </section>
 
+<nav class="crumbs" aria-label="Folder">
+  {{if .Data.Crumbs}}<a href="/files">Cloud files</a>{{else}}<strong>Cloud files</strong>{{end}}
+  {{range $i, $c := .Data.Crumbs}} <span aria-hidden="true">›</span>
+    {{if eq $c.Dir $.Data.Dir}}<strong>{{$c.Name}}</strong>{{else}}<a href="/files?dir={{$c.Dir}}">{{$c.Name}}</a>{{end}}
+  {{end}}
+</nav>
+
 <section class="card">
-  <h2>Upload</h2>
+  <h2>Upload{{if .Data.Dir}} to {{.Data.Dir}}{{end}}</h2>
   <form method="post" action="/files/upload" enctype="multipart/form-data" class="upload">
+    <!-- dir and replace before the files: the server reads the parts in order. -->
+    <input type="hidden" name="dir" value="{{.Data.Dir}}">
     <label class="inline"><input type="checkbox" name="replace" value="1"> Replace files with the same name</label>
     <input type="file" name="file" multiple required
       accept=".docx,.docm,.dotx,.dotm,.doc,.dot,.pages,.xlsx,.xlsm,.xls,.csv,.tsv,.numbers,.txt,.pdf">
     <button>Upload</button>
   </form>
+  {{if .Data.CanNest}}
+  <h2>New folder</h2>
+  <form method="post" action="/files/mkdir" class="upload">
+    <input type="hidden" name="dir" value="{{.Data.Dir}}">
+    <input name="name" maxlength="{{.Data.MaxName}}" aria-label="New folder's name" placeholder="Folder name" required>
+    <button>Make folder</button>
+  </form>
+  {{else}}
+  <p class="hint">Folders may be at most {{.Data.MaxDepth}} deep, so this one can't hold more.</p>
+  {{end}}
   <details class="rules">
-    <summary>File name rules</summary>
+    <summary>File and folder name rules</summary>
     <ul>
       <li>At most {{.Data.MaxName}} characters, extension included. Spaces at the start and end are trimmed.</li>
       <li>Only printable ASCII: letters A–Z and a–z, digits, spaces and punctuation. No control characters,
         no invisible characters, no accented letters or other characters above 0177 octal.</li>
       <li>No <code>/</code>, <code>\</code> or <code>*</code>, and no name starting with <code>.</code> or <code>~$</code>.</li>
-      <li>Must end in .docx .docm .dotx .dotm .doc .dot .pages .xlsx .xlsm .xls .csv .tsv .numbers .txt or .pdf.</li>
-      <li>Case doesn't make a different file: Budget.xlsx and budget.xlsx are the same name.</li>
+      <li>A file name must end in .docx .docm .dotx .dotm .doc .dot .pages .xlsx .xlsm .xls .csv .tsv .numbers .txt or .pdf;
+        a folder name may not end in any of them.</li>
+      <li>Case doesn't make a different name: Budget.xlsx and budget.xlsx are the same file.</li>
+      <li>Folders may be at most {{.Data.MaxDepth}} deep.</li>
       <li>Each file at most {{bytes .Data.MaxFile}}; all your files together within your storage above.</li>
     </ul>
   </details>
 </section>
 
-{{if .Data.Files}}
+<datalist id="folders">
+  {{range .Data.Folders}}<option value="{{.}}">{{end}}
+</datalist>
+
+{{if .Data.Rows}}
 <div class="scroll">
 <table class="files">
   <thead><tr><th>Name</th><th class="num">Size</th><th>Modified (UTC)</th><th>Actions</th></tr></thead>
   <tbody>
-  {{range .Data.Files}}
+  {{range .Data.Rows}}
   <tr>
     <td class="fname">
-      {{if .App}}<a class="open {{.App}}" href="/{{.App}}?open={{.Name}}" title="Open in {{if eq .App "word"}}WordLite{{else}}ExcelLite{{end}}">{{.Name}}</a>
+      {{if .Folder}}<a class="open folder" href="/files?dir={{.Path}}" title="Open the folder">{{.Name}}/</a>
+      {{else if .App}}<a class="open {{.App}}" href="/{{.App}}?open={{.Path}}" title="Open in {{if eq .App "word"}}WordLite{{else}}ExcelLite{{end}}">{{.Name}}</a>
       {{else}}{{.Name}}{{end}}
     </td>
-    <td class="num">{{bytes .Size}}</td>
+    <td class="num">{{if not .Folder}}{{bytes .Size}}{{end}}</td>
     <td>{{.Modified.UTC.Format "2006-01-02 15:04"}}</td>
     <td class="actions"><div class="row">
-      <a class="button ghost" href="/api/files/{{.Href}}" download>Download</a>
+      {{if not .Folder}}<a class="button ghost" href="/api/files/{{.Href}}" download>Download</a>{{end}}
       <form method="post" action="/files/rename">
-        <input type="hidden" name="name" value="{{.Name}}">
+        <input type="hidden" name="name" value="{{.Path}}">
         <input name="to" value="{{.Name}}" maxlength="{{$.Data.MaxName}}" aria-label="New name for {{.Name}}" required>
         <button class="ghost">Rename</button>
       </form>
-      <form method="post" action="/files/delete" data-confirm="Delete {{.Name}}? This can't be undone.">
-        <input type="hidden" name="name" value="{{.Name}}">
+      <form method="post" action="/files/move">
+        <input type="hidden" name="name" value="{{.Path}}">
+        <input name="dest" list="folders" maxlength="512" placeholder="Folder (blank: top)" aria-label="Folder to move {{.Name}} to">
+        <button class="ghost">Move</button>
+      </form>
+      <form method="post" action="/files/delete"
+        data-confirm="{{if .Folder}}Delete the folder {{.Name}} and everything in it? This can't be undone.{{else}}Delete {{.Name}}? This can't be undone.{{end}}">
+        <input type="hidden" name="name" value="{{.Path}}">
         <button class="danger">Delete</button>
       </form>
     </div></td>
@@ -58,6 +90,8 @@
   </tbody>
 </table>
 </div>
+{{else if .Data.Dir}}
+<p class="hint">This folder is empty. Upload files above, or use File → Save As in WordLite or ExcelLite.</p>
 {{else}}
 <p class="hint">No files yet. Upload some above, or use File → Save As in WordLite or ExcelLite.</p>
 {{end}}

@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -56,7 +57,8 @@ func (e *ThrottledError) Seconds() int {
 type Service struct {
 	Store *store.Store
 	// Now is the clock; nil uses time.Now (tests set it).
-	Now func() time.Time
+	Now     func() time.Time
+	loginMu sync.Mutex
 }
 
 // now returns the current time from s.Now or the system clock.
@@ -155,6 +157,8 @@ func (s *Service) ChangePassword(userID int64, current, password string) error {
 // returning its token. A throttled username gets a *ThrottledError
 // without its password being checked.
 func (s *Service) Login(username, password, ip string) (string, store.User, error) {
+	s.loginMu.Lock()
+	defer s.loginMu.Unlock()
 	username = strings.TrimSpace(username)
 	now := s.now()
 	if wait, err := s.throttle(username, now); err != nil {
@@ -253,6 +257,9 @@ func (s *Service) Authenticate(token string) (store.Session, error) {
 		expires = end
 	}
 	if err := s.Store.ExtendSession(hash, expires); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return store.Session{}, ErrNoSession
+		}
 		return store.Session{}, err
 	}
 	sess.ExpiresAt = expires

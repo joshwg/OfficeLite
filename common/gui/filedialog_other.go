@@ -7,6 +7,9 @@ package gui
 
 import "gioui.org/io/event"
 
+// HasServerFiles reports false: only the browser build has server files.
+func HasServerFiles() bool { return false }
+
 // listen does nothing: there's no native owner window to record.
 func (d *FileDialog) listen(event.Event) {}
 

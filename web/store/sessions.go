@@ -48,8 +48,18 @@ func (s *Store) SessionByHash(tokenHash string, now time.Time) (Session, error) 
 
 // ExtendSession moves a session's end to expires.
 func (s *Store) ExtendSession(tokenHash string, expires time.Time) error {
-	_, err := s.db.Exec("UPDATE sessions SET expires_at = ? WHERE token_hash = ?", ms(expires), tokenHash)
-	return err
+	res, err := s.db.Exec("UPDATE sessions SET expires_at = ? WHERE token_hash = ?", ms(expires), tokenHash)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // DeleteSession ends one session.

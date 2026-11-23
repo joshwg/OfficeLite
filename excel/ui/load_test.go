@@ -4,10 +4,12 @@
 package ui
 
 import (
+	"archive/zip"
 	"bytes"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -101,7 +103,8 @@ func (c *closeTracker) Close() error {
 // TestOpenReader: a file the Open dialog gave without a path is read into
 // a pristine window, which then has no path and no registration of the
 // file it had; a window with a workbook in it doesn't read it, closes it
-// and says why.
+// and says why; a document isn't read as a workbook (on the desktop, with
+// no tabs to hand it to, it is refused).
 func TestOpenReader(t *testing.T) {
 	data, err := os.ReadFile(savedWorkbook(t, "From the dialog"))
 	if err != nil {
@@ -115,6 +118,7 @@ func TestOpenReader(t *testing.T) {
 	h.press(key.NameReturn, 0)
 	rc := &closeTracker{Reader: bytes.NewReader(data)}
 	a.openReader(rc)
+	runUntil(t, a.calls, func() bool { return a.errMsg != "" })
 	if !rc.closed || a.loading.Load() || a.errMsg != gui.OpenHereOnlyEmpty || h.cell("A1").Text != "mine" {
 		t.Errorf("modified window: closed %v, loading %v, error %q", rc.closed, a.loading.Load(), a.errMsg)
 	}
@@ -126,9 +130,46 @@ func TestOpenReader(t *testing.T) {
 	t.Cleanup(a.lk.doc.Close)
 	a.lk.doc.Set(filepath.Join(t.TempDir(), "Stale.xlsx"), false)
 	a.openReader(&closeTracker{Reader: bytes.NewReader(data)})
+	runUntil(t, a.calls, a.loading.Load)
 	h.waitLoad()
 	if a.errMsg != "" || a.path != "" || a.lk.doc.Path() != "" || h.cell("A1").Text != "From the dialog" {
 		t.Errorf("pristine window: error %q, path %q, registered %q, A1 %q", a.errMsg, a.path, a.lk.doc.Path(), h.cell("A1").Text)
+	}
+
+	h = newHarness(t)
+	a = h.a
+	a.openReader(&closeTracker{Reader: bytes.NewReader(zipWith(t, "word/document.xml"))})
+	runUntil(t, a.calls, func() bool { return a.errMsg != "" })
+	if a.loading.Load() || !strings.Contains(a.errMsg, "WordLite") {
+		t.Errorf("document: loading %v, error %q", a.loading.Load(), a.errMsg)
+	}
+}
+
+// zipWith returns a zip holding one empty part named name, enough for
+// doctype.Detect to tell its kind.
+func zipWith(t *testing.T, name string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	if _, err := zw.Create(name); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// runUntil runs calls' queued work until done reports true, failing the
+// test after a while.
+func runUntil(t *testing.T, calls *gui.CallQueue, done func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for calls.Run(); !done(); calls.Run() {
+		if time.Now().After(deadline) {
+			t.Fatal("the posted work never came")
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
 

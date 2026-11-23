@@ -16,6 +16,7 @@ import (
 	"strings"
 	"testing"
 
+	"officelite/web"
 	"officelite/web/store"
 )
 
@@ -86,7 +87,7 @@ func TestAPI(t *testing.T) {
 			t.Errorf("PUT %s: %d", bad, status)
 		}
 	}
-	if status, body := f.call(t, c, http.MethodPost, "/api/files/"+name+"/rename", `{"to":" Plan.xlsx "}`); status != http.StatusOK || !strings.Contains(body, `"Plan.xlsx"`) {
+	if status, body := f.call(t, c, http.MethodPost, "/api/move", `{"from":"Budget #1?.xlsx","to":" Plan.xlsx "}`); status != http.StatusOK || !strings.Contains(body, `"Plan.xlsx"`) {
 		t.Fatalf("rename: %d %s", status, body)
 	}
 	if status, _ := f.call(t, c, http.MethodGet, "/api/files/"+name, ""); status != http.StatusNotFound {
@@ -189,8 +190,150 @@ func TestFilesPage(t *testing.T) {
 	if resp := f.post(t, c, "/files/delete", url.Values{"name": {"Final.docx"}, "confirm": {"1"}}); resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("delete: %d", resp.StatusCode)
 	}
-	if docs, _, _ := f.files.List("ann"); len(docs) != 0 {
-		t.Fatalf("left: %+v", docs)
+	if l, _ := f.files.List("ann", ""); len(l.Files) != 0 {
+		t.Fatalf("left: %+v", l)
+	}
+}
+
+// TestAPIFolders checks folders through the API: making one (and the
+// name rules), saving into it, listing it, moving a document and a
+// folder, deleting only an empty folder unless all=1, and the depth
+// limit.
+func TestAPIFolders(t *testing.T) {
+	f := newFixture(t)
+	c := f.browser(t)
+	f.login(t, c, "ann")
+	if status, body := f.call(t, c, http.MethodPut, "/api/folders/Reports", ""); status != http.StatusOK || !strings.Contains(body, `"path":"Reports"`) {
+		t.Fatalf("make folder: %d %s", status, body)
+	}
+	if status, _ := f.call(t, c, http.MethodPut, "/api/folders/reports", ""); status != http.StatusConflict {
+		t.Fatalf("make it again in another case: %d", status)
+	}
+	for _, bad := range []string{".hidden", "Old.docx", "Reports/.x", "a%2Ab"} {
+		if status, _ := f.call(t, c, http.MethodPut, "/api/folders/"+bad, ""); status != http.StatusBadRequest {
+			t.Errorf("make folder %s: %d", bad, status)
+		}
+	}
+	if status, _ := f.call(t, c, http.MethodPut, "/api/files/Missing/a.docx", "x"); status != http.StatusNotFound {
+		t.Fatalf("save into a missing folder: %d", status)
+	}
+	if status, body := f.call(t, c, http.MethodPut, "/api/files/reports/Q%231.docx", "doc"); status != http.StatusOK || !strings.Contains(body, `"path":"Reports/Q#1.docx"`) {
+		t.Fatalf("save into the folder: %d %s", status, body)
+	}
+	if l := f.list(t, c); len(l.Folders) != 1 || l.Folders[0].Name != "Reports" || len(l.Files) != 0 || l.Used != 3 {
+		t.Fatalf("top listing = %+v", l)
+	}
+	status, body := f.call(t, c, http.MethodGet, "/api/files?dir=REPORTS", "")
+	if status != http.StatusOK || !strings.Contains(body, `"dir":"Reports"`) || !strings.Contains(body, `"Q#1.docx"`) {
+		t.Fatalf("folder listing: %d %s", status, body)
+	}
+	if status, _ := f.call(t, c, http.MethodGet, "/api/files?dir=Nope", ""); status != http.StatusNotFound {
+		t.Fatalf("missing folder listing: %d", status)
+	}
+	if resp, got := f.get(t, c, "/api/files/Reports/Q%231.docx"); resp.StatusCode != http.StatusOK || got != "doc" {
+		t.Fatalf("read from the folder: %d %q", resp.StatusCode, got)
+	}
+	if status, body := f.call(t, c, http.MethodDelete, "/api/folders/Reports", ""); status != http.StatusConflict || !strings.Contains(body, "ENOTEMPTY") {
+		t.Fatalf("delete a full folder: %d %s", status, body)
+	}
+	if status, body := f.call(t, c, http.MethodPost, "/api/move", `{"from":"Reports/Q#1.docx","to":"Q#1.docx"}`); status != http.StatusOK || !strings.Contains(body, `"path":"Q#1.docx"`) {
+		t.Fatalf("move to the top: %d %s", status, body)
+	}
+	if status, body := f.call(t, c, http.MethodPost, "/api/move", `{"from":"Reports","to":"Archive"}`); status != http.StatusOK {
+		t.Fatalf("rename the folder: %d %s", status, body)
+	}
+	if status, _ := f.call(t, c, http.MethodPost, "/api/move", `{"from":"Archive","to":"Archive/In"}`); status != http.StatusBadRequest {
+		t.Fatalf("move a folder into itself: %d", status)
+	}
+	if status, _ := f.call(t, c, http.MethodDelete, "/api/folders/Archive", ""); status != http.StatusNoContent {
+		t.Fatalf("delete an empty folder: %d", status)
+	}
+	path := ""
+	for i := 1; i <= web.FolderMaxDepth; i++ {
+		path += "/L" + strconv.Itoa(i)
+		if status, body := f.call(t, c, http.MethodPut, "/api/folders"+path, ""); status != http.StatusOK {
+			t.Fatalf("make %s: %d %s", path, status, body)
+		}
+	}
+	if status, _ := f.call(t, c, http.MethodPut, "/api/folders"+path+"/Deeper", ""); status != http.StatusBadRequest {
+		t.Fatalf("past the depth: %d", status)
+	}
+	if status, _ := f.call(t, c, http.MethodPut, "/api/files"+path+"/deep.docx", "x"); status != http.StatusOK {
+		t.Fatalf("document at the deepest: %d", status)
+	}
+	if status, _ := f.call(t, c, http.MethodDelete, "/api/folders/L1?all=1", ""); status != http.StatusNoContent {
+		t.Fatalf("delete a folder and all in it: %d", status)
+	}
+	if l := f.list(t, c); len(l.Folders) != 0 || l.Used != 3 {
+		t.Fatalf("after deletes = %+v", l)
+	}
+}
+
+// TestFilesPageFolders checks the Files page's folders: making one,
+// showing it with its path, uploading into it, renaming and moving
+// documents and folders, and deleting a folder with what it holds.
+func TestFilesPageFolders(t *testing.T) {
+	f := newFixture(t)
+	c := f.browser(t)
+	f.login(t, c, "ann")
+	if resp := f.post(t, c, "/files/mkdir", url.Values{"dir": {""}, "name": {"Reports"}}); resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("make folder: %d", resp.StatusCode)
+	}
+	if resp := f.post(t, c, "/files/mkdir", url.Values{"dir": {""}, "name": {"Bad.docx"}}); resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("folder with a file's name: %d", resp.StatusCode)
+	}
+	if resp := f.post(t, c, "/files/mkdir", url.Values{"dir": {"Reports"}, "name": {"2026"}}); resp.StatusCode != http.StatusSeeOther ||
+		resp.Header.Get("Location") != "/files?dir=Reports&msg=folder" {
+		t.Fatalf("make subfolder: %d %s", resp.StatusCode, resp.Header.Get("Location"))
+	}
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	_ = mw.WriteField("dir", "Reports")
+	fw, _ := mw.CreateFormFile("file", "Plan.docx")
+	_, _ = fw.Write([]byte("plan"))
+	_ = mw.Close()
+	req, _ := http.NewRequest(http.MethodPost, f.srv.URL+"/files/upload", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	resp, err := c.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("upload into the folder: %d", resp.StatusCode)
+	}
+	if _, err := f.files.Stat("ann", "Reports/Plan.docx"); err != nil {
+		t.Fatalf("uploaded file: %v", err)
+	}
+	resp, page := f.get(t, c, "/files?dir=Reports")
+	if resp.StatusCode != http.StatusOK || !strings.Contains(page, ">Cloud files</a>") || !strings.Contains(page, "<strong>Reports</strong>") ||
+		!strings.Contains(page, "/word?open=Reports%2fPlan.docx") || !strings.Contains(page, "/files?dir=Reports%2f2026") {
+		t.Fatalf("folder page: %d\n%s", resp.StatusCode, page)
+	}
+	if resp := f.post(t, c, "/files/rename", url.Values{"name": {"Reports/Plan.docx"}, "to": {"Final.docx"}}); resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("rename in a folder: %d", resp.StatusCode)
+	}
+	if resp := f.post(t, c, "/files/move", url.Values{"name": {"Reports/Final.docx"}, "dest": {"Reports/2026"}}); resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("move down: %d", resp.StatusCode)
+	}
+	if _, err := f.files.Stat("ann", "Reports/2026/Final.docx"); err != nil {
+		t.Fatalf("after move: %v", err)
+	}
+	if resp := f.post(t, c, "/files/rename", url.Values{"name": {"Reports/2026"}, "to": {"Done"}}); resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("rename a folder: %d", resp.StatusCode)
+	}
+	if resp := f.post(t, c, "/files/move", url.Values{"name": {"Reports/Done"}, "dest": {""}}); resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("move a folder to the top: %d", resp.StatusCode)
+	}
+	if resp := f.post(t, c, "/files/delete", url.Values{"name": {"Done"}, "confirm": {"1"}}); resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("delete a folder: %d", resp.StatusCode)
+	}
+	if l, _ := f.files.List("ann", ""); len(l.Folders) != 1 || l.Used != 0 {
+		t.Fatalf("left: %+v", l)
+	}
+	if resp, _ := f.get(t, c, "/files?dir=Gone"); resp.StatusCode != http.StatusOK {
+		t.Fatalf("missing folder page: %d", resp.StatusCode)
 	}
 }
 

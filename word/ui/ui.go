@@ -355,12 +355,20 @@ func (d *window) startLoad() bool { return d.loading.CompareAndSwap(false, true)
 // openDialog asks for a file and opens it like a recent file (openFile).
 // Where the platform gives no path, the data is read into this window if
 // it is pristine (openReader).
-func (d *window) openDialog() {
+func (d *window) openDialog() { d.chooseOpen(&d.files) }
+
+// openLocal shows the browser's picker of files on the user's computer,
+// without the dialog of cloud files first (the Open page's Browse).
+func (d *window) openLocal() { d.chooseOpen(nil) }
+
+// chooseOpen shows the Open dialog: files's, falling back to explorer's,
+// or explorer's alone when files is nil.
+func (d *window) chooseOpen(files *gui.FileDialog) {
 	if d.expl == nil {
 		return
 	}
 	gui.ChooseOpen{
-		Files: &d.files,
+		Files: files,
 		// The native dialog lists Word documents, then Excel files (which
 		// openFile routes to an ExcelLite window).
 		Filters:  []gui.FileFilter{gui.WordFilter, gui.ExcelFilter, gui.AllFilter},
@@ -374,31 +382,31 @@ func (d *window) openDialog() {
 	}.Start()
 }
 
-// openReader reads a file the Open dialog gave without a path into the
-// window, which then has no file of its own (Save goes to Save As). Only
-// a pristine window takes it; otherwise the browser opens it in a new tab
-// (gui.OpenInTab), and the desktop closes it unread and the status line
-// says why.
+// openReader opens a file the Open dialog gave without a path: a
+// spreadsheet, or any file while this window isn't pristine, goes to a
+// new browser tab of the right app (gui.ChosenData); a document is read
+// into this window (openData).
 func (d *window) openReader(rc io.ReadCloser) {
 	d.back.Hide()
-	if !d.pristine() && gui.OpenInTab(rc, doctype.Document, d.calls, func(err error) { d.errMsg = "Can't open the file: " + err.Error() }) {
-		return
-	}
+	gui.ChosenData{
+		Own:      doctype.Document,
+		Calls:    d.calls,
+		Pristine: d.pristine,
+		Load:     d.openData,
+		Fail:     func(err error) { d.errMsg = "Can't open the file: " + err.Error() },
+	}.Start(rc)
+}
+
+// openData reads data, a document without a path, into the window, which
+// then has no file of its own (Save goes to Save As). Only a pristine
+// window takes it; otherwise the status line says why.
+func (d *window) openData(data []byte) {
 	if !d.pristine() || !d.startLoad() {
-		gui.CloseChosen(rc)
 		d.errMsg = gui.OpenHereOnlyEmpty
 		return
 	}
 	d.lk.doc.Set("", false) // no file of its own to register
 	go func() {
-		data, err := io.ReadAll(rc)
-		if closeErr := rc.Close(); err == nil {
-			err = closeErr
-		}
-		if err != nil {
-			d.finishLoad("", nil, err)
-			return
-		}
 		doc, err := fileio.Read("Document.docx", data)
 		d.finishLoad("", doc, err)
 	}()

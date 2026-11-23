@@ -82,35 +82,56 @@ func (e *Engine) pictureOp(p *model.Picture, w int) (paint.ImageOp, bool) {
 }
 
 // drawPicture draws a picture item with its bottom-left corner at (x,
-// base) points; it reports false if the image can't be decoded (the
-// placeholder is drawn instead).
+// base) points, cropped as its Look says and with its border; it reports
+// false if the image can't be decoded (the placeholder is drawn instead).
 func (e *Engine) drawPicture(ops *op.Ops, it *Item, x, base, s float64) bool {
+	o := it.Obj
 	px := func(v float64) int { return int(math.Round(v * s)) }
-	r := image.Rect(px(x), px(base-it.Obj.Height), px(x+it.Obj.Width), px(base))
+	r := image.Rect(px(x), px(base-o.Height), px(x+o.Width), px(base))
 	if r.Dx() <= 0 || r.Dy() <= 0 {
 		return true
 	}
-	io, ok := e.pictureOp(it.Obj.Picture, r.Dx())
+	// The whole image, of which the box shows the part left after cropping.
+	fx, fy, fw, fh := o.Look.Uncropped(x, base-o.Height, o.Width, o.Height)
+	io, ok := e.pictureOp(o.Picture, max(px(fw), 1))
 	if !ok {
 		return false
 	}
 	sz := io.Size()
 	cl := clip.Rect(r).Push(ops)
 	t := op.Affine(f32.AffineId().
-		Scale(f32.Point{}, f32.Pt(float32(r.Dx())/float32(sz.X), float32(r.Dy())/float32(sz.Y))).
-		Offset(f32.Pt(float32(r.Min.X), float32(r.Min.Y)))).Push(ops)
+		Scale(f32.Point{}, f32.Pt(float32(fw*s)/float32(sz.X), float32(fh*s)/float32(sz.Y))).
+		Offset(f32.Pt(float32(fx*s), float32(fy*s)))).Push(ops)
 	io.Add(ops)
 	paint.PaintOp{}.Add(ops)
 	t.Pop()
 	cl.Pop()
+	if c, ok := floatColor(o.Line); ok {
+		lw := max(o.LineWidth, 0.25)
+		var p clip.Path
+		p.Begin(ops)
+		p.MoveTo(f32Pt(x, base-o.Height, s))
+		p.LineTo(f32Pt(x+o.Width, base-o.Height, s))
+		p.LineTo(f32Pt(x+o.Width, base, s))
+		p.LineTo(f32Pt(x, base, s))
+		p.Close()
+		paint.FillShape(ops, c, clip.Stroke{Path: p.End(), Width: float32(max(lw*s, 1))}.Op())
+	}
 	return true
 }
 
-// drawPictureFrame outlines a selected picture with Word's sizing handles.
+// drawPictureFrame outlines a selected picture, inline or floating, with
+// Word's sizing handles.
 func (e *Engine) drawPictureFrame(ops *op.Ops, pg *Page, sel model.Selection, s float64) {
 	a, b := sel.Ordered()
 	if a.Para != b.Para || b.Off != a.Off+1 {
 		return
+	}
+	for _, fb := range pg.Floats {
+		if fb.Anchor == a && fb.F.Picture != nil {
+			drawFrame(ops, fb.R, s)
+			return
+		}
 	}
 	for i := range pg.Lines {
 		pl := &pg.Lines[i]
@@ -122,20 +143,25 @@ func (e *Engine) drawPictureFrame(ops *op.Ops, pg *Page, sel model.Selection, s 
 			if it.Off != a.Off || !isPicture(it) {
 				continue
 			}
-			box := PictureBox(pl, it)
-			px := func(v float64) int { return int(math.Round(v * s)) }
-			r := image.Rect(px(box.X0), px(box.Y0), px(box.X1), px(box.Y1))
-			gui.HLine(ops, r.Min.X, r.Max.X, r.Min.Y, 1, frameColor)
-			gui.HLine(ops, r.Min.X, r.Max.X, r.Max.Y-1, 1, frameColor)
-			gui.VLine(ops, r.Min.X, r.Min.Y, r.Max.Y, 1, frameColor)
-			gui.VLine(ops, r.Max.X-1, r.Min.Y, r.Max.Y, 1, frameColor)
-			for _, h := range PictureHandles(box) {
-				hr := image.Rect(px(h.X0), px(h.Y0), px(h.X1), px(h.Y1))
-				gui.FillRect(ops, hr, frameColor)
-				gui.FillRect(ops, hr.Inset(1), handleColor)
-			}
+			drawFrame(ops, PictureBox(pl, it), s)
 			return
 		}
+	}
+}
+
+// drawFrame draws a selected picture's frame around box with its eight
+// sizing handles.
+func drawFrame(ops *op.Ops, box Rect, s float64) {
+	px := func(v float64) int { return int(math.Round(v * s)) }
+	r := image.Rect(px(box.X0), px(box.Y0), px(box.X1), px(box.Y1))
+	gui.HLine(ops, r.Min.X, r.Max.X, r.Min.Y, 1, frameColor)
+	gui.HLine(ops, r.Min.X, r.Max.X, r.Max.Y-1, 1, frameColor)
+	gui.VLine(ops, r.Min.X, r.Min.Y, r.Max.Y, 1, frameColor)
+	gui.VLine(ops, r.Max.X-1, r.Min.Y, r.Max.Y, 1, frameColor)
+	for _, h := range PictureHandles(box) {
+		hr := image.Rect(px(h.X0), px(h.Y0), px(h.X1), px(h.Y1))
+		gui.FillRect(ops, hr, frameColor)
+		gui.FillRect(ops, hr.Inset(1), handleColor)
 	}
 }
 

@@ -26,6 +26,12 @@ func (h *harness) viewPoint(pg int, x, y float64) f32.Point {
 		float32(viewTop)+float32((d.eng.Pages[pg].Top+y-d.v.scrollY)*d.v.scale))
 }
 
+// hover queues a pointer move with no button down at pt and runs a frame.
+func (h *harness) hover(pt f32.Point) {
+	h.r.Queue(pointer.Event{Kind: pointer.Move, Source: pointer.Mouse, Position: pt})
+	h.frame()
+}
+
 // mouse queues a primary-button pointer event at pt and runs a frame.
 func (h *harness) mouse(kind pointer.Kind, pt f32.Point, mods key.Modifiers) {
 	btn := pointer.ButtonPrimary
@@ -209,8 +215,9 @@ func TestSymbolAndDate(t *testing.T) {
 }
 
 // TestInsertPictureAndClick checks that a picture is inserted at 150pt
-// wide (bad data is reported), a click selects it, dragging a corner
-// handle resizes it undoably, and Delete removes it.
+// wide (bad data is reported), a click selects it, its handles show
+// resize cursors, dragging a corner handle resizes it undoably, and
+// Delete removes it.
 func TestInsertPictureAndClick(t *testing.T) {
 	h := newHarness(t)
 	d := h.d
@@ -240,6 +247,20 @@ func TestInsertPictureAndClick(t *testing.T) {
 	h.mouse(pointer.Release, mid, 0)
 	if d.ed.SelectedPicture() == nil {
 		t.Fatal("click didn't select the picture")
+	}
+	// Hovering, the handles show resize cursors and the picture itself an
+	// arrow (the view keeps the pointer's position in its own terms).
+	for i, want := range []pointer.Cursor{pointer.CursorNorthWestSouthEastResize, pointer.CursorNorthSouthResize,
+		pointer.CursorNorthEastSouthWestResize, pointer.CursorEastWestResize} {
+		hb := wl.PictureHandles(box)[i]
+		h.hover(h.viewPoint(pg, (hb.X0+hb.X1)/2, (hb.Y0+hb.Y1)/2))
+		if got, ok := d.pictureHandleAt(d.v.m.hover); !ok || got != i || handleCursor(got) != want {
+			t.Errorf("handle %d: found %d %v, cursor %v", i, got, ok, handleCursor(got))
+		}
+	}
+	h.hover(mid)
+	if _, ok := d.pictureHandleAt(d.v.m.hover); ok || !d.overPicture(d.v.m.hover) {
+		t.Error("the picture's middle: a handle, or not on the picture")
 	}
 	// Drag the bottom-right handle to make it larger.
 	hd := wl.PictureHandles(box)[4]

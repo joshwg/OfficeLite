@@ -69,7 +69,7 @@ func (x *pdfExport) floats(pg *Page, behind bool) {
 				x.pics[f.Picture] = im
 			}
 			if im != nil {
-				p.DrawImage(im, b.R.X0, b.R.Y0, b.R.X1-b.R.X0, b.R.Y1-b.R.Y0)
+				x.picture(im, f.Look, b.R)
 			}
 		}
 		x.body(b.Lines, b.Fills, b.Rules)
@@ -248,7 +248,11 @@ func (x *pdfExport) object(it *Item, pl *Placed, base float64) {
 		}
 		if im != nil {
 			r := PictureBox(pl, it)
-			p.DrawImage(im, r.X0, r.Y0, r.X1-r.X0, r.Y1-r.Y0)
+			x.picture(im, o.Look, r)
+			if c, ok := floatColor(o.Line); ok {
+				lw := max(o.LineWidth, 0.25)
+				p.StrokeRect(r.X0, r.Y0, r.X1-r.X0, r.Y1-r.Y0, lw, c)
+			}
 			return
 		}
 	}
@@ -276,4 +280,19 @@ func (x *pdfExport) object(it *Item, pl *Placed, base float64) {
 		p.FillRect(xpos, base-it.Asc, it.W, it.Asc+it.Desc, placeholderBG)
 	}
 	x.text(&st, it.Text, xpos, base-st.Shift, nil)
+}
+
+// picture draws image im into box r, cropped as look says: the whole
+// image is drawn larger, clipped to the box.
+func (x *pdfExport) picture(im *pdf.Image, look model.PictureLook, r Rect) {
+	p := x.p
+	if !look.Cropped() {
+		p.DrawImage(im, r.X0, r.Y0, r.X1-r.X0, r.Y1-r.Y0)
+		return
+	}
+	fx, fy, fw, fh := look.Uncropped(r.X0, r.Y0, r.X1-r.X0, r.Y1-r.Y0)
+	p.Save()
+	p.ClipRect(r.X0, r.Y0, r.X1-r.X0, r.Y1-r.Y0)
+	p.DrawImage(im, fx, fy, fw, fh)
+	p.Restore()
 }

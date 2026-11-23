@@ -7,6 +7,7 @@ package ui
 import (
 	"image"
 	"math"
+	"strings"
 
 	"gioui.org/f32"
 	"gioui.org/io/key"
@@ -69,8 +70,11 @@ func (m *mouseState) track(e pointer.Event) {
 }
 
 // docCursor sets the page view's cursor: the I-beam over text, an arrow
-// in the left margin and while moving text, resize arrows on table
-// borders, a hand over a link with Ctrl held, and the Format Painter's.
+// in the left margin, over an inline picture and while moving text, the
+// four-way move arrow over a floating picture (and while dragging one),
+// resize arrows on table borders and on the selected picture's handles
+// (and while dragging either), a hand over a link with Ctrl held, and
+// the Format Painter's.
 func (d *window) docCursor(gtx layout.Context) {
 	m := &d.v.m
 	c := pointer.CursorText
@@ -79,11 +83,21 @@ func (d *window) docCursor(gtx layout.Context) {
 		c = pointer.CursorDefault
 	case m.resizing:
 		c = resizeCursor(m.border)
+	case d.ins.resizing:
+		c = handleCursor(d.ins.handle)
+	case d.ins.moving:
+		c = pointer.CursorAllScroll
 	case d.painter.armed:
 		c = pointer.CursorCrosshair
 	case !m.hoverIn || m.menu.IsOpen():
 	default:
-		if b, ok := d.borderAt(m.hover); ok {
+		if h, ok := d.pictureHandleAt(m.hover); ok {
+			c = handleCursor(h)
+		} else if d.overFloat(m.hover) {
+			c = pointer.CursorAllScroll // Word's four-way move arrow
+		} else if d.overPicture(m.hover) {
+			c = pointer.CursorDefault
+		} else if b, ok := d.borderAt(m.hover); ok {
 			c = resizeCursor(b)
 		} else if _, _, ok := d.marginAt(m.hover); ok {
 			c = pointer.CursorDefault
@@ -92,6 +106,21 @@ func (d *window) docCursor(gtx layout.Context) {
 		}
 	}
 	c.Add(gtx.Ops)
+}
+
+// handleCursor is the resize cursor for a picture handle, numbered
+// clockwise from the top-left (layout.PictureHandles): diagonal at the
+// corners, up-down at the top and bottom, left-right at the sides.
+func handleCursor(h int) pointer.Cursor {
+	switch h {
+	case 0, 4:
+		return pointer.CursorNorthWestSouthEastResize
+	case 2, 6:
+		return pointer.CursorNorthEastSouthWestResize
+	case 1, 5:
+		return pointer.CursorNorthSouthResize
+	}
+	return pointer.CursorEastWestResize
 }
 
 // resizeCursor is the column or row resize cursor for a table border.
@@ -417,7 +446,9 @@ func (d *window) drawBorderGuide(gtx layout.Context, px int) {
 func (d *window) contextPress(e pointer.Event) {
 	ed := d.ed
 	page, x, y, ok := d.pointerPage(e.Position)
-	if pos, _, pic := d.ceng().PictureAt(page, x, y); ok && pic {
+	if fb, isFloat := d.floatAt(e.Position); ok && isFloat {
+		ed.Select(fb.Anchor, model.Pos{Para: fb.Anchor.Para, Off: fb.Anchor.Off + 1})
+	} else if pos, _, pic := d.ceng().PictureAt(page, x, y); ok && pic {
 		ed.Select(pos, model.Pos{Para: pos.Para, Off: pos.Off + 1})
 	} else if ok {
 		pos := d.viewPos(e.Position)
@@ -454,11 +485,21 @@ func (d *window) openContextMenu(pos image.Point) {
 	add(gui.MenuItem{Label: "Keep Text Only", Tip: "Paste only the Clipboard's text, in the formatting where it goes."},
 		func() { d.homeExtra(homePastePlain) })
 	sep()
-	if !d.hf.on {
+	if !d.hf.on && ed.SelectedPictureObj() == nil {
 		add(gui.MenuItem{Label: "Modify Style…", Tip: "Change the paragraph's style; every paragraph in it follows."},
 			func() { d.dlg.openFor(d, ed.ParaStyleID(ed.Sel.Caret.Para)) })
 		add(gui.MenuItem{Label: "Styles", Shortcut: "Ctrl+Alt+Shift+S", Checked: d.pane.open, Tip: "Show or hide the Styles pane."},
 			func() { d.homeExtra(homeStylesPane) })
+		sep()
+	}
+	if ed.SelectedPictureObj() != nil {
+		// Word's picture commands.
+		add(gui.MenuItem{Label: "Edit Alt Text…", Tip: "Describe the picture for people who can't see it."},
+			func() { d.openPictureDialog(picFormatDlg, tabProperties) })
+		add(gui.MenuItem{Label: "Size and Position…", Tip: "Set the picture's size, how text wraps around it and where it sits on the page."},
+			func() { d.openPictureDialog(picLayoutDlg, tabSize) })
+		add(gui.MenuItem{Label: "Format Picture…", Tip: "Set the picture's border, alternative text and crop."},
+			func() { d.openPictureDialog(picFormatDlg, tabFillLine) })
 		sep()
 	}
 	if l, ok := ed.SelectionLink(); ok {
@@ -516,8 +557,9 @@ func (d *window) contextMenuLayout(gtx layout.Context) {
 
 // previewMouse sets up the wordshot preview of these features: the
 // context menu (in the first table, if any), dragging the first table's
-// first column border 30pt right, or dragging the first word to the end
-// of its line.
+// first column border 30pt right, dragging the first word to the end of
+// its line, or, for the first picture, its context menu and the tabs of
+// Size and Position and Format Picture.
 func (d *window) previewMouse(what string) {
 	d.relayout()
 	ed := d.ed
@@ -533,6 +575,10 @@ func (d *window) previewMouse(what string) {
 		c, _ := d.eng.CaretAt(p)
 		pg := d.eng.Pages[c.Page]
 		return image.Pt(d.pageX()+int((pg.X+c.X)*d.v.scale), int((pg.Top+c.Y+c.H-d.v.scrollY)*d.v.scale))
+	}
+	if strings.HasPrefix(what, "picture-") {
+		d.previewPicture(what, caretPt)
+		return
 	}
 	switch what {
 	case "context":
@@ -562,4 +608,40 @@ func (d *window) previewMouse(what string) {
 		_, end, _ := d.eng.LineBounds(model.Pos{}, false)
 		m.pending, m.moving, m.drop, m.dropOK = true, true, end, b.Less(end)
 	}
+}
+
+// previewPicture selects the document's first picture and shows what
+// says: its context menu, or a tab of Size and Position (position,
+// wrapping, size) or of Format Picture (line, alt, crop).
+func (d *window) previewPicture(what string, caretPt func(model.Pos) image.Point) {
+	ed := d.ed
+	found := false
+	for i := 0; i < ed.NumParas() && !found; i++ {
+		for off := 0; off < ed.Para(i).Len(); off++ {
+			if ed.PictureObjAt(model.Pos{Para: i, Off: off}) != nil {
+				ed.Select(model.Pos{Para: i, Off: off}, model.Pos{Para: i, Off: off + 1})
+				found = true
+				break
+			}
+		}
+	}
+	if !found {
+		return
+	}
+	d.v.ensureCaret = true
+	d.scrollToCaret()
+	tabs := map[string][2]int{
+		"picture-position": {picLayoutDlg, tabPosition}, "picture-wrapping": {picLayoutDlg, tabWrapping},
+		"picture-size": {picLayoutDlg, tabSize}, "picture-line": {picFormatDlg, tabFillLine},
+		"picture-alt": {picFormatDlg, tabProperties}, "picture-crop": {picFormatDlg, tabPicture},
+	}
+	if t, ok := tabs[what]; ok {
+		d.openPictureDialog(t[0], t[1])
+		if what == "picture-position" {
+			d.pic.wrap.Value = "square" // as after choosing a wrapping style
+		}
+		return
+	}
+	a, _ := ed.Sel.Ordered()
+	d.openContextMenu(caretPt(a).Add(image.Pt(20, 0)))
 }

@@ -30,6 +30,9 @@ import (
 var (
 	// ErrNotFound: the user has no file or folder of that name.
 	ErrNotFound = errors.New("no such file or folder")
+	// ErrNoFolder: the folder to put something in isn't there (deleted,
+	// moved or renamed, perhaps from another tab, or never made).
+	ErrNoFolder = errors.New("that folder isn't there")
 	// ErrExists: a file or folder of that name (in any case) is already
 	// there.
 	ErrExists = errors.New("a file or folder with that name already exists")
@@ -234,6 +237,16 @@ func resolve(home string, parts []string) (string, string, error) {
 	return dir, rel, nil
 }
 
+// resolveFolder is resolve for a folder something goes into: a missing
+// one is ErrNoFolder.
+func resolveFolder(home string, parts []string) (string, string, error) {
+	dir, rel, err := resolve(home, parts)
+	if errors.Is(err, ErrNotFound) {
+		err = ErrNoFolder
+	}
+	return dir, rel, err
+}
+
 // usage returns the bytes of the documents and the number of folders in
 // the user's folder home, counting every folder in it.
 func usage(home string) (int64, int, error) {
@@ -415,7 +428,8 @@ func (s *Store) Open(username, path string) (*os.File, Info, error) {
 	return f, d, err
 }
 
-// Put stores r as username's document at path, whose folder must exist,
+// Put stores r as username's document at path, whose folder must exist
+// (else ErrNoFolder),
 // within quota bytes for all their documents and web.FileMaxBytes for
 // this one. An existing document of that name (in any case) is replaced,
 // keeping its name, when replace is set, else Put fails with ErrExists.
@@ -435,7 +449,7 @@ func (s *Store) Put(username, path string, r io.Reader, quota int64, replace boo
 			return Info{}, err
 		}
 	}
-	dir, rel, err := resolve(home, dirs)
+	dir, rel, err := resolveFolder(home, dirs)
 	if err != nil {
 		return Info{}, err
 	}
@@ -495,7 +509,7 @@ func (s *Store) Put(username, path string, r io.Reader, quota int64, replace boo
 }
 
 // MakeFolder makes username's folder at path, in a folder that must
-// exist. It fails with ErrExists when that folder already has a folder
+// exist (else ErrNoFolder). It fails with ErrExists when that folder already has a folder
 // of the name (in any case), and with ErrTooManyFolders past
 // web.FolderMaxCount.
 func (s *Store) MakeFolder(username, path string) (Folder, error) {
@@ -514,7 +528,7 @@ func (s *Store) MakeFolder(username, path string) (Folder, error) {
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		return Folder{}, err
 	}
-	parent, rel, err := resolve(home, parts[:len(parts)-1])
+	parent, rel, err := resolveFolder(home, parts[:len(parts)-1])
 	if err != nil {
 		return Folder{}, err
 	}
@@ -577,7 +591,8 @@ func (s *Store) DeleteFolder(username, path string, all bool) error {
 
 // Move moves or renames username's document or folder from to to (paths
 // whose last names say which: a document's ends in a stored extension).
-// The folder to goes into must exist. It fails with ErrExists when that
+// The folder to goes into must exist (else ErrNoFolder); a missing
+// from is ErrNotFound. It fails with ErrExists when that
 // folder already has something named like to's last name (in any case);
 // changing only the case of a name is allowed. A folder can't move into
 // itself (ErrIntoItself) or to where its folders would be more than
@@ -641,7 +656,7 @@ func (s *Store) Move(username, from, to string) (string, error) {
 		}
 		srcName, srcPath = d.Name, d.Path
 	}
-	dstDir, dstRel, err := resolve(home, toDirs)
+	dstDir, dstRel, err := resolveFolder(home, toDirs)
 	if err != nil {
 		return "", err
 	}

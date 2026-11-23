@@ -1,7 +1,8 @@
 // Page view interactions for inserted content: clicking a picture
-// selects it and its handles resize it, Ctrl+click follows a link, a drag
-// across table cells selects whole cells, Tab moves between cells and
-// Ctrl+K opens Insert Link.
+// (inline or floating) selects it and its handles resize it, dragging a
+// floating picture moves it, Ctrl+click follows a link, a drag across
+// table cells selects whole cells, Tab moves between cells and Ctrl+K
+// opens Insert Link.
 
 package ui
 
@@ -71,23 +72,35 @@ func (d *window) pointerPage(p f32.Point) (int, float64, float64, bool) {
 // the usual caret placement; it reports true when it took the press.
 func (d *window) pressObject(e pointer.Event, clicks int) bool {
 	s := &d.ins
-	s.resizing = false
+	s.resizing, s.moving = false, false
 	page, x, y, ok := d.pointerPage(e.Position)
 	if !ok {
 		return false
 	}
 	// A handle of the selected picture starts a resize.
-	if r := d.ed.SelectedPicture(); r != nil && clicks == 1 {
-		a, _ := d.ed.Sel.Ordered()
-		if pg, box, ok := d.ceng().PictureRect(a); ok && pg == page {
-			for i, h := range wl.PictureHandles(box) {
-				grow := 3.0 / d.v.scale // easier to hit when zoomed out
-				if x >= h.X0-grow && x <= h.X1+grow && y >= h.Y0-grow && y <= h.Y1+grow {
-					s.resizing, s.handle, s.resPos, s.resBox, s.resNow, s.resPage, s.resStart = true, i, a, box, box, pg, e.Position
-					return true
-				}
+	if clicks == 1 {
+		if i, ok := d.pictureHandleAt(e.Position); ok {
+			a, _ := d.ed.Sel.Ordered()
+			pg, box, fb, _ := d.selectedPictureBox()
+			s.resizing, s.handle, s.resPos, s.resBox, s.resNow, s.resPage, s.resStart = true, i, a, box, box, pg, e.Position
+			s.resFloat = fb != nil
+			if fb != nil {
+				s.baseX, s.baseY = fb.BaseX, fb.BaseY
 			}
+			return true
 		}
+	}
+	// A floating picture is selected, and a drag moves it.
+	shiftHeld := e.Modifiers.Contain(key.ModShift)
+	if fb, ok := d.floatAt(e.Position); ok && !shiftHeld {
+		a := fb.Anchor
+		d.ed.Select(a, model.Pos{Para: a.Para, Off: a.Off + 1})
+		s.anchor = a
+		if clicks == 1 {
+			s.moving, s.resPos, s.resBox, s.resNow, s.resPage, s.resStart = true, a, fb.R, fb.R, page, e.Position
+			s.resFloat, s.baseX, s.baseY = true, fb.BaseX, fb.BaseY
+		}
+		return true
 	}
 	shift := e.Modifiers.Contain(key.ModShift)
 	if e.Modifiers.Contain(key.ModShortcut) && clicks == 1 && !shift {
@@ -108,6 +121,77 @@ func (d *window) pressObject(e pointer.Event, clicks int) bool {
 	return false
 }
 
+// selectedPictureBox returns the page and box of the selected picture,
+// inline or floating, with its placement when it floats.
+func (d *window) selectedPictureBox() (int, wl.Rect, *wl.FloatBox, bool) {
+	r := d.ed.SelectedPictureObj()
+	if r == nil {
+		return 0, wl.Rect{}, nil, false
+	}
+	a, _ := d.ed.Sel.Ordered()
+	if r.Opaque.Float != nil {
+		pg, fb, ok := d.ceng().FloatRect(a)
+		if !ok {
+			return 0, wl.Rect{}, nil, false
+		}
+		return pg, fb.R, fb, true
+	}
+	pg, box, ok := d.ceng().PictureRect(a)
+	return pg, box, nil, ok
+}
+
+// floatAt returns the floating picture at a view position. One behind
+// the text is only found where there is no text over it, so text there
+// can still be clicked into.
+func (d *window) floatAt(p f32.Point) (*wl.FloatBox, bool) {
+	page, x, y, ok := d.pointerPage(p)
+	if !ok {
+		return nil, false
+	}
+	fb, ok := d.ceng().FloatAt(page, x, y)
+	if !ok || fb.F.Wrap == model.WrapBehind && d.overText(p) {
+		return nil, false
+	}
+	return fb, true
+}
+
+// pictureHandleAt returns which handle of the selected picture is at a
+// view position (numbered as layout.PictureHandles), if any.
+func (d *window) pictureHandleAt(p f32.Point) (int, bool) {
+	page, x, y, ok := d.pointerPage(p)
+	if !ok {
+		return 0, false
+	}
+	pg, box, _, ok := d.selectedPictureBox()
+	if !ok || pg != page {
+		return 0, false
+	}
+	grow := 3.0 / d.v.scale // easier to hit when zoomed out
+	for i, h := range wl.PictureHandles(box) {
+		if x >= h.X0-grow && x <= h.X1+grow && y >= h.Y0-grow && y <= h.Y1+grow {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+// overFloat reports whether a view position is on a floating picture,
+// which a drag moves.
+func (d *window) overFloat(p f32.Point) bool {
+	_, ok := d.floatAt(p)
+	return ok
+}
+
+// overPicture reports whether a view position is on an inline picture.
+func (d *window) overPicture(p f32.Point) bool {
+	page, x, y, ok := d.pointerPage(p)
+	if !ok {
+		return false
+	}
+	_, _, ok = d.ceng().PictureAt(page, x, y)
+	return ok
+}
+
 // overText reports whether a view position is on a line's text (not in
 // the margin beside it), for following links.
 func (d *window) overText(p f32.Point) bool {
@@ -120,16 +204,20 @@ func (d *window) overText(p f32.Point) bool {
 	return ok && page == c.Page && math.Abs(x-c.X) < 24 && y >= c.Y-2 && y <= c.Y+c.H+2
 }
 
-// dragObject continues a picture resize; it reports true while one is
-// in progress.
+// dragObject continues a picture resize or a floating picture's move;
+// it reports true while one is in progress.
 func (d *window) dragObject(e pointer.Event) bool {
 	s := &d.ins
-	if !s.resizing {
+	if !s.resizing && !s.moving {
 		return false
 	}
 	dx := float64(e.Position.X-s.resStart.X) / d.v.scale
 	dy := float64(e.Position.Y-s.resStart.Y) / d.v.scale
 	b := s.resBox
+	if s.moving {
+		s.resNow = wl.Rect{X0: b.X0 + dx, Y0: b.Y0 + dy, X1: b.X1 + dx, Y1: b.Y1 + dy}
+		return true
+	}
 	w0, h0 := b.X1-b.X0, b.Y1-b.Y0
 	w, h := w0, h0
 	// Handles clockwise from the top-left; the opposite edge stays.
@@ -177,18 +265,42 @@ func (d *window) dragObject(e pointer.Event) bool {
 	return true
 }
 
-// releaseObject ends a picture resize, applying the new size.
+// releaseObject ends a picture resize, applying the new size, or a
+// floating picture's move, applying its new position.
 func (d *window) releaseObject() {
 	s := &d.ins
-	if !s.resizing {
+	if !s.resizing && !s.moving {
 		return
 	}
-	s.resizing = false
-	w, h := s.resNow.X1-s.resNow.X0, s.resNow.Y1-s.resNow.Y0
-	if math.Abs(w-(s.resBox.X1-s.resBox.X0)) < 0.5 && math.Abs(h-(s.resBox.Y1-s.resBox.Y0)) < 0.5 {
+	moving := s.moving
+	s.resizing, s.moving = false, false
+	n, b := s.resNow, s.resBox
+	w, h := n.X1-n.X0, n.Y1-n.Y0
+	sameSize := math.Abs(w-(b.X1-b.X0)) < 0.5 && math.Abs(h-(b.Y1-b.Y0)) < 0.5
+	samePlace := math.Abs(n.X0-b.X0) < 0.5 && math.Abs(n.Y0-b.Y0) < 0.5
+	if sameSize && samePlace {
 		return
 	}
-	d.ed.ResizePicture(s.resPos, math.Round(w*4)/4, math.Round(h*4)/4)
+	switch {
+	case s.resFloat:
+		label := "Picture Size"
+		if moving {
+			label = "Move Picture"
+		}
+		d.ed.EditPicture(s.resPos, label, func(o *model.Opaque) {
+			f := o.Float
+			f.W, f.H = math.Round(w*4)/4, math.Round(h*4)/4
+			// A moved edge leaves the alignment for a position of its own.
+			if math.Abs(n.X0-b.X0) >= 0.5 {
+				f.AlignX, f.X = "", math.Round((n.X0-s.baseX)*4)/4
+			}
+			if math.Abs(n.Y0-b.Y0) >= 0.5 {
+				f.AlignY, f.Y = "", math.Round((n.Y0-s.baseY)*4)/4
+			}
+		})
+	default:
+		d.ed.ResizePicture(s.resPos, math.Round(w*4)/4, math.Round(h*4)/4)
+	}
 	d.ed.Select(s.resPos, model.Pos{Para: s.resPos.Para, Off: s.resPos.Off + 1})
 	d.edited()
 }
@@ -200,10 +312,11 @@ func (d *window) dragTo(pos model.Pos) {
 	d.ed.Sel = d.ed.SnapToCells(d.ed.Sel)
 }
 
-// drawInsertOverlay draws the outline of a picture being resized.
+// drawInsertOverlay draws the outline of a picture being resized or
+// moved.
 func (d *window) drawInsertOverlay(gtx layout.Context, px int) {
 	s := &d.ins
-	if !s.resizing || s.resPage >= len(d.eng.Pages) {
+	if !s.resizing && !s.moving || s.resPage >= len(d.eng.Pages) {
 		return
 	}
 	v := &d.v

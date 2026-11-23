@@ -271,7 +271,9 @@ func copyOpaque(o *Opaque) *Opaque {
 	}
 	if o.Float != nil {
 		f := *o.Float
-		f.Blocks = CopyBlocks(f.Blocks)
+		if f.Blocks != nil { // nil stays nil: a shape or picture, not an empty text box
+			f.Blocks = CopyBlocks(f.Blocks)
+		}
 		c.Float = &f
 	}
 	return &c

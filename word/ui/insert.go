@@ -188,12 +188,17 @@ type insertState struct {
 	// page view
 	anchor   model.Pos // where a drag selection started
 	resizing bool      // dragging a picture handle
+	moving   bool      // dragging a floating picture to move it
 	handle   int
-	resPos   model.Pos // the picture being resized
+	resPos   model.Pos // the picture being resized or moved
 	resBox   wl.Rect   // its box when the drag started (page points)
 	resPage  int       // and its page
 	resStart f32.Point // pointer position at the start
 	resNow   wl.Rect   // the box being dragged
+	// resFloat is set when the picture floats; baseX and baseY are then
+	// the point its offsets are measured from (layout.FloatBox).
+	resFloat     bool
+	baseX, baseY float64
 }
 
 // show opens dialog or popup k, resetting the picker and focusing the

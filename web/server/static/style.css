@@ -18,6 +18,8 @@
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.25);
   }
 }
+/* Hidden means hidden, whatever display a rule below gives the element. */
+[hidden] { display: none !important; }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 "Segoe UI", system-ui, sans-serif; }
 a { color: var(--accent); }
@@ -120,6 +122,7 @@ th { font-weight: 600; color: var(--muted); font-size: 0.9rem; }
 .files .actions input[name=to] { width: 12em; }
 .files .actions input[name=dest] { width: 12em; }
 .files .open.folder { border-left-color: var(--muted); }
+.files .fname[draggable="true"] { cursor: grab; }
 /* The Files page's folder path, and the file dialog's. */
 .crumbs { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin: 0 0 12px; overflow-wrap: anywhere; }
 .crumbs button { padding: 2px 6px; }
@@ -166,15 +169,32 @@ button.eye svg { width: 18px; height: 18px; fill: none; stroke: currentColor; st
 .fd-buttons .local { margin-right: auto; }
 .fd .err { margin: 0; }
 .fd .crumbs { margin: 0; }
-.fd-list .folder span:first-child::before { content: "📁 "; }
-.fd-list .up span:first-child::before { content: "↑ "; }
+.fd-list .folder .name::before { content: "📁 "; }
+.fd-list .up .name::before { content: "↑ "; }
 .fd-newfolder { display: flex; gap: 8px; }
 .fd-newfolder input { flex: 1; }
+/* The file explorer (serverfs.js browser) with a mouse and room: a
+   folder tree beside the list, which has Name, Size and Modified columns.
+   Phones and tablets get the plain list. */
+.fd.wide { width: min(880px, 100%); max-height: min(720px, 100%); }
+.fx { flex: 1; display: grid; grid-template-columns: minmax(160px, 30%) 1fr; gap: 10px; min-height: 260px; overflow: hidden; }
+.fx-tree, .fx-tree ul { margin: 0; padding: 0; list-style: none; }
+.fx-tree { overflow: auto; border: 1px solid var(--line); border-radius: 8px; padding: 4px 0; }
+.fx-tree ul { padding-left: 14px; }
+.fx-node { display: flex; align-items: center; gap: 2px; padding: 3px 8px 3px 4px; cursor: pointer; white-space: nowrap; border-radius: 6px; }
+.fx-node:hover { background: var(--accent-tint); }
+.fx-node.current { background: var(--accent); color: #fff; }
+@media (prefers-color-scheme: dark) { .fx-node.current { color: #15141c; } }
+.fx-toggle { width: 1.4em; padding: 0; border: none; background: none; color: inherit; font-size: 0.8em; cursor: pointer; }
+.fx-label::before { content: "📁 "; }
+.fx-list li { display: grid; grid-template-columns: 1fr auto 9.5em; gap: 12px; }
+.fx-list .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fx-list .when { opacity: 0.75; white-space: nowrap; text-align: right; }
+.fx-list li.empty { display: block; }
+/* A folder something is being dragged over. */
+.drop, .fd-list li.drop, .fx-node.drop { outline: 2px dashed var(--accent); outline-offset: -2px; background: var(--accent-tint); }
 
-/* Messages over the app pages: serverfs.js's errors and idle.js's
-   countdown. */
-.toast { position: fixed; left: 50%; bottom: 20px; z-index: 110; transform: translateX(-50%); max-width: min(560px, calc(100% - 32px));
-  box-shadow: var(--shadow); }
+/* idle.js's countdown over the pages. */
 .idle-bar { position: fixed; left: 50%; top: 16px; z-index: 120; transform: translateX(-50%); display: flex; flex-wrap: wrap;
   align-items: center; gap: 10px 16px; max-width: calc(100% - 32px); padding: 10px 16px; border-radius: 10px;
   background: var(--card); color: var(--fg); border: 1px solid var(--line); border-left: 5px solid var(--excel);

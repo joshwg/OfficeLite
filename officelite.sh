@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
-# Build and run OfficeLite.
+# Build and run OfficeLite (the desktop app; the web version is web.sh).
 #
-#   ./officelite.sh [--excel|--word] [file ...]    build (if needed) and open
-#   ./officelite.sh --linux [...]                  native Linux build instead
-#   ./officelite.sh --apple                        build for Apple Silicon
-#   ./officelite.sh --build                        build only
+#   ./officelite.sh [--excel|--word] [--edit] [file ...]   build, then open
+#   ./officelite.sh --linux [app options] [file ...]       native Linux build instead
+#   ./officelite.sh --windows [app options] [file ...]     Windows .exe (the WSL default)
+#   ./officelite.sh --apple                                build for Apple Silicon only
+#   ./officelite.sh --build                                build only, for this machine
+#   ./officelite.sh --help                                 show this help
+#
+# Only the first option picks the build; the rest go to the app:
+#   --excel   open the files as spreadsheets; with none, a blank workbook
+#   --word    open the files as documents; with none, a blank document
+#   --edit    open Word templates (.dotx, .dot) for editing, not as new documents
 #
 # On macOS the default is a native build for this Mac's CPU (Apple Silicon or
 # Intel), opened directly; it needs Xcode's command-line tools for CGO.
@@ -29,6 +36,11 @@ if [[ $(uname -s) == Darwin ]]; then
     target=mac
 fi
 case "${1:-}" in
+-h | --help | help)
+    # The comment block at the top, without its "# ".
+    awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"
+    exit 0
+    ;;
 --linux) target=linux; shift ;;
 --windows) target=windows; shift ;;
 --apple) target=apple; shift ;;

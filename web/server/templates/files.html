@@ -7,9 +7,9 @@
 </section>
 
 <nav class="crumbs" aria-label="Folder">
-  {{if .Data.Crumbs}}<a href="/files">Cloud files</a>{{else}}<strong>Cloud files</strong>{{end}}
+  {{if .Data.Crumbs}}<a href="/files" data-folder="">Cloud files</a>{{else}}<strong>Cloud files</strong>{{end}}
   {{range $i, $c := .Data.Crumbs}} <span aria-hidden="true">›</span>
-    {{if eq $c.Dir $.Data.Dir}}<strong>{{$c.Name}}</strong>{{else}}<a href="/files?dir={{$c.Dir}}">{{$c.Name}}</a>{{end}}
+    {{if eq $c.Dir $.Data.Dir}}<strong>{{$c.Name}}</strong>{{else}}<a href="/files?dir={{$c.Dir}}" data-folder="{{$c.Dir}}">{{$c.Name}}</a>{{end}}
   {{end}}
 </nav>
 
@@ -54,12 +54,13 @@
 </datalist>
 
 {{if .Data.Rows}}
-<div class="scroll">
+<p class="hint" id="drag-hint" hidden>Drag a file or folder by its name onto a folder (or onto the path above) to move it there.</p>
+<div class="scroll" data-dir="{{.Data.Dir}}">
 <table class="files">
   <thead><tr><th>Name</th><th class="num">Size</th><th>Modified (UTC)</th><th>Actions</th></tr></thead>
   <tbody>
   {{range .Data.Rows}}
-  <tr>
+  <tr data-path="{{.Path}}"{{if .Folder}} data-folder="{{.Path}}"{{end}}>
     <td class="fname">
       {{if .Folder}}<a class="open folder" href="/files?dir={{.Path}}" title="Open the folder">{{.Name}}/</a>
       {{else if .App}}<a class="open {{.App}}" href="/{{.App}}?open={{.Path}}" title="Open in {{if eq .App "word"}}WordLite{{else}}ExcelLite{{end}}">{{.Name}}</a>
@@ -95,4 +96,5 @@
 {{else}}
 <p class="hint">No files yet. Upload some above, or use File → Save As in WordLite or ExcelLite.</p>
 {{end}}
+<script src="/static/files.js" defer></script>
 {{end}}

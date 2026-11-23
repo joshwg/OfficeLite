@@ -41,13 +41,44 @@ clear of objects that wrap top-and-bottom or square). A table of contents
 stays a field (shaded while the caret is in it); F9 rebuilds it from the
 headings with their page numbers. The Insert menu supports tables (grid
 picker or Insert Table…, insert/delete rows and columns, Tab between cells),
-pictures (shown, selectable, resizable by their handles, saved in `.docx`),
-hyperlinks (Ctrl+K; Ctrl+click opens), symbols, date & time, and page/line
+pictures (shown, selectable, resizable by their handles, saved in `.docx`;
+see Pictures below), hyperlinks (Ctrl+K; Ctrl+click opens), symbols, date & time, and page/line
 breaks. File > Export > PDF writes the pages as laid out; File > Print goes
 through a PDF. Comments are kept on a `.docx` re-save but not shown or
 edited. Tracked changes are not shown as markup: insertions appear as normal
 text and deletions are hidden. Other fields show their last result; EMF/WMF
 pictures, charts and SmartArt show as placeholders.
+
+## Pictures
+
+Click a picture to select it; its eight handles show resize arrows under
+the pointer, and dragging one resizes the picture (corners keep its
+shape). A floating picture (one text wraps around, placed on the page)
+shows the four-way move arrow: drag it to move it. Delete, Cut and Copy
+work on the selected picture, and every change is one Undo step.
+
+Right-click a picture for Word's picture commands:
+
+- **Edit Alt Text…** — the description read out in place of the picture,
+  or **Mark as decorative** for one that needs none.
+- **Size and Position…** (Word's Layout dialog):
+  - *Position* — horizontal and vertical, either aligned (left, centered,
+    right; top, centered, bottom) or at a distance, relative to the
+    column, margin, page, character, paragraph or line.
+  - *Text Wrapping* — In line with text, Square, Tight, Top and bottom,
+    Behind text, In front of text, and the distance kept from the text.
+    Choosing a style other than In line with text makes the picture
+    float where it is; In line with text puts it back in its line.
+  - *Size* — height and width in inches (or cm, mm, pt), the scale in
+    percent of the original or the current size, Lock aspect ratio, and
+    the original size with Reset.
+- **Format Picture…** — *Fill & Line*: no line or a solid border of any
+  color and width; *Layout & Properties*: the alternative text; *Picture*:
+  how much to crop off each edge (cropping keeps the scale, so the picture
+  gets smaller).
+
+All of this is saved in `.docx` (Word's alt text, decorative mark, crop and
+border) and drawn the same way in the PDF export.
 
 ## Menus and ribbon
 
@@ -264,8 +295,14 @@ dialog.
 - Show/Hide ¶ draws the marks in a mid grey; there are no floating-object
   anchor marks, and hidden text is revealed in the body only (not in
   headers and footers).
-- Resizing a picture from a `.docx` rewrites it (its crop and effects are
-  lost).
+- Changing a picture from a `.docx` rewrites its description: its size,
+  position, wrapping, crop, border and alternative text are kept; other
+  effects (shadows, reflections, recoloring) are lost.
+- Square and Tight wrapping keep text above and below a picture, as Top
+  and bottom does: text never flows beside a floating object. Word's
+  *Through* wrapping and picture rotation aren't offered.
+- A picture's alternative text from a file WordLite saved before this
+  version may be its file name (older versions wrote the name there).
 - No right-to-left text or IME composition; table header rows don't repeat.
   A table row can continue across pages when its cell content does not fit.
 - Borders: a `.docx` cell's own borders (width, color) and a paragraph's

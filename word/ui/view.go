@@ -295,7 +295,7 @@ func (d *window) docPointer(gtx layout.Context) {
 			}
 			pos := d.viewPos(e.Position)
 			if d.pressObject(e, v.clicks) {
-				v.dragging = d.ins.resizing
+				v.dragging = d.ins.resizing || d.ins.moving
 				v.hasGoal = false
 				v.resetBlink()
 				continue
@@ -351,10 +351,10 @@ func (d *window) docPointer(gtx layout.Context) {
 			if e.Kind == pointer.Cancel {
 				d.cancelMouse()
 			}
-			moved := d.releaseMove(e) || d.releaseBorder() || d.ins.resizing
+			moved := d.releaseMove(e) || d.releaseBorder() || d.ins.resizing || d.ins.moving
 			d.releaseMargin()
 			if e.Kind == pointer.Cancel {
-				d.ins.resizing = false // a canceled picture resize changes nothing
+				d.ins.resizing, d.ins.moving = false, false // a canceled picture resize or move changes nothing
 			}
 			if v.dragging && e.Kind == pointer.Release && !moved {
 				d.painterRelease()

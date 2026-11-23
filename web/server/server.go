@@ -284,7 +284,10 @@ type page struct {
 	User  *store.User // nil on the login page
 	Msg   string      // a success message
 	Err   string      // an error message
-	Data  any         // the page's own data
+	// ErrTitle, when set, also shows Err in a dialog box with this title
+	// (static/serverfs.js), for something that unexpectedly failed.
+	ErrTitle string
+	Data     any // the page's own data
 }
 
 // render executes a page template; status is the HTTP status.

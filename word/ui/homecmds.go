@@ -284,7 +284,9 @@ func (d *window) handleEscape() bool {
 }
 
 // extraModal reports whether one of these features' dialogs is open.
-func (d *window) extraModal() bool { return d.pasteSpec.open || d.newStyle.open || d.hf.nums.open }
+func (d *window) extraModal() bool {
+	return d.pasteSpec.open || d.newStyle.open || d.hf.nums.open || d.pic.open
+}
 
 // extraDialogs draws these features' dialogs.
 func (d *window) extraDialogs(gtx layout.Context) {
@@ -296,6 +298,9 @@ func (d *window) extraDialogs(gtx layout.Context) {
 	}
 	if d.hf.nums.open {
 		d.hf.nums.layout(gtx, d) // pagenum.go
+	}
+	if d.pic.open {
+		d.pic.layout(gtx, d) // picturedlg.go
 	}
 }
 

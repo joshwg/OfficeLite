@@ -41,12 +41,19 @@ apps they look like a folder named `/server`:
 
 - **File → Open → Browse** opens the browser's file picker straight away,
   for a file on your computer.
-- **File → Open → Cloud files** lists your folders and the files in them
-  that the app can open. Click a folder to go into it, and the path at the
-  top (*Cloud files › Reports › 2026*) or **Up to …** to go back.
+- **File → Open → Cloud files** shows your folders and the files in them
+  that the app can open. It starts in the folder you last used, and
   **New folder** makes a folder where you are. **From this computer…**
-  goes to the browser's picker too. Ctrl+F12 opens the same dialog. It
-  starts in the folder you last used.
+  goes to the browser's picker too; Ctrl+F12 opens the same dialog.
+  - **With a mouse** (and a window at least 700 pixels wide) it is a file
+    explorer: a folder tree on the left, the folder's contents on the
+    right with their size and when they changed. Click to select,
+    double-click (or Enter) to open. **Drag** a file or folder onto a
+    folder — in the tree, in the list, or in the path at the top — to move
+    it there.
+  - **On a phone or tablet** it is a compact list: tap a folder to go into
+    it, and the path at the top (*Cloud files › Reports › 2026*) or **Up
+    to …** to go back. No tree and no dragging.
 - **File → Save As** shows the same folders, starting in the document's
   own folder. Type a name for the folder you are in; a name typed without
   an extension gets the format's. Saving over an existing file asks first.
@@ -69,7 +76,17 @@ folder shown (several files at once; tick *Replace* to overwrite files of
 the same name), download, rename, move (type or pick the folder; blank is
 the top) and delete. Delete asks Yes/No; deleting a folder deletes
 everything in it. Clicking a folder goes into it; clicking a document's
-name opens it in WordLite or ExcelLite.
+name opens it in WordLite or ExcelLite. With a mouse you can also drag a
+file or folder by its name onto a folder (or onto the path at the top) to
+move it.
+
+If something changed in another tab meanwhile, the page says so plainly:
+deleting a file or folder that is already gone just reports *Already
+deleted — maybe in another tab*; renaming or moving one that is gone, or
+putting something into a folder that is gone, shows a dialog box saying
+it is no longer there. Anything else that fails unexpectedly — on the
+Files page or while an app saves, deletes, renames or makes a folder —
+also shows a dialog box with the reason, with an OK button.
 
 Documents from your computer still work as before: open them from your
 disk and save by downloading. One opened while the window already holds a

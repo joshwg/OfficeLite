@@ -24,9 +24,11 @@
 // saveDialog, used by
 // common/gui/filedialog_js.go), a new tab for each further file the apps
 // open (officeweb.openTab, cmd/officelite/page_js.go; openDataTab for a
-// file from the user's computer, common/gui/opentab_js.go), and Yes/No
-// confirmation for the server
-// pages' forms marked data-confirm. The file- and folder-name rules come
+// file from the user's computer, common/gui/opentab_js.go), Yes/No
+// confirmation for the server pages' forms marked data-confirm, dialog
+// boxes for failures (the server's and the pages' data-alert errors),
+// and drag and drop of cloud files onto folders (officeweb.dragSource and
+// dropTarget, also used by the Files page's static/files.js). The file- and folder-name rules come
 // from the server through this script tag's data-max-name,
 // data-max-depth and data-exts (the server checks them again).
 (function () {
@@ -143,17 +145,21 @@
   }
 
   // api calls url with method and body and returns the response, or
-  // throws an fsError (after telling the user what the server said,
-  // except for a GET's 404 and the statuses in quiet).
-  async function api(method, url, body, quiet) {
+  // throws an fsError whose userMessage is what the server said. A
+  // failure is shown in a dialog box titled title, except for a GET's 404
+  // and the statuses in quiet (true: all of them), which the caller
+  // reports itself or expects.
+  async function api(method, url, body, title, quiet) {
     const init = { method: method, credentials: "same-origin", cache: "no-store" };
     if (body !== undefined) init.body = body;
     let resp;
     try {
       resp = await fetch(url, init);
     } catch (e) {
-      toast("Couldn't reach the server: " + e.message);
-      throw fsError("EIO");
+      const err = fsError("EIO");
+      err.userMessage = "Couldn't reach the server: " + e.message;
+      if (quiet !== true) alertBox(title, err.userMessage);
+      throw err;
     }
     if (resp.ok) return resp;
     let msg = resp.statusText, code = "";
@@ -163,9 +169,11 @@
       code = b.code || "";
     } catch (e) { /* not JSON */ }
     if (resp.status === 401) msg = "You've been logged out. Log in again in another tab, then try again.";
-    const silent = (resp.status === 404 && method === "GET") || (quiet && quiet.includes(resp.status));
-    if (!silent) toast(msg);
-    throw fsError(code || CODES[resp.status] || "EIO");
+    const silent = quiet === true || (resp.status === 404 && method === "GET") || (quiet && quiet.includes(resp.status));
+    if (!silent) alertBox(resp.status === 401 ? "Logged out" : title, msg);
+    const err = fsError(code || CODES[resp.status] || "EIO");
+    err.userMessage = msg;
+    throw err;
   }
 
   // fileURL is the API address of the document at rel.
@@ -179,12 +187,13 @@
   // files: [{name, path, size, modified}] }. A missing folder throws
   // ENOENT.
   async function listing(dir) {
-    return (await api("GET", "/api/files" + (dir ? "?dir=" + encodeURIComponent(dir) : ""))).json();
+    return (await api("GET", "/api/files" + (dir ? "?dir=" + encodeURIComponent(dir) : ""), undefined, "Couldn't list your cloud files")).json();
   }
 
-  // move moves or renames a document or folder on the server.
-  function move(from, to) {
-    return api("POST", "/api/move", JSON.stringify({ from: from, to: to }));
+  // move moves or renames a document or folder on the server; a failure
+  // shows in a dialog box titled title.
+  function move(from, to, title) {
+    return api("POST", "/api/move", JSON.stringify({ from: from, to: to }), title || "Couldn't move or rename");
   }
 
   // find returns the entry in list named name without regard to case.
@@ -256,7 +265,7 @@
 
   // upload stores rec's bytes as the server document at rel.
   async function upload(rec, rel) {
-    await api("PUT", fileURL(rel), rec.data.slice(0, rec.size));
+    await api("PUT", fileURL(rel), rec.data.slice(0, rec.size), "Couldn't save");
     rec.dirty = false;
   }
 
@@ -317,7 +326,7 @@
         } else {
           if (creat && excl && await lookup(p)) throw fsError("EEXIST");
           try {
-            const resp = await api("GET", fileURL(p.rel));
+            const resp = await api("GET", fileURL(p.rel), undefined, "Couldn't open");
             rec = newRecord(p.rel, true);
             rec.data = new Uint8Array(await resp.arrayBuffer());
             rec.size = rec.data.length;
@@ -442,7 +451,7 @@
       if (p.root) return callback(fsError("EISDIR"));
       if (locals.delete(p.rel)) return callback(null);
       if (!isDoc(p.name)) return callback(fsError(hidden(p.name) ? "ENOENT" : "EISDIR")); // os.Remove then tries rmdir
-      run(callback, function () { return api("DELETE", fileURL(p.rel)); });
+      run(callback, function () { return api("DELETE", fileURL(p.rel), undefined, "Couldn't delete"); });
     },
 
     mkdir(path, perm, callback) {
@@ -450,7 +459,7 @@
       if (!p) return enosys(callback);
       if (p.root) return callback(fsError("EEXIST"));
       if (hidden(p.name) || isDoc(p.name)) return callback(fsError("EINVAL"));
-      run(callback, function () { return api("PUT", folderURL(p.rel), undefined, [409]); });
+      run(callback, function () { return api("PUT", folderURL(p.rel), undefined, "Couldn't make the folder", [409]); });
     },
 
     rmdir(path, callback) {
@@ -458,7 +467,7 @@
       if (!p) return enosys(callback);
       if (p.root) return callback(fsError("EBUSY"));
       if (hidden(p.name) || isDoc(p.name)) return callback(fsError("ENOTDIR"));
-      run(callback, function () { return api("DELETE", folderURL(p.rel), undefined, [409]); });
+      run(callback, function () { return api("DELETE", folderURL(p.rel), undefined, "Couldn't delete the folder", [409]); });
     },
 
     ftruncate(fd, length, callback) {
@@ -489,25 +498,6 @@
   };
 
   // ---- messages ----
-
-  let toastTimer = 0;
-
-  // toast shows msg at the bottom of the page for a few seconds.
-  function toast(msg) {
-    if (!hasDOM) return;
-    let el = document.getElementById("fs-toast");
-    if (!el) {
-      el = document.createElement("div");
-      el.id = "fs-toast";
-      el.className = "err toast";
-      el.setAttribute("role", "alert");
-      document.body.appendChild(el);
-    }
-    el.textContent = msg;
-    el.hidden = false;
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(function () { el.hidden = true; }, 8000);
-  }
 
   // openTab opens url (an app page) in a new tab, as the app does for a
   // second file; label names what opens there.
@@ -587,13 +577,18 @@
     return (Math.round(n * 10) / 10) + " " + units[u];
   }
 
+  // openModals counts the dialog boxes shown (one can open over another,
+  // as a failure's over the file explorer).
+  let openModals = 0;
+
   // modal shows a dialog box built by build(box, close) over the page and
-  // resolves with what close was called with. While it is open the app
-  // leaves the keyboard alone (common/gui/keyboard_js.go).
-  function modal(title, build) {
+  // resolves with what close was called with; cls is an extra class for
+  // the box ("wide"). While any is open the app leaves the keyboard alone
+  // (common/gui/keyboard_js.go).
+  function modal(title, build, cls) {
     return new Promise(function (resolve) {
       const back = el("div", "fd-back");
-      const box = el("div", "fd");
+      const box = el("div", cls ? "fd " + cls : "fd");
       box.setAttribute("role", "dialog");
       box.setAttribute("aria-modal", "true");
       box.appendChild(el("h2", "", title));
@@ -604,7 +599,8 @@
         if (done) return;
         done = true;
         back.remove();
-        globalThis.officewebModalOpen = false;
+        openModals--;
+        globalThis.officewebModalOpen = openModals > 0;
         if (before && before.focus) before.focus();
         resolve(result);
       }
@@ -612,6 +608,7 @@
         e.stopPropagation(); // keys belong to the dialog, not the app
         if (e.key === "Escape") close(box.dataset.cancel || "cancel");
       });
+      openModals++;
       globalThis.officewebModalOpen = true;
       build(box, close);
       document.body.appendChild(back);
@@ -622,23 +619,128 @@
     });
   }
 
+  // alerts holds the messages of the failure dialogs open, so the same
+  // one isn't stacked twice.
+  const alerts = new Set();
+
+  // alertBox shows msg in a dialog box titled title (a failure, such as a
+  // delete that didn't work) with an OK button. It does nothing without a
+  // page (under Node).
+  function alertBox(title, msg) {
+    if (!hasDOM || alerts.has(msg)) return Promise.resolve();
+    alerts.add(msg);
+    return modal(title || "Something went wrong", function (box, close) {
+      box.setAttribute("role", "alertdialog");
+      box.appendChild(el("p", "", msg));
+      const row = el("div", "fd-buttons");
+      row.append(button("OK", "", function () { close("ok"); }));
+      box.appendChild(row);
+    }).then(function () { alerts.delete(msg); });
+  }
+
+  // A server page's failure (an error with data-alert="title") shows in
+  // a dialog box too.
+  if (hasDOM) {
+    const failed = document.querySelector(".err[data-alert]");
+    if (failed) alertBox(failed.dataset.alert, failed.textContent);
+  }
+
   // lastDir is the folder the dialogs were last in, where the next one
   // starts.
   let lastDir = "";
 
-  // browser adds a folder browser to box: the path from the top (each
-  // step goes back there), the folder's subfolders and documents (with
-  // extensions in exts, or all when exts is empty), a New folder button
-  // and the quota. A click on a folder goes into it; pick(path, name,
-  // open) is called when a document is clicked (open: double-clicked or
-  // Enter). It starts in start ("" for the top; the top when start is
-  // gone) and returns { dir() }, the folder shown.
+  // DRAG is the drag-and-drop type of a cloud file or folder's path.
+  const DRAG = "application/x-officeweb-path";
+
+  // explorerLayout reports whether the page suits the file explorer (a
+  // folder tree and drag and drop): a mouse or touchpad and room for two
+  // panes. Phones and tablets get the compact list instead.
+  function explorerLayout() {
+    return hasDOM && window.matchMedia("(pointer: fine) and (min-width: 700px)").matches;
+  }
+
+  // baseName is the last name of path.
+  function baseName(path) {
+    return path.slice(path.lastIndexOf("/") + 1);
+  }
+
+  // within reports whether path is folder or inside it (ignoring case).
+  function within(path, folder) {
+    const p = path.toLowerCase(), f = folder.toLowerCase();
+    return f === "" || p === f || p.startsWith(f + "/");
+  }
+
+  // moveInto moves the document or folder at from into folder by drag
+  // and drop and reports whether it moved; a failure shows in a dialog.
+  async function moveInto(from, folder) {
+    if (parentOf(from).toLowerCase() === folder.toLowerCase()) return false; // already there
+    if (folder !== "" && within(folder, from)) {
+      alertBox("Couldn't move", "A folder can't move into itself or a folder inside it.");
+      return false;
+    }
+    try {
+      await move(from, join(folder, baseName(from)), "Couldn't move");
+      return true;
+    } catch (e) {
+      return false; // the dialog said why
+    }
+  }
+
+  // dragSource makes elem draggable as the cloud file or folder at path.
+  function dragSource(elem, path) {
+    elem.draggable = true;
+    elem.addEventListener("dragstart", function (e) {
+      e.dataTransfer.setData(DRAG, path);
+      e.dataTransfer.effectAllowed = "move";
+    });
+  }
+
+  // dropTarget makes elem take cloud files and folders dropped on it,
+  // moving them into folder and then calling done.
+  function dropTarget(elem, folder, done) {
+    elem.addEventListener("dragover", function (e) {
+      if (!e.dataTransfer.types.includes(DRAG)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      elem.classList.add("drop");
+    });
+    elem.addEventListener("dragleave", function () { elem.classList.remove("drop"); });
+    elem.addEventListener("drop", function (e) {
+      elem.classList.remove("drop");
+      const from = e.dataTransfer.getData(DRAG);
+      if (!from) return;
+      e.preventDefault();
+      moveInto(from, folder).then(function (moved) { if (moved) done(); });
+    });
+  }
+
+  // formatTime shows a modified time (Unix milliseconds) briefly.
+  function formatTime(ms) {
+    return new Date(ms).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
+  }
+
+  // browser adds a view of the user's cloud files to box: the path from
+  // the top (each step goes back there), the folder's subfolders and
+  // documents (with extensions in exts, or all when exts is empty), a
+  // New folder button and the quota. With a mouse and room it is a file
+  // explorer: a folder tree beside the list, Name, Size and Modified
+  // columns, a click to select and a double-click (or Enter) to open,
+  // and files and folders moved by dragging them onto a folder. On a
+  // phone or tablet it is a compact list where a tap goes into a folder.
+  // pick(path, name, open) is called when a document is chosen (open:
+  // double-clicked, Enter, or tapped on a phone). It starts in start (""
+  // for the top; the top when start is gone) and returns { dir(),
+  // newButton }.
   function browser(box, exts, start, pick) {
+    const explorer = explorerLayout();
     let dir = start;
     const crumbs = el("nav", "crumbs");
     crumbs.setAttribute("aria-label", "Folder");
-    const list = el("ul", "fd-list");
+    const list = el("ul", explorer ? "fd-list fx-list" : "fd-list");
     list.setAttribute("role", "listbox");
+    const tree = el("ul", "fx-tree");
+    tree.setAttribute("role", "tree");
+    tree.setAttribute("aria-label", "Folders");
     const quota = el("p", "hint");
     const newRow = el("div", "fd-newfolder");
     const newName = el("input");
@@ -652,7 +754,18 @@
     const cancelNew = button("Cancel", "ghost", function () { showNew(false); });
     newRow.append(newName, make, cancelNew);
     const newButton = button("New folder", "ghost", function () { showNew(true); });
-    box.append(crumbs, list, newRow, newProblem, quota);
+    if (explorer) {
+      const panes = el("div", "fx");
+      panes.append(tree, list);
+      box.append(crumbs, panes, newRow, newProblem, quota);
+    } else {
+      box.append(crumbs, list, newRow, newProblem, quota);
+    }
+
+    // The tree's folders: which are expanded, and the subfolders of those
+    // loaded, by path.
+    const expanded = new Set([""]);
+    const kids = new Map();
 
     // showNew shows or hides the new folder's name box.
     function showNew(on) {
@@ -679,13 +792,14 @@
         return;
       }
       try {
-        await api("PUT", folderURL(join(dir, name)), undefined, [409]);
+        await api("PUT", folderURL(join(dir, name)), undefined, "Couldn't make the folder", true);
       } catch (e) {
-        newProblem.textContent = e.code === "EEXIST" ? name + " already exists here." : "Couldn't make the folder.";
+        newProblem.textContent = e.code === "EEXIST" ? name + " already exists here." : e.userMessage || "Couldn't make the folder.";
         newProblem.hidden = false;
         return;
       }
       showNew(false);
+      kids.delete(dir);
       show(join(dir, name));
     }
     newName.addEventListener("keydown", function (e) {
@@ -693,25 +807,37 @@
       if (e.key === "Escape") { e.stopPropagation(); showNew(false); }
     });
 
-    // option adds a list entry labeled text that calls choose(open).
-    function option(text, cls, size, choose) {
+    // refresh reloads the tree and the folder shown, after a move.
+    async function refresh() {
+      kids.clear();
+      await show(dir);
+    }
+
+    // option adds a list entry: its name, size and (in the explorer) when
+    // it changed. choose(open) is called when it is chosen: in the
+    // explorer a click selects it and a double-click or Enter opens it; on
+    // a phone a tap opens it.
+    function option(name, cls, size, modified, choose) {
       const li = el("li", cls);
       li.setAttribute("role", "option");
       li.tabIndex = 0;
-      li.append(el("span", "", text), el("span", "size", size));
+      li.append(el("span", "name", name), el("span", "size", size));
+      if (explorer) li.appendChild(el("span", "when", modified ? formatTime(modified) : ""));
       const select = function () {
         list.querySelectorAll("[aria-selected]").forEach(function (o) { o.removeAttribute("aria-selected"); });
         li.setAttribute("aria-selected", "true");
       };
-      li.addEventListener("click", function () { select(); choose(false); });
+      li.addEventListener("click", function () { select(); choose(!explorer); });
       li.addEventListener("dblclick", function () { select(); choose(true); });
       li.addEventListener("keydown", function (e) {
         if (e.key === "Enter") { select(); choose(true); }
       });
       list.appendChild(li);
+      return li;
     }
 
-    // drawCrumbs shows the path to the folder shown.
+    // drawCrumbs shows the path to the folder shown; in the explorer each
+    // step takes files and folders dropped on it.
     function drawCrumbs(shown) {
       crumbs.replaceChildren();
       const steps = [{ name: "Cloud files", path: "" }];
@@ -719,15 +845,73 @@
       if (shown !== "") shown.split("/").forEach(function (n) { at = join(at, n); steps.push({ name: n, path: at }); });
       steps.forEach(function (st, i) {
         if (i > 0) crumbs.appendChild(el("span", "", "›"));
-        if (i === steps.length - 1) {
-          crumbs.appendChild(el("strong", "", st.name));
-        } else {
-          crumbs.appendChild(button(st.name, "ghost", function () { show(st.path); }));
-        }
+        const step = i === steps.length - 1 ? el("strong", "", st.name) : button(st.name, "ghost", function () { show(st.path); });
+        if (explorer) dropTarget(step, st.path, refresh);
+        crumbs.appendChild(step);
       });
     }
 
-    // show lists the folder at path (the top when it's gone).
+    // loadKids loads the subfolders of path for the tree; a folder that
+    // is gone closes.
+    async function loadKids(path) {
+      try {
+        kids.set(path, (await listing(path)).folders);
+      } catch (e) {
+        kids.delete(path);
+        expanded.delete(path);
+      }
+    }
+
+    // treeNode is the tree's entry for folder f and, when it is expanded,
+    // its subfolders.
+    function treeNode(f) {
+      const li = el("li");
+      li.setAttribute("role", "treeitem");
+      const open = expanded.has(f.path);
+      const sub = kids.get(f.path);
+      li.setAttribute("aria-expanded", String(open));
+      const row = el("div", f.path === dir ? "fx-node current" : "fx-node");
+      row.tabIndex = 0;
+      const toggle = el("button", "fx-toggle", sub && sub.length === 0 ? "" : open ? "▾" : "▸");
+      toggle.type = "button";
+      toggle.tabIndex = -1;
+      toggle.setAttribute("aria-label", open ? "Collapse " + f.name : "Expand " + f.name);
+      toggle.addEventListener("click", async function (e) {
+        e.stopPropagation();
+        if (open) {
+          expanded.delete(f.path);
+        } else {
+          expanded.add(f.path);
+          if (!kids.has(f.path)) await loadKids(f.path);
+        }
+        drawTree();
+      });
+      row.append(toggle, el("span", "fx-label", f.name));
+      row.addEventListener("click", function () { show(f.path); });
+      row.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") show(f.path);
+        if (e.key === "ArrowRight" && !open) toggle.click();
+        if (e.key === "ArrowLeft" && open) toggle.click();
+      });
+      if (f.path !== "") dragSource(row, f.path);
+      dropTarget(row, f.path, refresh);
+      li.appendChild(row);
+      if (open && sub && sub.length > 0) {
+        const group = el("ul");
+        group.setAttribute("role", "group");
+        sub.forEach(function (c) { group.appendChild(treeNode(c)); });
+        li.appendChild(group);
+      }
+      return li;
+    }
+
+    // drawTree redraws the folder tree from the top.
+    function drawTree() {
+      tree.replaceChildren(treeNode({ name: "Cloud files", path: "" }));
+    }
+
+    // show lists the folder at path (the top when it's gone) and, in the
+    // explorer, opens the tree down to it.
     async function show(path) {
       list.replaceChildren(el("li", "empty", "Loading…"));
       let l;
@@ -743,26 +927,44 @@
       drawCrumbs(dir);
       list.replaceChildren();
       if (dir !== "") {
-        option("Up to " + parentName(dir), "up", "", function () { show(parentOf(dir)); });
+        const up = option("Up to " + parentName(dir), "up", "", 0, function (open) { if (open) show(parentOf(dir)); });
+        if (explorer) dropTarget(up, parentOf(dir), refresh);
       }
       l.folders.forEach(function (f) {
-        option(f.name, "folder", "", function () { show(f.path); });
+        const li = option(f.name, "folder", "", f.modified, function (open) { if (open) show(f.path); });
+        if (explorer) {
+          dragSource(li, f.path);
+          dropTarget(li, f.path, refresh);
+        }
       });
       const shown = l.files.filter(function (f) { return exts.length === 0 || exts.includes(extOf(f.name)); });
       shown.forEach(function (f) {
-        option(f.name, "", formatSize(f.size), function (open) { pick(f.path, f.name, open); });
+        const li = option(f.name, "", formatSize(f.size), f.modified, function (open) { pick(f.path, f.name, open); });
+        if (explorer) dragSource(li, f.path);
       });
       if (l.folders.length === 0 && shown.length === 0) {
         list.appendChild(el("li", "empty", dir === "" ? "No cloud files yet." : "This folder is empty."));
       }
       newButton.disabled = depth(dir) >= MAX_DEPTH;
       newButton.title = newButton.disabled ? "Folders may be at most " + MAX_DEPTH + " deep." : "";
-      quota.textContent = "Using " + formatSize(l.used) + " of " + formatSize(l.quota) + " of cloud storage.";
+      quota.textContent = "Using " + formatSize(l.used) + " of " + formatSize(l.quota) + " of cloud storage." +
+        (explorer ? " Drag files and folders onto a folder to move them." : "");
+      if (explorer) {
+        kids.set(dir, l.folders);
+        let at = "";
+        const steps = dir === "" ? [] : dir.split("/");
+        for (let i = 0; i <= steps.length; i++) {
+          expanded.add(at);
+          if (!kids.has(at)) await loadKids(at);
+          if (i < steps.length) at = join(at, steps[i]);
+        }
+        drawTree();
+      }
     }
 
     showNew(false);
     show(start);
-    return { dir: function () { return dir; }, newButton: newButton };
+    return { dir: function () { return dir; }, newButton: newButton, explorer: explorer };
   }
 
   // parentOf is the folder holding path ("" for the top).
@@ -806,7 +1008,7 @@
         button("Cancel", "ghost", function () { close("cancel"); }),
         ok);
       box.appendChild(row);
-    });
+    }, explorerLayout() ? "wide" : "");
   }
 
   // saveDialog asks for the cloud file to save as, suggesting name: a
@@ -914,7 +1116,7 @@
         const dot = input.value.lastIndexOf(".");
         input.setSelectionRange(0, dot > 0 ? dot : input.value.length);
       }, 0);
-    });
+    }, explorerLayout() ? "wide" : "");
   }
 
   // ---- Yes/No confirmation for the server pages' forms ----
@@ -951,5 +1153,9 @@
     });
   });
 
-  globalThis.officeweb = { openDialog: openDialog, saveDialog: saveDialog, confirm: confirmBox, openTab: openTab, openDataTab: openDataTab };
+  globalThis.officeweb = {
+    openDialog: openDialog, saveDialog: saveDialog, confirm: confirmBox, alert: alertBox, openTab: openTab, openDataTab: openDataTab,
+    // For the Files page's drag and drop (static/files.js).
+    explorerLayout: explorerLayout, dragSource: dragSource, dropTarget: dropTarget,
+  };
 })();

@@ -33,6 +33,11 @@ type Placed struct {
 	W    float64 // width of the text column (page text area or cell)
 
 	order int // index in document order of all placed lines
+	// colX and paraTop are where a floating object anchored in the line
+	// measures its column- and paragraph-relative offsets from: the text
+	// column's (or table cell's) left edge and the paragraph's top on the
+	// page.
+	colX, paraTop float64
 	// collapsed is set on the empty paragraph that ends a table cell
 	// after a nested table: Word gives it no room and shows no mark.
 	collapsed bool
@@ -528,13 +533,17 @@ func (e *Engine) place(pl Placed) {
 	pg := e.page
 	ref := LineRef{pg.Index, len(pg.Lines)}
 	pl.order = len(e.order)
+	if pl.Box != e.lastBox {
+		e.lastBox, e.paraTop = pl.Box, pl.Y
+	}
+	pl.paraTop, pl.colX = e.paraTop, e.textLeft()
+	if pl.Box != nil && pl.Box.table != nil {
+		pl.colX = pl.X - pl.Box.Left
+	}
 	pg.Lines = append(pg.Lines, pl)
 	e.paraLines[pl.Para] = append(e.paraLines[pl.Para], ref)
 	e.order = append(e.order, ref)
 	e.empty = false
-	if pl.Box != e.lastBox {
-		e.lastBox, e.paraTop = pl.Box, pl.Y
-	}
 	for k := range pl.Line.Items {
 		it := &pl.Line.Items[k]
 		if it.Kind != ItemObject || it.Obj == nil {
@@ -544,7 +553,7 @@ func (e *Engine) place(pl Placed) {
 			e.addFootnote(n)
 		}
 		if f := it.Obj.Float; f != nil {
-			e.addFloat(f, &pl, it.X)
+			e.addFloat(f, &pl, it)
 		}
 	}
 }

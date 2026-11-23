@@ -92,6 +92,46 @@ func PictureRun(pic *Picture, w, h float64) Run {
 	return Run{Kind: RunOpaque, Text: "[picture]", Opaque: &Opaque{Width: w, Height: h, Picture: pic}}
 }
 
+// PictureLook is how a picture is shown besides its size and border: the
+// parts cut off its edges and the text that describes it.
+type PictureLook struct {
+	// Crop is the fraction of the image cut off at the left, top, right
+	// and bottom (each 0 to below 1), as Word's a:srcRect; the rest fills
+	// the picture's box.
+	Crop [4]float64
+	// Alt is the alternative text read out in place of the picture;
+	// Decorative marks a picture that needs none.
+	Alt        string
+	Decorative bool
+}
+
+// Cropped reports whether any edge is cut off.
+func (l PictureLook) Cropped() bool { return l.Crop != [4]float64{} }
+
+// Uncropped returns where the whole image goes (x, y, w, h) when the
+// picture's box is x, y, w × h: the cropped part fills the box and the
+// rest lies outside it, to be clipped.
+func (l PictureLook) Uncropped(x, y, w, h float64) (float64, float64, float64, float64) {
+	c := l.Crop
+	fx, fy := 1-c[0]-c[2], 1-c[1]-c[3]
+	if fx <= 0 || fy <= 0 {
+		return x, y, w, h
+	}
+	fw, fh := w/fx, h/fy
+	return x - c[0]*fw, y - c[1]*fh, fw, fh
+}
+
+// NaturalSize is the picture's size in points at 96 dpi (as Word inserts
+// pictures without resolution information), or false when its data
+// isn't an image Go can read.
+func (p *Picture) NaturalSize() (float64, float64, bool) {
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(p.Data))
+	if err != nil || cfg.Width <= 0 || cfg.Height <= 0 {
+		return 0, 0, false
+	}
+	return float64(cfg.Width) * 0.75, float64(cfg.Height) * 0.75, true
+}
+
 // Decodable reports whether the picture is in a format that can be drawn.
 func (p *Picture) Decodable() bool {
 	_, _, err := image.DecodeConfig(bytes.NewReader(p.Data))

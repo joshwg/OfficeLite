@@ -41,8 +41,10 @@ type Floating struct {
 	Shape string
 	// Blocks is a text box's content (nil for a plain shape or a picture).
 	Blocks []Block
-	// Picture is a floating picture's image.
+	// Picture is a floating picture's image, and Look its crop and
+	// alternative text (its border is Line and LineWidth).
 	Picture *Picture
+	Look    PictureLook
 	// X and Y are the offset of the object's top-left corner from its
 	// references; AlignX ("left", "center", "right", "inside", "outside")
 	// and AlignY ("top", "center", "bottom") replace them when set.

@@ -23,17 +23,23 @@ import (
 
 // FloatBox is a floating object placed on a page: its box and, for a
 // text box, its text (lines, fills and rules in page coordinates).
+// Anchor is the position of the run anchoring it (the object is the
+// character after it), and BaseX, BaseY the point its X and Y offsets are
+// measured from (its references' top-left corner).
 type FloatBox struct {
-	F     *model.Floating
-	R     Rect
-	Lines []Placed
-	Fills []Fill
-	Rules []Rect
+	F            *model.Floating
+	R            Rect
+	Lines        []Placed
+	Fills        []Fill
+	Rules        []Rect
+	Anchor       model.Pos
+	BaseX, BaseY float64
 }
 
-// addFloat places a floating object anchored on line pl (at x itemX of
-// the line) on the page being filled.
-func (e *Engine) addFloat(f *model.Floating, pl *Placed, itemX float64) {
+// addFloat places a floating object anchored on line pl (by its item
+// it) on the page being filled.
+func (e *Engine) addFloat(f *model.Floating, pl *Placed, it *Item) {
+	itemX := it.X
 	pg := e.page
 	for _, b := range pg.Floats {
 		if b.F == f {
@@ -51,9 +57,9 @@ func (e *Engine) addFloat(f *model.Floating, pl *Placed, itemX float64) {
 	case model.RelCharacter:
 		x0, w = pl.X+itemX, 0
 	default: // column, paragraph
-		x0, w = pl.X-pl.Box.Left, pl.W
+		x0, w = pl.colX, pl.W
 		if pl.Box.table == nil {
-			x0, w = e.textLeft(), e.textWidth()
+			w = e.textWidth()
 		}
 	}
 	x := x0 + f.X
@@ -74,7 +80,7 @@ func (e *Engine) addFloat(f *model.Floating, pl *Placed, itemX float64) {
 	case model.RelLine:
 		y0, h = pl.Y, pl.Line.Height
 	default: // paragraph
-		y0, h = e.paraTop, 0
+		y0, h = pl.paraTop, 0
 	}
 	y := y0 + f.Y
 	switch f.AlignY {
@@ -85,7 +91,7 @@ func (e *Engine) addFloat(f *model.Floating, pl *Placed, itemX float64) {
 	case "bottom":
 		y = y0 + h - f.H
 	}
-	b := &FloatBox{F: f, R: Rect{x, y, x + f.W, y + f.H}}
+	b := &FloatBox{F: f, R: Rect{x, y, x + f.W, y + f.H}, Anchor: model.Pos{Para: pl.Para, Off: it.Off}, BaseX: x0, BaseY: y0}
 	if f.IsTextBox() {
 		in := f.Inset
 		fl := e.layoutFlow(f.Blocks, max(f.W-in[0]-in[2], 6), nil)
@@ -247,7 +253,7 @@ func (e *Engine) drawFloat(ops *op.Ops, b *FloatBox, s float64) {
 	}
 	if f.Picture != nil {
 		r := b.R
-		it := Item{Kind: ItemObject, Obj: &model.Opaque{Picture: f.Picture, Width: r.X1 - r.X0, Height: r.Y1 - r.Y0}}
+		it := Item{Kind: ItemObject, Obj: &model.Opaque{Picture: f.Picture, Look: f.Look, Width: r.X1 - r.X0, Height: r.Y1 - r.Y0}}
 		if !e.drawPicture(ops, &it, r.X0, r.Y1, s) {
 			e.drawObject(ops, &Item{Kind: ItemObject, Obj: it.Obj, St: e.style(e.Doc.ResolveRun(&model.Paragraph{}, &model.Run{})), Text: "[picture]"}, r.X0, r.Y1, s)
 		}
@@ -273,3 +279,48 @@ func fillRect(ops *op.Ops, r Rect, c color.NRGBA, s float64) {
 }
 
 func f32Pt(x, y, s float64) f32.Point { return f32.Pt(float32(x*s), float32(y*s)) }
+
+// FloatAt returns the floating picture at page point (x, y) on page pg:
+// of those in front of the text the last drawn, else of those behind it.
+func (e *Engine) FloatAt(page int, x, y float64) (*FloatBox, bool) {
+	if page < 0 || page >= len(e.Pages) {
+		return nil, false
+	}
+	fl := e.Pages[page].Floats
+	for _, behind := range []bool{false, true} {
+		for i := len(fl) - 1; i >= 0; i-- {
+			b := fl[i]
+			if b.F.Picture == nil || (b.F.Wrap == model.WrapBehind) != behind {
+				continue
+			}
+			if x >= b.R.X0 && x <= b.R.X1 && y >= b.R.Y0 && y <= b.R.Y1 {
+				return b, true
+			}
+		}
+	}
+	return nil, false
+}
+
+// FloatRect returns the page and placement of the floating object
+// anchored just after p.
+func (e *Engine) FloatRect(p model.Pos) (int, *FloatBox, bool) {
+	for i, pg := range e.Pages {
+		for _, b := range pg.Floats {
+			if b.Anchor == p {
+				return i, b, true
+			}
+		}
+	}
+	return 0, nil, false
+}
+
+// FloatOrigin returns the page holding position p and the point a
+// floating object anchored there measures Word's default offsets from:
+// the text column's left edge and the paragraph's top.
+func (e *Engine) FloatOrigin(p model.Pos) (int, float64, float64, bool) {
+	pl, ok := e.lineFor(p)
+	if !ok {
+		return 0, 0, 0, false
+	}
+	return e.pageOf(pl), pl.colX, pl.paraTop, true
+}

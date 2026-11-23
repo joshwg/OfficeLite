@@ -101,6 +101,7 @@ func (r *reader) anchorFloat(a *node) *model.Floating {
 		if blip := pic.find("a:blip"); blip != nil {
 			f.Picture = r.picture(blip.attr("r:embed"))
 		}
+		f.Look = pictureLookOf(a)
 		if sp := pic.child("pic:spPr"); sp != nil {
 			r.shapeProps(f, sp, nil)
 			f.Fill = ""
@@ -366,7 +367,11 @@ func (w *writer) floatRun(b *strings.Builder, r *model.Run) {
 	if name == "" {
 		name = "Shape " + strconv.Itoa(id)
 	}
-	b.WriteString(`<wp:docPr id="` + strconv.Itoa(id) + `" name="` + escAttr(name) + `"/><wp:cNvGraphicFramePr/>`)
+	var look model.PictureLook
+	if f.Picture != nil {
+		look = f.Look
+	}
+	b.WriteString(docPrXML(strconv.Itoa(id), name, look) + `<wp:cNvGraphicFramePr/>`)
 	b.WriteString(`<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">`)
 	spPr := func(fill string) string {
 		geom := f.Shape
@@ -397,7 +402,7 @@ func (w *writer) floatRun(b *strings.Builder, r *model.Run) {
 		rid := w.pictureRel(f.Picture)
 		b.WriteString(`<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
 			`<pic:nvPicPr><pic:cNvPr id="` + strconv.Itoa(id) + `" name="` + escAttr(name) + `"/><pic:cNvPicPr/></pic:nvPicPr>` +
-			`<pic:blipFill><a:blip r:embed="` + escAttr(rid) + `"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr>`)
+			blipFillXML(rid, f.Look) + `<pic:spPr>`)
 		b.WriteString(spPr("") + `</pic:spPr></pic:pic></a:graphicData>`)
 	} else {
 		b.WriteString(`<a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp>`)

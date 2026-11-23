@@ -180,7 +180,7 @@ func TestFolders(t *testing.T) {
 	if _, err := s.MakeFolder("ann", "REPORTS"); !errors.Is(err, ErrExists) {
 		t.Fatalf("same folder in another case: %v", err)
 	}
-	if _, err := s.MakeFolder("ann", "Missing/x"); !errors.Is(err, ErrNotFound) {
+	if _, err := s.MakeFolder("ann", "Missing/x"); !errors.Is(err, ErrNoFolder) {
 		t.Fatalf("folder in a missing one: %v", err)
 	}
 	var ne *NameError
@@ -196,7 +196,7 @@ func TestFolders(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, "ann", "Reports", "2026", "Budget.xlsx")); err != nil {
 		t.Fatalf("not a real folder on disk: %v", err)
 	}
-	if _, err := s.Put("ann", "Nowhere/x.docx", strings.NewReader("x"), 100, false); !errors.Is(err, ErrNotFound) {
+	if _, err := s.Put("ann", "Nowhere/x.docx", strings.NewReader("x"), 100, false); !errors.Is(err, ErrNoFolder) {
 		t.Fatalf("Put in a missing folder: %v", err)
 	}
 	put(t, s, "top.docx", "12", 100, false)
@@ -264,6 +264,12 @@ func TestFolderMoveDelete(t *testing.T) {
 	}
 	if _, err := s.Move("ann", "A", "A/B/A"); !errors.Is(err, ErrIntoItself) {
 		t.Fatalf("move into itself: %v", err)
+	}
+	if _, err := s.Move("ann", "Gone.docx", "A/Gone.docx"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("move of a missing document: %v", err)
+	}
+	if _, err := s.Move("ann", "x.docx", "Nowhere/x.docx"); !errors.Is(err, ErrNoFolder) {
+		t.Fatalf("move into a missing folder: %v", err)
 	}
 	if _, err := s.Move("ann", "A", "c"); !errors.Is(err, ErrExists) {
 		t.Fatalf("rename onto a folder: %v", err)

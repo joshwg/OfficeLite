@@ -61,7 +61,8 @@ func Preview(gtx layout.Context, fonts *gui.FontLibrary, list *recent.List, doc 
 		if dialog == "autosave-saved" {
 			d.as.SavedAt = time.Now()
 		}
-	case "context", "colresize", "dragtext":
+	case "context", "colresize", "dragtext", "picture-context", "picture-position", "picture-wrapping", "picture-size",
+		"picture-line", "picture-alt", "picture-crop":
 		// These need the page view laid out once to place themselves.
 		d.layout(gtx)
 		gtx.Reset()

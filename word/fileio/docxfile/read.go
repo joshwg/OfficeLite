@@ -694,6 +694,18 @@ func (r *reader) describe(k *node, run *model.Run) {
 			if blip := k.find("a:blip"); blip != nil {
 				o.Picture = r.picture(blip.attr("r:embed"))
 			}
+			o.Look = pictureLookOf(k)
+			if ln := k.find("pic:spPr"); ln != nil {
+				if ln = ln.child("a:ln"); ln != nil {
+					if fill := ln.child("a:solidFill"); fill != nil {
+						o.Line = r.drawingColor(fill)
+						o.LineWidth = 0.75 // Word's default
+						if w := ln.attr("w"); w != "" {
+							o.LineWidth = emuPt(w)
+						}
+					}
+				}
+			}
 		}
 		if o.Picture == nil {
 			r.warn(warnPictures)

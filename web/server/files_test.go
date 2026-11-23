@@ -371,3 +371,76 @@ func TestDeleteUserFiles(t *testing.T) {
 		t.Fatalf("create over leftover folder: %d", resp.StatusCode)
 	}
 }
+
+// TestFilesPageGone checks what the Files page does with something
+// already gone (deleted from another tab, say): deleting it again counts
+// as done, renaming or moving it says why it may be gone, and those
+// failures, like a move into a missing folder, ask for a dialog box
+// (data-alert).
+func TestFilesPageGone(t *testing.T) {
+	f := newFixture(t)
+	c := f.browser(t)
+	f.login(t, c, "ann")
+	if _, err := f.files.Put("ann", "a.docx", strings.NewReader("x"), 100, false); err != nil {
+		t.Fatal(err)
+	}
+	resp := f.post(t, c, "/files/delete", url.Values{"name": {"Gone.docx"}, "confirm": {"1"}})
+	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/files?msg=gone" {
+		t.Fatalf("delete of a gone file: %d %s", resp.StatusCode, resp.Header.Get("Location"))
+	}
+	if resp := f.post(t, c, "/files/delete", url.Values{"name": {"Old"}, "confirm": {"1"}}); resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("delete of a gone folder: %d", resp.StatusCode)
+	}
+	for _, tc := range []struct {
+		path string
+		form url.Values
+		want []string
+	}{
+		{"/files/rename", url.Values{"name": {"Gone.docx"}, "to": {"New.docx"}},
+			[]string{`data-alert="Couldn&#39;t rename"`, "“Gone.docx” is no longer there. It may have been deleted, moved or renamed in another tab."}},
+		{"/files/move", url.Values{"name": {"a.docx"}, "dest": {"Nowhere"}},
+			[]string{`data-alert="Couldn&#39;t move"`, "The folder “Nowhere” is no longer there."}},
+		{"/files/mkdir", url.Values{"dir": {"Nowhere"}, "name": {"Sub"}},
+			[]string{`data-alert="Couldn&#39;t make the folder"`, "The folder “Nowhere” is no longer there."}},
+	} {
+		status, body := f.postPage(t, c, tc.path, tc.form)
+		if status != http.StatusNotFound {
+			t.Errorf("%s: %d", tc.path, status)
+		}
+		for _, w := range tc.want {
+			if !strings.Contains(body, w) {
+				t.Errorf("%s: page lacks %q", tc.path, w)
+			}
+		}
+	}
+	resp2, page := f.get(t, c, "/files?dir=Gone")
+	if resp2.StatusCode != http.StatusOK || !strings.Contains(page, `data-alert="Folder not found"`) {
+		t.Fatalf("missing folder page: %d", resp2.StatusCode)
+	}
+	status, body := f.call(t, c, http.MethodDelete, "/api/files/Gone.docx", "")
+	if status != http.StatusNotFound || !strings.Contains(body, "deleted, moved or renamed in another tab") {
+		t.Fatalf("API delete of a gone file: %d %s", status, body)
+	}
+}
+
+// postPage posts form to path like a page's form and returns the status
+// and the page sent back.
+func (f *fixture) postPage(t *testing.T, c *http.Client, path string, form url.Values) (int, string) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost, f.srv.URL+path, strings.NewReader(form.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	resp, err := c.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp.StatusCode, string(b)
+}

@@ -368,8 +368,13 @@ type Opaque struct {
 	// recalculated.
 	Field string
 	// Picture is the image the content shows (an inline picture), drawn
-	// at Width × Height; nil for other content.
-	Picture *Picture
+	// at Width × Height; nil for other content. Look is its crop and
+	// alternative text, Line and LineWidth its border (the color, "" for
+	// none, and points), as a floating picture's.
+	Picture   *Picture
+	Look      PictureLook
+	Line      string
+	LineWidth float64
 	// Note is the footnote or endnote this run references (Text is its
 	// mark); NoteMark is set on the mark that starts a note's own text.
 	Note     *Note

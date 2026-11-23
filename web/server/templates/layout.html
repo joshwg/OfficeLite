@@ -36,7 +36,7 @@
 </header>
 <main>
   {{with .Msg}}<p class="msg">{{.}}</p>{{end}}
-  {{with .Err}}<p class="err" role="alert">{{.}}</p>{{end}}
+  {{with .Err}}<p class="err" role="alert"{{with $.ErrTitle}} data-alert="{{.}}"{{end}}>{{.}}</p>{{end}}
   {{template "content" .}}
 </main>
 </body>

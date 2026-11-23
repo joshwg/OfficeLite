@@ -8,6 +8,7 @@
 #   ./web.sh admin NAME            create an administrator in bin/webdata/
 #   ./web.sh package               build for the server (linux/amd64) into
 #                                  bin/officeweb-<version>.tar.gz
+#   ./web.sh --help                show this help
 #
 # The client is precompressed (officelite.wasm.br with brotli when it is
 # installed — sudo apt install brotli — and .gz always) so the server can
@@ -80,6 +81,9 @@ build_server() {
 }
 
 case "${1:-}" in
+-h | --help | help)
+    sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+    ;;
 build)
     build_client
     build_server
@@ -114,7 +118,7 @@ package)
     echo "packaged $pkg.tar.gz"
     ;;
 *)
-    sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
     exit 2
     ;;
 esac

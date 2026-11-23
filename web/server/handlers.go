@@ -32,6 +32,7 @@ var messages = map[string]string{
 	"folder":        "Folder made.",
 	"filedeleted":   "File deleted.",
 	"folderdeleted": "Folder deleted.",
+	"gone":          "Already deleted — maybe in another tab.",
 }
 
 // message returns the success message for the request's ?msg= code.

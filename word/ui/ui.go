@@ -158,8 +158,9 @@ type window struct {
 	pane       stylesPane
 	cm         commentsPane // comments.go
 	newStyle   newStyleDialog
-	showMarks  bool // Show/Hide ¶ (per window, not saved)
-	showCodes  bool // field codes shown in place of results (Alt+F9; per window, not saved)
+	pic        pictureDialog // Size and Position, Format Picture (picturedlg.go)
+	showMarks  bool          // Show/Hide ¶ (per window, not saved)
+	showCodes  bool          // field codes shown in place of results (Alt+F9; per window, not saved)
 }
 
 // Run drives a document window until it is closed.

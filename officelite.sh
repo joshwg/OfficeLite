@@ -79,9 +79,9 @@ elif [[ $target == windows ]]; then
     # Detach so the terminal is free while the windows are open.
     (cd /mnt/c && setsid "$exe" "${args[@]}" >/dev/null 2>&1 &)
 else
-    if ! pkg-config --exists xkbcommon wayland-client egl 2>/dev/null; then
+    if ! pkg-config --exists xkbcommon xkbcommon-x11 wayland-client egl glesv2 x11-xcb xcursor vulkan 2>/dev/null; then
         echo "Missing GUI headers for the Linux build. Install them with:" >&2
-        sed -n '/sudo apt install/,/libvulkan-dev/p' "$0" | sed 's/^#//' >&2
+        sed -n '/^#.*sudo apt install/,/^#.*libvulkan-dev/p' "$0" | sed 's/^#//' >&2
         exit 1
     fi
     exe="$ROOT/bin/officelite"

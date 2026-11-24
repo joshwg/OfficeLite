@@ -7,6 +7,8 @@ package model
 import (
 	"image/color"
 	"slices"
+
+	"officelite/common/colors"
 )
 
 // Chart is a chart: one on a sheet's drawing, placed by its Anchor, or
@@ -414,9 +416,7 @@ func DefaultTheme() *Theme {
 }
 
 // rgb returns the opaque color of a 0xRRGGBB value.
-func rgb(v uint32) color.NRGBA {
-	return color.NRGBA{R: uint8(v >> 16), G: uint8(v >> 8), B: uint8(v), A: 255}
-}
+func rgb(v uint32) color.NRGBA { return colors.RGB(v) }
 
 // seriesVariations are the luminance changes (lumMod, lumOff, per
 // 100,000) Excel 2013+ applies to the accents for series 7 and up: the
@@ -443,75 +443,11 @@ func LumMod(c color.NRGBA, mod, off int) color.NRGBA {
 	if mod == 100000 && off == 0 {
 		return c
 	}
-	h, s, l := toHSL(c)
+	h, s, l := colors.ToHSL(c)
 	l = min(max(l*float64(mod)/100000+float64(off)/100000, 0), 1)
-	out := fromHSL(h, s, l)
+	out := colors.FromHSL(h, s, l)
 	out.A = c.A
 	return out
-}
-
-// toHSL converts c's RGB (ignoring alpha) to hue, saturation and
-// lightness, each in 0..1.
-func toHSL(c color.NRGBA) (h, s, l float64) {
-	r, g, b := float64(c.R)/255, float64(c.G)/255, float64(c.B)/255
-	mx, mn := max(r, g, b), min(r, g, b)
-	l = (mx + mn) / 2
-	if mx == mn {
-		return 0, 0, l
-	}
-	d := mx - mn
-	if l > 0.5 {
-		s = d / (2 - mx - mn)
-	} else {
-		s = d / (mx + mn)
-	}
-	switch mx {
-	case r:
-		h = (g - b) / d
-		if g < b {
-			h += 6
-		}
-	case g:
-		h = (b-r)/d + 2
-	default:
-		h = (r-g)/d + 4
-	}
-	return h / 6, s, l
-}
-
-// fromHSL is the inverse of toHSL: the opaque color of hue, saturation
-// and lightness in 0..1.
-func fromHSL(h, s, l float64) color.NRGBA {
-	if s == 0 {
-		v := uint8(l*255 + 0.5)
-		return color.NRGBA{R: v, G: v, B: v, A: 255}
-	}
-	var q float64
-	if l < 0.5 {
-		q = l * (1 + s)
-	} else {
-		q = l + s - l*s
-	}
-	p := 2*l - q
-	hue := func(t float64) float64 {
-		switch {
-		case t < 0:
-			t++
-		case t > 1:
-			t--
-		}
-		switch {
-		case t < 1.0/6:
-			return p + (q-p)*6*t
-		case t < 0.5:
-			return q
-		case t < 2.0/3:
-			return p + (q-p)*(2.0/3-t)*6
-		}
-		return p
-	}
-	f := func(v float64) uint8 { return uint8(min(max(v, 0), 1)*255 + 0.5) }
-	return color.NRGBA{R: f(hue(h + 1.0/3)), G: f(hue(h)), B: f(hue(h - 1.0/3)), A: 255}
 }
 
 // AllSeries lists the chart's series with their plot index, in the order

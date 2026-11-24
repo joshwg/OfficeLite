@@ -3,7 +3,7 @@
 Lightweight, macro-free office applications written in Go. OfficeLite is one
 program with two editors: ExcelLite for spreadsheets and WordLite for
 word-processing documents. It routes files by their content, not just their
-extension, and opens each document in its own window. Version 0.7.0.1
+extension, and opens each document in its own window. Version 0.8.1
 (`common/version`; `officelite --version`).
 
 Run the build and sample commands below from the repository root.

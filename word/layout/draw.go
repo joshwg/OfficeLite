@@ -135,29 +135,11 @@ func (e *Engine) drawLine(ops *op.Ops, pl *Placed, s float64) {
 		switch it.Kind {
 		case ItemText:
 			// Join neighboring words of one style into one shaping call.
-			var b strings.Builder
-			b.WriteString(it.Text)
-			adv := append(e.adv[:0], it.Adv...)
-			end := k
-			for end+1 < len(items) {
-				n := &items[end+1]
-				prev := &items[end]
-				if n.Kind != ItemText || n.St != it.St || math.Abs(prev.X+prev.W-n.X) > 0.01 || prev.stretched {
-					break
-				}
-				b.WriteString(n.Text)
-				adv = append(adv, n.Adv...)
-				end++
-			}
+			sText, adv, w, end := coalesceTextItems(items, k, e.adv[:0])
 			x := pl.X + it.X
 			st := it.St
 			e.adv = adv
-			e.drawText(ops, st, strings.TrimRight(b.String(), " "), x*s, (base-st.Shift)*s, s, adv)
-			last := &items[end]
-			w := last.X + last.W - it.X
-			if end == len(items)-1 {
-				w -= last.trail
-			}
+			e.drawText(ops, st, strings.TrimRight(sText, " "), x*s, (base-st.Shift)*s, s, adv)
 			e.decorate(ops, st, x, base-st.Shift, w, s)
 			k = end
 		case ItemTab:
@@ -191,26 +173,68 @@ func (e *Engine) decorate(ops *op.Ops, st *TextStyle, x, base, w float64, s floa
 	}
 }
 
-func (e *Engine) drawLeader(ops *op.Ops, it *Item, x, base, s float64) {
-	ch := string(rune(it.Leader))
-	switch it.Leader {
-	case '.', '-', '_':
-	default:
-		ch = "."
+// coalesceTextItems merges adjacent ItemText runs starting at start that share
+// a style and can be shaped as one run. It returns the merged text, advances,
+// decoration width (excluding trailing space at line end), and last index.
+func coalesceTextItems(items []Item, start int, advBuf []float32) (text string, adv []float32, w float64, end int) {
+	it := &items[start]
+	var b strings.Builder
+	b.WriteString(it.Text)
+	adv = append(advBuf, it.Adv...)
+	end = start
+	for end+1 < len(items) {
+		n, prev := &items[end+1], &items[end]
+		if n.Kind != ItemText || n.St != it.St || math.Abs(prev.X+prev.W-n.X) > 0.01 || prev.stretched {
+			break
+		}
+		b.WriteString(n.Text)
+		adv = append(adv, n.Adv...)
+		end++
 	}
-	cw := e.m.measure(it.St, ch).width
-	if cw <= 0 {
-		return
+	last := &items[end]
+	w = last.X + last.W - it.X
+	if end == len(items)-1 {
+		w -= last.trail
 	}
-	n := int((it.W - cw) / cw)
-	if n <= 0 {
-		return
-	}
-	// Align the dots to a grid so leaders line up between lines.
-	start := math.Ceil((x+cw/2)/cw) * cw
-	e.drawText(ops, it.St, strings.Repeat(ch, n), start*s, base*s, s, nil)
+	return b.String(), adv, w, end
 }
 
+// leaderChar returns the single-character string used for a tab leader.
+func leaderChar(leader byte) string {
+	switch leader {
+	case '.', '-', '_':
+		return string(rune(leader))
+	default:
+		return "."
+	}
+}
+
+// leaderRun returns the repeated leader string and its grid-aligned starting X
+// for a tab of width w starting at x with single-glyph width cw.
+func leaderRun(ch string, x, w, cw float64) (string, float64, bool) {
+	if cw <= 0 {
+		return "", 0, false
+	}
+	n := int((w - cw) / cw)
+	if n <= 0 {
+		return "", 0, false
+	}
+	// Align the dots to a grid so leaders line up between lines.
+	return strings.Repeat(ch, n), math.Ceil((x+cw/2)/cw) * cw, true
+}
+
+// drawLeader draws tab it's leader (dots, dashes or underscores) across the
+// tab at x on baseline base, at scale s.
+func (e *Engine) drawLeader(ops *op.Ops, it *Item, x, base, s float64) {
+	ch := leaderChar(it.Leader)
+	if run, start, ok := leaderRun(ch, x, it.W, e.m.measure(it.St, ch).width); ok {
+		e.drawText(ops, it.St, run, start*s, base*s, s, nil)
+	}
+}
+
+// drawObject draws object item it at x on baseline base, at scale s: the
+// picture if it decodes, else a framed placeholder box, else the item's text:
+// plain for a field result or note mark, on a shaded background otherwise.
 func (e *Engine) drawObject(ops *op.Ops, it *Item, x, base, s float64) {
 	px := func(v float64) int { return int(math.Round(v * s)) }
 	if isPicture(it) && e.drawPicture(ops, it, x, base, s) {

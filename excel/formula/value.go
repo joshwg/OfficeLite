@@ -116,6 +116,31 @@ func (a *Array) Broadcast(r, c int) Value {
 	return a.At(r, c)
 }
 
+// Lift applies fn element-wise to the broadcast elements of inputs (arrays and
+// scalars), returning an array the size of the largest input.
+func Lift(inputs []Value, fn func(vals []Value) Value) *Array {
+	rows, cols := 1, 1
+	for _, v := range inputs {
+		if a, ok := v.(*Array); ok {
+			rows, cols = max(rows, a.Rows), max(cols, a.Cols)
+		}
+	}
+	out := &Array{Rows: rows, Cols: cols, V: make([]Value, 0, rows*cols)}
+	vals := make([]Value, len(inputs))
+	for r := 0; r < rows; r++ {
+		for c := 0; c < cols; c++ {
+			for i, v := range inputs {
+				if a, ok := v.(*Array); ok {
+					v = a.Broadcast(r, c)
+				}
+				vals[i] = v
+			}
+			out.V = append(out.V, fn(vals))
+		}
+	}
+	return out
+}
+
 // Ref is a reference to a rectangle of cells on one sheet (zero-based,
 // inclusive).
 type Ref struct {

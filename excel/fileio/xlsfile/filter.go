@@ -208,26 +208,7 @@ func parseAreaRef(s string) (model.Range, bool) {
 	if i := strings.LastIndexByte(s, '!'); i >= 0 {
 		s = s[i+1:]
 	}
-	s = strings.ReplaceAll(s, "$", "")
-	a, b, ok := strings.Cut(s, ":")
-	if !ok {
-		b = a
-	}
-	r1, c1, ok1 := parseCell(a)
-	r2, c2, ok2 := parseCell(b)
-	return model.Range{R1: r1, C1: c1, R2: r2, C2: c2}, ok1 && ok2
-}
-
-// parseCell parses an A1-style cell name without $ into 0-based row and
-// column.
-func parseCell(s string) (row, col int, ok bool) {
-	i := strings.IndexFunc(s, func(r rune) bool { return r >= '0' && r <= '9' })
-	if i <= 0 {
-		return 0, 0, false
-	}
-	n, err := strconv.Atoi(s[i:])
-	col = model.ParseColName(s[:i])
-	return n - 1, col, err == nil && n > 0 && col >= 0
+	return model.ParseRange(s, excel.ExcelMaxRows, excel.ExcelMaxCols)
 }
 
 // --- writing ---

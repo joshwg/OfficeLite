@@ -58,7 +58,7 @@ var StandardColors = []struct {
 // under a theme color, with their names: which ones depends on how light
 // the color is.
 func themeShades(c color.NRGBA) ([5]color.NRGBA, [5]string) {
-	h, s, l := toHSL(c)
+	h, s, l := colors.ToHSL(c)
 	// Excel works in whole steps of 1/255.
 	q := func(v float64) float64 { return math.Round(v*255) / 255 }
 	h, s, l = q(h), q(s), q(l)
@@ -79,70 +79,14 @@ func themeShades(c color.NRGBA) ([5]color.NRGBA, [5]string) {
 	var names [5]string
 	for i, a := range amounts {
 		if a > 0 {
-			out[i] = fromHSL(h, s, math.Floor((l+(1-l)*a/100)*255)/255)
+			out[i] = colors.FromHSL(h, s, math.Floor((l+(1-l)*a/100)*255)/255)
 			names[i] = fmt.Sprintf("Lighter %.0f%%", a)
 		} else {
-			out[i] = fromHSL(h, s, math.Floor(l*(1+a/100)*255)/255)
+			out[i] = colors.FromHSL(h, s, math.Floor(l*(1+a/100)*255)/255)
 			names[i] = fmt.Sprintf("Darker %.0f%%", -a)
 		}
 	}
 	return out, names
-}
-
-// toHSL converts c to hue, saturation and lightness, each in [0, 1].
-func toHSL(c color.NRGBA) (h, s, l float64) {
-	r, g, b := float64(c.R)/255, float64(c.G)/255, float64(c.B)/255
-	mx, mn := max(r, g, b), min(r, g, b)
-	l = (mx + mn) / 2
-	if mx == mn {
-		return 0, 0, l
-	}
-	d := mx - mn
-	if l > 0.5 {
-		s = d / (2 - mx - mn)
-	} else {
-		s = d / (mx + mn)
-	}
-	switch mx {
-	case r:
-		h = math.Mod((g-b)/d+6, 6)
-	case g:
-		h = (b-r)/d + 2
-	default:
-		h = (r-g)/d + 4
-	}
-	return h / 6, s, l
-}
-
-// fromHSL returns the opaque color of hue h, saturation s and lightness l,
-// each in [0, 1]; l is clamped to that range.
-func fromHSL(h, s, l float64) color.NRGBA {
-	l = min(max(l, 0), 1)
-	if s == 0 {
-		v := uint8(math.Round(l * 255))
-		return color.NRGBA{R: v, G: v, B: v, A: 0xFF}
-	}
-	q := l * (1 + s)
-	if l >= 0.5 {
-		q = l + s - l*s
-	}
-	p := 2*l - q
-	ch := func(t float64) uint8 {
-		t = math.Mod(t+1, 1)
-		var v float64
-		switch {
-		case t < 1.0/6:
-			v = p + (q-p)*6*t
-		case t < 0.5:
-			v = q
-		case t < 2.0/3:
-			v = p + (q-p)*(2.0/3-t)*6
-		default:
-			v = p
-		}
-		return uint8(math.Round(v * 255))
-	}
-	return color.NRGBA{R: ch(h + 1.0/3), G: ch(h), B: ch(h - 1.0/3), A: 0xFF}
 }
 
 // ColorChoice is a color picked from a ColorPicker; None is the

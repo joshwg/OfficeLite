@@ -63,6 +63,7 @@ func multi(v f.Value) (*f.Array, bool) {
 	return a, ok && !a.Single()
 }
 
+// scalar unwraps a 1×1 array to its element; other values pass through.
 func scalar(v f.Value) f.Value {
 	if a, ok := v.(*f.Array); ok && a.Single() {
 		return a.V[0]
@@ -73,28 +74,11 @@ func scalar(v f.Value) f.Value {
 // elementwise builds an array the size of the largest input by calling fn
 // with each input's broadcast element.
 func elementwise(inputs []f.Value, fn func(vals []f.Value) f.Value) f.Value {
-	rows, cols := 1, 1
-	for _, v := range inputs {
-		if a, ok := v.(*f.Array); ok {
-			rows, cols = max(rows, a.Rows), max(cols, a.Cols)
-		}
-	}
-	out := &f.Array{Rows: rows, Cols: cols}
-	vals := make([]f.Value, len(inputs))
-	for r := 0; r < rows; r++ {
-		for c := 0; c < cols; c++ {
-			for i, v := range inputs {
-				if a, ok := v.(*f.Array); ok {
-					v = a.Broadcast(r, c)
-				}
-				vals[i] = v
-			}
-			out.V = append(out.V, scalar(fn(vals)))
-		}
-	}
-	return out
+	return f.Lift(inputs, func(vals []f.Value) f.Value { return scalar(fn(vals)) })
 }
 
+// argOr evaluates argument i, giving def when it is absent and 0 when it is
+// present but empty.
 func argOr(e *f.Env, args []f.Node, i int, def f.Value) f.Value {
 	if i >= len(args) {
 		return def
@@ -157,6 +141,9 @@ func ifsFn(e *f.Env, args []f.Node) f.Value {
 	return f.ErrNA
 }
 
+// ifsArray finishes IFS once a condition is an array: conds holds the
+// conditions evaluated so far, the rest are evaluated too, and each element
+// takes the value of its first true condition, or #N/A.
 func ifsArray(e *f.Env, args []f.Node, conds []f.Value) f.Value {
 	for i := len(conds) * 2; i < len(args); i += 2 {
 		conds = append(conds, e.Deref(e.Eval(args[i])))
@@ -279,6 +266,8 @@ func combine(e *f.Env, args []f.Value, op func(acc, b bool) bool, start bool) f.
 	return f.Bool(acc)
 }
 
+// lambdaArg returns v as a LAMBDA, or the error to return instead: v's own
+// error, or #VALUE! for anything else.
 func lambdaArg(v f.Value) (*f.Lambda, f.Value) {
 	if l, ok := v.(*f.Lambda); ok {
 		return l, nil

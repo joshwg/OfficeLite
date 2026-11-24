@@ -270,8 +270,11 @@ func (s xSheetEntry) rid() string {
 	return ""
 }
 
+// xmlBool reports whether an xsd:boolean attribute value is true.
 func xmlBool(s string) bool { return s == "1" || s == "true" }
 
+// attr returns the value of se's attribute name (ignoring its namespace),
+// or "" if it has none.
 func attr(se xml.StartElement, name string) string {
 	for _, a := range se.Attr {
 		if a.Name.Local == name {
@@ -302,6 +305,8 @@ func unescapeOOXML(s string) string {
 
 // --- shared strings ---
 
+// readSST reads the shared strings part name: the text of each <si>, rich
+// text runs joined and phonetic runs left out.
 func (r *reader) readSST(name string) (out []string, err error) {
 	rc, err := r.open(name)
 	if err != nil {
@@ -435,6 +440,9 @@ func (r *reader) loadNumFmts(path string) {
 	}
 }
 
+// convertStyle converts excelize style st to a model style: font (missing
+// parts from def's), fill (hatch patterns as a lighter solid), borders and
+// alignment.
 func convertStyle(x *excelize.File, st *excelize.Style, def model.Style) model.Style {
 	ms := model.Style{Font: def.Font}
 	if f := st.Font; f != nil {
@@ -491,6 +499,8 @@ type sharedFormula struct {
 	tmpl     *formula.ShiftTemplate
 }
 
+// readSheet reads worksheet part name into sh: its cells and formulas (shared
+// formulas expanded), and its row, column and sheet settings.
 func (r *reader) readSheet(name string, sh *model.Sheet) (err error) {
 	rc, err := r.open(name)
 	if err != nil {
@@ -718,6 +728,8 @@ func outlineAttrs(t xml.StartElement, sh *model.Sheet, rows bool, lo, hi int) {
 	}
 }
 
+// makeCell builds the cell of type t (the <c t> attribute), style index s,
+// value v and formula f, with numbers formatted by the style's number format.
 func (r *reader) makeCell(t string, s int, v, f string) model.Cell {
 	var cf cellFormat
 	if s >= 0 && s < len(r.formats) {
@@ -757,6 +769,8 @@ func (r *reader) makeCell(t string, s int, v, f string) model.Cell {
 	return c
 }
 
+// sheetFormat reads <sheetFormatPr>: the default row height and column
+// widths.
 func (r *reader) sheetFormat(t xml.StartElement, sh *model.Sheet) {
 	if v := attr(t, "defaultRowHeight"); v != "" {
 		sh.DefaultRowHeight = model.PointsToPx(parseFloat(v))
@@ -769,6 +783,8 @@ func (r *reader) sheetFormat(t xml.StartElement, sh *model.Sheet) {
 	}
 }
 
+// colInfo reads a <col> element: the outline level, width and hidden state
+// of columns min to max.
 func (r *reader) colInfo(t xml.StartElement, sh *model.Sheet) {
 	lo, _ := strconv.Atoi(attr(t, "min"))
 	hi, _ := strconv.Atoi(attr(t, "max"))
@@ -800,6 +816,7 @@ func (r *reader) colInfo(t xml.StartElement, sh *model.Sheet) {
 	}
 }
 
+// parseFloat parses s as a number, giving 0 if it isn't one.
 func parseFloat(s string) float64 {
 	v, _ := strconv.ParseFloat(s, 64)
 	return v
@@ -807,31 +824,13 @@ func parseFloat(s string) float64 {
 
 // parseCellRef parses "AB12" into zero-based row, col.
 func parseCellRef(s string) (row, col int, ok bool) {
-	i := 0
-	for i < len(s) && (s[i] >= 'A' && s[i] <= 'Z' || s[i] >= 'a' && s[i] <= 'z') {
-		i++
-	}
-	if i == 0 || i == len(s) {
-		return 0, 0, false
-	}
-	n, err := strconv.Atoi(s[i:])
-	if err != nil || n < 1 || n > excel.ExcelMaxRows {
-		return 0, 0, false
-	}
-	col = model.ParseColName(s[:i])
-	if col < 0 || col >= excel.ExcelMaxCols {
-		return 0, 0, false // past XFD1048576
-	}
-	return n - 1, col, true
+	return model.ParseCell(s, excel.ExcelMaxRows, excel.ExcelMaxCols)
 }
 
+// parseRange parses an A1:B2 range; a single cell isn't accepted.
 func parseRange(s string) (model.Range, bool) {
-	a, b, _ := strings.Cut(s, ":")
-	r1, c1, ok1 := parseCellRef(a)
-	r2, c2, ok2 := parseCellRef(b)
-	if !ok1 || !ok2 {
+	if !strings.Contains(s, ":") {
 		return model.Range{}, false
 	}
-	// A range may be written corner to corner either way round.
-	return model.Range{R1: min(r1, r2), C1: min(c1, c2), R2: max(r1, r2), C2: max(c1, c2)}, true
+	return model.ParseRange(s, excel.ExcelMaxRows, excel.ExcelMaxCols)
 }

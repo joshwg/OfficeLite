@@ -13,7 +13,6 @@ import (
 	"slices"
 	"strings"
 	"unicode/utf16"
-	"unicode/utf8"
 
 	"github.com/xuri/excelize/v2"
 
@@ -170,33 +169,11 @@ func (x *writer) issue(format string, args ...any) {
 // sheetNames makes the sheet names valid for Excel: 1 to 31 characters,
 // none of []:*?/\, unique ignoring case.
 func (x *writer) sheetNames() []string {
-	out := make([]string, len(x.sheets))
-	used := map[string]bool{}
+	out := model.SanitizeSheetNames(x.sheets)
 	for i, sh := range x.sheets {
-		n := strings.Map(func(r rune) rune {
-			if strings.ContainsRune(`[]:*?/\`, r) {
-				return '_'
-			}
-			return r
-		}, sh.Name)
-		n = strings.Trim(n, "'")
-		if utf8.RuneCountInString(n) > excel.MaxSheetName {
-			n = string([]rune(n)[:excel.MaxSheetName])
+		if out[i] != sh.Name {
+			x.issue("sheet %q will be named %q", sh.Name, out[i])
 		}
-		if n == "" {
-			n = fmt.Sprintf("Sheet%d", i+1)
-		}
-		base := n
-		for k := 2; used[strings.ToUpper(n)]; k++ {
-			suffix := fmt.Sprintf(" (%d)", k)
-			r := []rune(base)
-			n = string(r[:min(len(r), 31-len(suffix))]) + suffix
-		}
-		used[strings.ToUpper(n)] = true
-		if n != sh.Name {
-			x.issue("sheet %q will be named %q", sh.Name, n)
-		}
-		out[i] = n
 	}
 	return out
 }

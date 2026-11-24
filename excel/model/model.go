@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"officelite/excel"
 )
@@ -449,4 +450,83 @@ func ParseColName(s string) int {
 		n = n*26 + int(c-'A'+1)
 	}
 	return n - 1
+}
+
+// ParseCell parses an A1-style cell reference (without '$') into zero-based
+// row and column within [0, maxRows) × [0, maxCols).
+func ParseCell(s string, maxRows, maxCols int) (row, col int, ok bool) {
+	i := 0
+	for i < len(s) && (s[i] >= 'A' && s[i] <= 'Z' || s[i] >= 'a' && s[i] <= 'z') {
+		i++
+	}
+	if i == 0 || i == len(s) || i > excel.ExcelMaxColLetters {
+		return 0, 0, false
+	}
+	n, err := strconv.Atoi(s[i:])
+	if err != nil || n < 1 || n > maxRows {
+		return 0, 0, false
+	}
+	col = ParseColName(s[:i])
+	if col < 0 || col >= maxCols {
+		return 0, 0, false
+	}
+	return n - 1, col, true
+}
+
+// ParseRange parses an A1:B2 range (or a single cell, with optional '$') into
+// a normalized Range within [0, maxRows) × [0, maxCols).
+func ParseRange(s string, maxRows, maxCols int) (Range, bool) {
+	s = strings.ReplaceAll(s, "$", "")
+	a, b, found := strings.Cut(s, ":")
+	if !found {
+		b = a
+	}
+	r1, c1, ok1 := ParseCell(a, maxRows, maxCols)
+	r2, c2, ok2 := ParseCell(b, maxRows, maxCols)
+	if !ok1 || !ok2 {
+		return Range{}, false
+	}
+	return Range{R1: min(r1, r2), C1: min(c1, c2), R2: max(r1, r2), C2: max(c1, c2)}, true
+}
+
+// SanitizeSheetName makes name a valid, unique Excel sheet name: at most
+// excel.MaxSheetName characters, none of : \ / ? * [ ] or control characters,
+// no leading or trailing apostrophe, falling back to fallback when blank, and
+// deduplicated case-insensitively against used (which is updated in place).
+func SanitizeSheetName(name, fallback string, used map[string]bool) string {
+	n := strings.Map(func(r rune) rune {
+		if strings.ContainsRune(`:\/?*[]`, r) || r < ' ' {
+			return '_'
+		}
+		return r
+	}, name)
+	n = truncRunes(strings.Trim(n, "'"), excel.MaxSheetName)
+	if strings.TrimSpace(n) == "" {
+		n = fallback
+	}
+	for k, base := 2, n; used[strings.ToLower(n)]; k++ {
+		suffix := " (" + strconv.Itoa(k) + ")"
+		n = strings.TrimRight(truncRunes(base, excel.MaxSheetName-len(suffix)), " ") + suffix
+	}
+	used[strings.ToLower(n)] = true
+	return n
+}
+
+// SanitizeSheetNames returns valid, case-insensitively unique Excel sheet
+// names for sheets.
+func SanitizeSheetNames(sheets []*Sheet) []string {
+	out := make([]string, len(sheets))
+	used := make(map[string]bool, len(sheets))
+	for i, sh := range sheets {
+		out[i] = SanitizeSheetName(sh.Name, "Sheet"+strconv.Itoa(i+1), used)
+	}
+	return out
+}
+
+// truncRunes cuts s to at most n characters (runes, not bytes).
+func truncRunes(s string, n int) string {
+	if utf8.RuneCountInString(s) <= n {
+		return s
+	}
+	return string([]rune(s)[:n])
 }

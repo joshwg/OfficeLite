@@ -21,7 +21,6 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
-	"gioui.org/widget"
 
 	"officelite/common/colors"
 	"officelite/common/gui"
@@ -68,9 +67,9 @@ type docView struct {
 	eolVer int
 	eolEd  *model.Editor
 
-	m                              mouseState // mouse.go
-	vbar                           gui.Scrollbar
-	zoomInBtn, zoomOutBtn, zoomBtn widget.Clickable
+	m       mouseState // mouse.go
+	vbar    gui.Scrollbar
+	zoomCtl gui.ZoomControl
 }
 
 // resetBlink restarts the caret blink so the caret shows at once.

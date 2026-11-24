@@ -473,32 +473,19 @@ func (s *Store) Put(username, path string, r io.Reader, quota int64, replace boo
 		return Info{}, err
 	}
 	limit := min(max(quota-(used-oldSize), 0), web.FileMaxBytes)
-	tmp, err := os.CreateTemp(dir, tempPrefix+"*")
-	if err != nil {
-		return Info{}, err
-	}
-	n, err := io.Copy(tmp, io.LimitReader(r, limit+1))
-	switch {
-	case err != nil:
-	case n > limit && limit == web.FileMaxBytes:
-		err = ErrTooLarge
-	case n > limit:
-		err = ErrQuota
-	default:
-		// On disk before the rename, so a crash can't leave the
-		// document renamed to a partly written file.
-		err = tmp.Sync()
-	}
-	if cerr := tmp.Close(); err == nil {
-		err = cerr
-	}
-	if err == nil {
-		err = os.Rename(tmp.Name(), filepath.Join(dir, target))
-	}
-	if err != nil {
-		if rmErr := os.Remove(tmp.Name()); rmErr != nil && !errors.Is(rmErr, fs.ErrNotExist) {
-			err = errors.Join(err, rmErr)
+	err = writeAtomic(dir, target, func(tmp *os.File) error {
+		n, err := io.Copy(tmp, io.LimitReader(r, limit+1))
+		switch {
+		case err != nil:
+			return err
+		case n > limit && limit == web.FileMaxBytes:
+			return ErrTooLarge
+		case n > limit:
+			return ErrQuota
 		}
+		return nil
+	})
+	if err != nil {
 		return Info{}, err
 	}
 	fi, err := os.Stat(filepath.Join(dir, target))
@@ -765,19 +752,30 @@ func (s *Store) SetRecent(username string, data []byte) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
+	return writeAtomic(dir, recentName, func(tmp *os.File) error {
+		_, err := tmp.Write(data)
+		return err
+	})
+}
+
+// writeAtomic writes a file via a temporary file in dir, syncing before
+// renaming it to target and removing the temp file on any error.
+func writeAtomic(dir, target string, write func(*os.File) error) error {
 	tmp, err := os.CreateTemp(dir, tempPrefix+"*")
 	if err != nil {
 		return err
 	}
-	_, err = tmp.Write(data)
+	err = write(tmp)
 	if err == nil {
+		// On disk before the rename, so a crash can't leave the
+		// document renamed to a partly written file.
 		err = tmp.Sync()
 	}
 	if cerr := tmp.Close(); err == nil {
 		err = cerr
 	}
 	if err == nil {
-		err = os.Rename(tmp.Name(), filepath.Join(dir, recentName))
+		err = os.Rename(tmp.Name(), filepath.Join(dir, target))
 	}
 	if err != nil {
 		if rmErr := os.Remove(tmp.Name()); rmErr != nil && !errors.Is(rmErr, fs.ErrNotExist) {

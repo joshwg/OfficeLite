@@ -90,26 +90,7 @@ func multi(v f.Value) (f.Value, bool) {
 // lift applies fn to the broadcast elements of inputs (arrays and
 // scalars), giving an array the size of the largest input.
 func lift(inputs []f.Value, fn func(v []f.Value) f.Value) *f.Array {
-	rows, cols := 1, 1
-	for _, v := range inputs {
-		if a, ok := v.(*f.Array); ok {
-			rows, cols = max(rows, a.Rows), max(cols, a.Cols)
-		}
-	}
-	out := &f.Array{Rows: rows, Cols: cols, V: make([]f.Value, 0, rows*cols)}
-	el := make([]f.Value, len(inputs))
-	for r := 0; r < rows; r++ {
-		for c := 0; c < cols; c++ {
-			for i, v := range inputs {
-				if a, ok := v.(*f.Array); ok {
-					v = a.Broadcast(r, c)
-				}
-				el[i] = v
-			}
-			out.V = append(out.V, fn(el))
-		}
-	}
-	return out
+	return f.Lift(inputs, fn)
 }
 
 // CHOOSE(index_num, value1, [value2], ...). The chosen value is returned
@@ -242,6 +223,7 @@ func address(e *f.Env, a []f.Value) f.Value {
 	return f.String(s)
 }
 
+// dollar is the A1-style absolute marker: "$" when abs, else "".
 func dollar(abs bool) string {
 	if abs {
 		return "$"
@@ -249,6 +231,8 @@ func dollar(abs bool) string {
 	return ""
 }
 
+// bracket formats an R1C1 row or column number: n as is when abs, else
+// the relative offset [n].
 func bracket(n int, abs bool) string {
 	if abs {
 		return strconv.Itoa(n)

@@ -1,7 +1,6 @@
 package layout
 
 import (
-	"math"
 	"strings"
 
 	"gioui.org/font"
@@ -87,6 +86,8 @@ type pdfExport struct {
 	pics  map[*model.Picture]*pdf.Image
 }
 
+// font returns the PDF font for st's family, weight and slant, cached per
+// style.
 func (x *pdfExport) font(st *TextStyle) *pdf.Font {
 	if f, ok := x.fonts[st]; ok {
 		return f
@@ -137,6 +138,8 @@ func (x *pdfExport) body(lines []Placed, fills []Fill, rules []Rect) {
 	}
 }
 
+// line draws placed line pl: its list label, then its text runs, tab
+// leaders and underlines, and objects.
 func (x *pdfExport) line(pl *Placed) {
 	l := pl.Line
 	base := pl.Y + l.Baseline
@@ -152,30 +155,12 @@ func (x *pdfExport) line(pl *Placed) {
 		switch it.Kind {
 		case ItemText:
 			// Neighboring words of one style become one run, as on screen.
-			var b strings.Builder
-			b.WriteString(it.Text)
-			adv := append([]float32(nil), it.Adv...)
-			end := k
-			for end+1 < len(items) {
-				n, prev := &items[end+1], &items[end]
-				if n.Kind != ItemText || n.St != it.St || math.Abs(prev.X+prev.W-n.X) > 0.01 || prev.stretched {
-					break
-				}
-				b.WriteString(n.Text)
-				adv = append(adv, n.Adv...)
-				end++
-			}
+			s, adv, w, end := coalesceTextItems(items, k, nil)
 			st := it.St
-			s := b.String()
 			if end == len(items)-1 {
 				s = strings.TrimRight(s, " ")
 			}
 			x.text(st, s, pl.X+it.X, base-st.Shift, adv)
-			last := &items[end]
-			w := last.X + last.W - it.X
-			if end == len(items)-1 {
-				w -= last.trail
-			}
 			x.decorate(st, pl.X+it.X, base-st.Shift, w)
 			k = end
 		case ItemTab:
@@ -191,6 +176,8 @@ func (x *pdfExport) line(pl *Placed) {
 	}
 }
 
+// text draws s in style st at xpos on baseline base, using the advances adv
+// layout measured (nil to let the font space it).
 func (x *pdfExport) text(st *TextStyle, s string, xpos, base float64, adv []float32) {
 	if s == "" || st.Size <= 0 {
 		return
@@ -214,25 +201,13 @@ func (x *pdfExport) decorate(st *TextStyle, xpos, base, w float64) {
 	}
 }
 
+// leader draws tab it's leader (dots, dashes or underscores) across the tab
+// at xpos on baseline base.
 func (x *pdfExport) leader(it *Item, xpos, base float64) {
-	ch := string(rune(it.Leader))
-	switch it.Leader {
-	case '.', '-', '_':
-	default:
-		ch = "."
+	ch := leaderChar(it.Leader)
+	if run, start, ok := leaderRun(ch, xpos, it.W, x.font(it.St).Measure(ch, it.St.Size)); ok {
+		x.text(it.St, run, start, base, nil)
 	}
-	f := x.font(it.St)
-	cw := f.Measure(ch, it.St.Size)
-	if cw <= 0 {
-		return
-	}
-	n := int((it.W - cw) / cw)
-	if n <= 0 {
-		return
-	}
-	// Align the dots to a grid so leaders line up between lines.
-	start := math.Ceil((xpos+cw/2)/cw) * cw
-	x.text(it.St, strings.Repeat(ch, n), start, base, nil)
 }
 
 // object draws a picture, or the placeholder the page view shows for

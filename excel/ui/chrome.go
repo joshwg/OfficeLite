@@ -482,53 +482,16 @@ func (a *App) label(size float32, s string, c color.NRGBA, bold bool) material.L
 // titleBar draws the app name, the AutoSave switch and the workbook's
 // name with its modified mark and AutoSave status.
 func (a *App) titleBar(gtx layout.Context) layout.Dimensions {
-	h := gtx.Dp(36)
-	gui.FillRect(gtx.Ops, image.Rect(0, 0, gtx.Constraints.Max.X, h), accent)
-	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = h, h
-	name := a.docName()
-	if a.modified {
-		name += " •"
-	}
-	if st := a.autoSaveStatus(gtx); st != "" {
-		name += " – " + st
-	}
-	return layout.Inset{Left: 12, Right: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return gui.Middle(gtx, func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-				layout.Rigid(a.label(15, appName, colors.White, true).Layout),
-				layout.Rigid(layout.Spacer{Width: 12}.Layout),
-				layout.Rigid(a.autoSaveSwitch), // autosave.go
-				layout.Rigid(layout.Spacer{Width: 12}.Layout),
-				layout.Flexed(1, a.label(13, name, colors.White, false).Layout),
-			)
-		})
-	})
+	return gui.TitleBar(gtx, a.ui, accent, appName, a.docName(), a.modified, a.autoSaveStatus(gtx), a.autoSaveSwitch)
 }
 
 // zoomControl is the status bar's "−  100%  +".
 func (a *App) zoomControl(gtx layout.Context) layout.Dimensions {
-	for a.zoomInBtn.Clicked(gtx) {
-		a.setZoom(a.zoom + 0.1)
+	next, changed, dims := a.zoomCtl.Layout(gtx, a.ui, float64(a.zoom))
+	if changed {
+		a.setZoom(float32(next))
 	}
-	for a.zoomOutBtn.Clicked(gtx) {
-		a.setZoom(a.zoom - 0.1)
-	}
-	for a.zoomBtn.Clicked(gtx) {
-		a.setZoom(1)
-	}
-	btn := func(c *widget.Clickable, s string, w int) layout.FlexChild {
-		return layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return gui.Hoverable(gtx, c, colors.Transparent, gui.HoverBG, func(gtx layout.Context) layout.Dimensions {
-				gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(unit.Dp(w)), gtx.Constraints.Max.Y))
-				return layout.Center.Layout(gtx, a.label(12, s, chromeText, false).Layout)
-			})
-		})
-	}
-	return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-		btn(&a.zoomOutBtn, "−", 22),
-		btn(&a.zoomBtn, fmt.Sprintf("%d%%", int(a.zoom*100+0.5)), 44),
-		btn(&a.zoomInBtn, "+", 22),
-	)
+	return dims
 }
 
 // formulaBar draws the Name Box (the active cell, or the size of a range

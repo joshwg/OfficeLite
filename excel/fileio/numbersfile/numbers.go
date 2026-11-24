@@ -163,26 +163,7 @@ func (r *reader) countDropped(id uint64, dropped map[string]int, seen map[uint64
 // sheetName makes name a valid, unique Excel sheet name: at most 31
 // characters, none of : \ / ? * [ ].
 func (r *reader) sheetName(name string) string {
-	name = strings.Map(func(c rune) rune {
-		if strings.ContainsRune(`:\/?*[]`, c) {
-			return '_'
-		}
-		return c
-	}, strings.Trim(name, "'"))
-	if strings.TrimSpace(name) == "" {
-		name = "Sheet"
-	}
-	base := []rune(name)
-	if len(base) > excel.MaxSheetName {
-		base = base[:excel.MaxSheetName]
-	}
-	name = string(base)
-	for i := 2; r.names[strings.ToLower(name)]; i++ {
-		suffix := fmt.Sprintf(" (%d)", i)
-		name = string(base[:min(len(base), 31-len(suffix))]) + suffix
-	}
-	r.names[strings.ToLower(name)] = true
-	return name
+	return model.SanitizeSheetName(name, "Sheet", r.names)
 }
 
 // addTable appends a sheet named name holding table t: its row and column

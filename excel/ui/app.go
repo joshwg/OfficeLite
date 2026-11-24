@@ -90,15 +90,15 @@ type App struct {
 	errMsg   string
 	notice   string // transient status message (e.g. after F9)
 
-	menu                           gui.MenuBar
-	back                           gui.Backstage
-	bs                             backstageState
-	zoomInBtn, zoomOutBtn, zoomBtn widget.Clickable
-	tabBtns                        []widget.Clickable
-	newSheetBtn                    widget.Clickable // the + after the sheet tabs
-	tabList                        layout.List
-	vbar                           gui.Scrollbar
-	hbar                           gui.Scrollbar
+	menu        gui.MenuBar
+	back        gui.Backstage
+	bs          backstageState
+	zoomCtl     gui.ZoomControl
+	tabBtns     []widget.Clickable
+	newSheetBtn widget.Clickable // the + after the sheet tabs
+	tabList     layout.List
+	vbar        gui.Scrollbar
+	hbar        gui.Scrollbar
 
 	grid     gridInput
 	book     *edit.Book // the workbook's editing state: undo, recalculation

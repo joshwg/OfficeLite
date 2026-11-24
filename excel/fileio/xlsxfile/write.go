@@ -93,6 +93,8 @@ type sheetPatch struct {
 	drawing string
 }
 
+// sheetPatch returns the second-pass patch for worksheet part, creating it
+// on first use.
 func (x *writer) sheetPatch(part string) *sheetPatch {
 	p := x.sheets[part]
 	if p == nil {
@@ -109,6 +111,9 @@ type rawCell struct {
 	row int
 }
 
+// build fills the excelize file from the workbook: sheet names, workbook
+// properties, visibility, defined names, then each worksheet, collecting the
+// charts, pivots and AutoFilters the second pass patches in.
 func (x *writer) build() error {
 	f, wb := x.f, x.wb
 	sheets := wb.Sheets
@@ -188,39 +193,14 @@ func (x *writer) build() error {
 // none of : \ / ? * [ ], no leading or trailing apostrophe, and unique
 // ignoring case. CSV sheets are named after the file and break these rules.
 func sheetNames(sheets []*model.Sheet) []string {
-	out := make([]string, len(sheets))
-	used := map[string]bool{}
-	for i, sh := range sheets {
-		n := strings.Map(func(r rune) rune {
-			if strings.ContainsRune(`:\/?*[]`, r) || r < ' ' {
-				return '_'
-			}
-			return r
-		}, sh.Name)
-		n = truncRunes(strings.Trim(n, "'"), 31)
-		if n == "" {
-			n = "Sheet" + strconv.Itoa(i+1)
-		}
-		for k, base := 2, n; used[strings.ToLower(n)]; k++ {
-			suffix := " (" + strconv.Itoa(k) + ")"
-			n = strings.TrimRight(truncRunes(base, 31-len(suffix)), " ") + suffix
-		}
-		used[strings.ToLower(n)] = true
-		out[i] = n
-	}
-	return out
-}
-
-func truncRunes(s string, n int) string {
-	if utf8.RuneCountInString(s) <= n {
-		return s
-	}
-	return string([]rune(s)[:n])
+	return model.SanitizeSheetNames(sheets)
 }
 
 // pxToPt converts 96-DPI pixels (the model's row heights) to points.
 func pxToPt(px float32) float64 { return float64(px) * 72 / 96 }
 
+// writeSheet writes worksheet sh, saved as name in zip part part: its format,
+// view and panes, then its rows and cells through a StreamWriter.
 func (x *writer) writeSheet(sh *model.Sheet, name, part string) error {
 	f := x.f
 
@@ -664,6 +644,8 @@ func escapeOOXML(s string) string {
 	return b.String()
 }
 
+// isOOXMLEscape reports whether s starts with an _xHHHH_ escape, whose
+// leading underscore must itself be escaped to survive a round trip.
 func isOOXMLEscape(s string) bool {
 	if len(s) < 7 || s[0] != '_' || s[1] != 'x' || s[6] != '_' {
 		return false
@@ -692,6 +674,9 @@ func (x *writer) styleID(i uint32) int {
 	return id
 }
 
+// newStyle registers st with excelize and returns its style id, dropping the
+// number format and then the font if excelize rejects them, or 0 if it
+// still rejects the style.
 func (x *writer) newStyle(st model.Style) int {
 	es := excelStyle(st)
 	if id, err := x.f.NewStyle(es); err == nil {
@@ -732,6 +717,8 @@ var (
 	sideNames = [4]string{model.Left: "left", model.Top: "top", model.Right: "right", model.Bottom: "bottom"}
 )
 
+// hexColor is c as excelize's RRGGBB hex, or "" for a transparent color
+// (no color).
 func hexColor(c color.NRGBA) string {
 	if c.A == 0 {
 		return ""
@@ -921,6 +908,7 @@ func (x *writer) patch(data []byte, w io.Writer) error {
 	return zw.Close()
 }
 
+// copyRaw copies zip entry zf to zw as is, without decompressing it.
 func copyRaw(zw *zip.Writer, zf *zip.File) error {
 	rc, err := zf.OpenRaw()
 	if err != nil {
@@ -935,6 +923,8 @@ func copyRaw(zw *zip.Writer, zf *zip.File) error {
 	return err
 }
 
+// insertBefore inserts s before the last occurrence of marker in b, failing
+// if marker isn't there.
 func insertBefore(b []byte, marker, s string) ([]byte, error) {
 	i := bytes.LastIndex(b, []byte(marker))
 	if i < 0 {
@@ -943,6 +933,8 @@ func insertBefore(b []byte, marker, s string) ([]byte, error) {
 	return slices.Concat(b[:i], []byte(s), b[i:]), nil
 }
 
+// addMetadataRel adds a relationship to metadata.xml, under the first unused
+// rId, to the workbook relationships part b.
 func addMetadataRel(b []byte) ([]byte, error) {
 	n := 1
 	for bytes.Contains(b, []byte(`Id="rId`+strconv.Itoa(n)+`"`)) {

@@ -11,11 +11,7 @@ import (
 	"gioui.org/io/key"
 	"gioui.org/io/system"
 	"gioui.org/layout"
-	"gioui.org/text"
-	"gioui.org/unit"
-	"gioui.org/widget"
 
-	"officelite/common/colors"
 	"officelite/common/doctype"
 	"officelite/common/gui"
 	"officelite/word/model"
@@ -334,27 +330,7 @@ func (d *window) setZoom(z float64) {
 // titleBar draws the accent bar: app name, AutoSave switch, and the
 // document name with its modified dot and save status.
 func (d *window) titleBar(gtx layout.Context) layout.Dimensions {
-	h := gtx.Dp(36)
-	gui.FillRect(gtx.Ops, image.Rect(0, 0, gtx.Constraints.Max.X, h), accent)
-	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = h, h
-	name := d.docName()
-	if d.modified() {
-		name += " •"
-	}
-	if st := d.autoSaveStatus(gtx); st != "" {
-		name += " – " + st
-	}
-	return layout.Inset{Left: 12, Right: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return gui.Middle(gtx, func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-				layout.Rigid(d.th.Label(15, appName, colors.White, font.Bold).Layout),
-				layout.Rigid(layout.Spacer{Width: 12}.Layout),
-				layout.Rigid(d.autoSaveSwitch), // autosave.go
-				layout.Rigid(layout.Spacer{Width: 12}.Layout),
-				layout.Flexed(1, d.th.Label(13, name, colors.White, font.Normal).Layout),
-			)
-		})
-	})
+	return gui.TitleBar(gtx, d.th, accent, appName, d.docName(), d.modified(), d.autoSaveStatus(gtx), d.autoSaveSwitch)
 }
 
 // statsCache keeps the word count, which needs a pass over the text.
@@ -432,29 +408,9 @@ func countWords(f *model.Fragment) int {
 
 // zoomControl is the status bar's "−  100%  +".
 func (d *window) zoomControl(gtx layout.Context) layout.Dimensions {
-	v := &d.v
-	for v.zoomInBtn.Clicked(gtx) {
-		d.setZoom(v.zoom + 0.1)
+	next, changed, dims := d.v.zoomCtl.Layout(gtx, d.th, d.v.zoom)
+	if changed {
+		d.setZoom(next)
 	}
-	for v.zoomOutBtn.Clicked(gtx) {
-		d.setZoom(v.zoom - 0.1)
-	}
-	for v.zoomBtn.Clicked(gtx) {
-		d.setZoom(1)
-	}
-	btn := func(c *widget.Clickable, s string, w int) layout.FlexChild {
-		return layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return gui.Hoverable(gtx, c, colors.Transparent, gui.HoverBG, func(gtx layout.Context) layout.Dimensions {
-				gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(unit.Dp(w)), gtx.Constraints.Max.Y))
-				l := d.th.Label(12, s, gui.ChromeText, font.Normal)
-				l.Alignment = text.Middle
-				return layout.Center.Layout(gtx, l.Layout)
-			})
-		})
-	}
-	return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-		btn(&v.zoomOutBtn, "−", 22),
-		btn(&v.zoomBtn, fmt.Sprintf("%d%%", int(v.zoom*100+0.5)), 44),
-		btn(&v.zoomInBtn, "+", 22),
-	)
+	return dims
 }
